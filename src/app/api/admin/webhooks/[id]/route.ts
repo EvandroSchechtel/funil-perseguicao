@@ -7,8 +7,7 @@ import { buscarWebhook, atualizarWebhook, deletarWebhook } from "@/lib/services/
 
 const updateWebhookSchema = z.object({
   nome: z.string().min(1).max(100).optional(),
-  flow_ns: z.string().min(1).optional(),
-  flow_nome: z.string().max(200).optional(),
+  campanha_id: z.string().uuid().nullable().optional(),
   status: z.enum(["ativo", "inativo"]).optional(),
 })
 

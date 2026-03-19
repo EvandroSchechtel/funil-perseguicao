@@ -2,9 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
-import {
-  Plus, Search, Webhook, Copy, CheckCircle2, MoreHorizontal, Users2, GitBranch, Megaphone
-} from "lucide-react"
+import { Plus, Search, Megaphone, MoreHorizontal, Users2, Webhook } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
 import { Button } from "@/components/ui/button"
@@ -21,77 +19,64 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Header } from "@/components/layout/Header"
 import { toast } from "sonner"
 
-interface WebhookItem {
+interface CampanhaItem {
   id: string
   nome: string
-  token: string
+  descricao: string | null
   status: "ativo" | "inativo"
-  url_publica: string
+  data_inicio: string | null
+  data_fim: string | null
+  webhooks_count: number
   leads_count: number
-  flows_count: number
   created_at: string
-  campanha: { id: string; nome: string } | null
   usuario: { nome: string }
 }
 
-export default function WebhooksPage() {
+export default function CampanhasPage() {
   const { accessToken, user } = useAuth()
-  const [webhooks, setWebhooks] = useState<WebhookItem[]>([])
+  const [campanhas, setCampanhas] = useState<CampanhaItem[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
-  const [copiedId, setCopiedId] = useState<string | null>(null)
-  const [deleteDialog, setDeleteDialog] = useState<WebhookItem | null>(null)
+  const [deleteDialog, setDeleteDialog] = useState<CampanhaItem | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
-  const canWrite = user ? hasPermission(user.role, "webhooks:write") : false
-  const canDelete = user ? hasPermission(user.role, "webhooks:delete") : false
-  const canToggle = user ? hasPermission(user.role, "webhooks:toggle") : false
+  const canWrite = user ? hasPermission(user.role, "campanhas:write") : false
+  const canDelete = user ? hasPermission(user.role, "campanhas:write") : false
 
-  const fetchWebhooks = useCallback(async () => {
+  const fetchCampanhas = useCallback(async () => {
     if (!accessToken) return
     setLoading(true)
     try {
       const params = new URLSearchParams({ per_page: "50", ...(search && { q: search }) })
-      const res = await fetch(`/api/admin/webhooks?${params}`, {
+      const res = await fetch(`/api/admin/campanhas?${params}`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       })
       if (!res.ok) throw new Error()
       const data = await res.json()
-      setWebhooks(data.webhooks || [])
+      setCampanhas(data.data || [])
     } catch {
-      toast.error("Erro ao carregar webhooks.")
+      toast.error("Erro ao carregar campanhas.")
     } finally {
       setLoading(false)
     }
   }, [accessToken, search])
 
   useEffect(() => {
-    const timer = setTimeout(fetchWebhooks, search ? 400 : 0)
+    const timer = setTimeout(fetchCampanhas, search ? 400 : 0)
     return () => clearTimeout(timer)
-  }, [fetchWebhooks, search])
+  }, [fetchCampanhas, search])
 
-  async function handleCopy(url: string, id: string) {
+  async function handleToggle(campanha: CampanhaItem) {
+    setActionLoading(campanha.id + "-toggle")
     try {
-      await navigator.clipboard.writeText(url)
-      setCopiedId(id)
-      setTimeout(() => setCopiedId(null), 2000)
-      toast.success("URL copiada!")
-    } catch {
-      toast.error("Erro ao copiar.")
-    }
-  }
-
-  async function handleToggle(webhook: WebhookItem) {
-    setActionLoading(webhook.id + "-toggle")
-    try {
-      const res = await fetch(`/api/admin/webhooks/${webhook.id}/toggle`, {
-        method: "PATCH",
+      const res = await fetch(`/api/admin/campanhas/${campanha.id}/toggle`, {
+        method: "POST",
         headers: { Authorization: `Bearer ${accessToken}` },
       })
       const data = await res.json()
       if (res.ok) {
         toast.success(data.message)
-        fetchWebhooks()
+        fetchCampanhas()
       } else {
         toast.error(data.message || "Erro ao alterar status.")
       }
@@ -102,10 +87,10 @@ export default function WebhooksPage() {
     }
   }
 
-  async function handleDelete(webhook: WebhookItem) {
-    setActionLoading(webhook.id + "-delete")
+  async function handleDelete(campanha: CampanhaItem) {
+    setActionLoading(campanha.id + "-delete")
     try {
-      const res = await fetch(`/api/admin/webhooks/${webhook.id}`, {
+      const res = await fetch(`/api/admin/campanhas/${campanha.id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${accessToken}` },
       })
@@ -113,18 +98,19 @@ export default function WebhooksPage() {
       if (res.ok) {
         toast.success(data.message)
         setDeleteDialog(null)
-        fetchWebhooks()
+        fetchCampanhas()
       } else {
-        toast.error(data.message || "Erro ao excluir webhook.")
+        toast.error(data.message || "Erro ao excluir campanha.")
       }
     } catch {
-      toast.error("Erro ao excluir webhook.")
+      toast.error("Erro ao excluir campanha.")
     } finally {
       setActionLoading(null)
     }
   }
 
-  function formatDate(str: string) {
+  function formatDate(str: string | null) {
+    if (!str) return "—"
     return new Date(str).toLocaleDateString("pt-BR", {
       day: "2-digit", month: "2-digit", year: "numeric",
     })
@@ -135,7 +121,7 @@ export default function WebhooksPage() {
       <Header
         breadcrumbs={[
           { label: "Admin", href: "/admin" },
-          { label: "Webhooks" },
+          { label: "Campanhas" },
         ]}
       />
 
@@ -143,14 +129,14 @@ export default function WebhooksPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-[#F1F1F3] text-2xl font-bold">Webhooks</h1>
-            <p className="text-[#8B8B9E] text-sm mt-1">Endpoints que recebem leads de fontes externas</p>
+            <h1 className="text-[#F1F1F3] text-2xl font-bold">Campanhas</h1>
+            <p className="text-[#8B8B9E] text-sm mt-1">Lançamentos e campanhas de marketing</p>
           </div>
           {canWrite && (
-            <Link href="/admin/webhooks/nova">
+            <Link href="/admin/campanhas/nova">
               <Button>
                 <Plus className="w-4 h-4 mr-2" />
-                Novo Webhook
+                Nova Campanha
               </Button>
             </Link>
           )}
@@ -172,26 +158,26 @@ export default function WebhooksPage() {
             <div className="flex items-center justify-center py-20">
               <div className="animate-spin w-6 h-6 border-2 border-[#25D366] border-t-transparent rounded-full" />
             </div>
-          ) : webhooks.length === 0 ? (
+          ) : campanhas.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 gap-4">
               <div className="w-16 h-16 rounded-2xl bg-[#1E1E2A] flex items-center justify-center">
-                <Webhook className="w-8 h-8 text-[#25D366]" />
+                <Megaphone className="w-8 h-8 text-[#25D366]" />
               </div>
               <div className="text-center">
                 <p className="text-[#F1F1F3] font-semibold text-lg">
-                  {search ? "Nenhum webhook encontrado" : "Nenhum webhook criado"}
+                  {search ? "Nenhuma campanha encontrada" : "Nenhuma campanha criada"}
                 </p>
                 <p className="text-[#8B8B9E] text-sm mt-1">
                   {search
                     ? "Tente ajustar os filtros de busca"
-                    : "Crie um webhook para começar a receber leads"}
+                    : "Crie uma campanha para organizar seus webhooks e leads"}
                 </p>
               </div>
               {!search && canWrite && (
-                <Link href="/admin/webhooks/nova">
+                <Link href="/admin/campanhas/nova">
                   <Button>
                     <Plus className="w-4 h-4 mr-2" />
-                    Criar Webhook
+                    Criar Campanha
                   </Button>
                 </Link>
               )}
@@ -201,69 +187,45 @@ export default function WebhooksPage() {
               <thead>
                 <tr className="border-b border-[#1E1E2A]">
                   <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Nome</th>
-                  <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Campanha</th>
-                  <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">URL Pública</th>
                   <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Status</th>
-                  <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Flows</th>
+                  <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Período</th>
+                  <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Webhooks</th>
                   <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Leads</th>
-                  <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Criado</th>
                   <th className="px-5 py-3" />
                 </tr>
               </thead>
               <tbody>
-                {webhooks.map((wh) => (
-                  <tr key={wh.id} className="border-b border-[#1E1E2A] last:border-0 hover:bg-[#1C1C28] transition-colors">
+                {campanhas.map((c) => (
+                  <tr key={c.id} className="border-b border-[#1E1E2A] last:border-0 hover:bg-[#1C1C28] transition-colors">
                     <td className="px-5 py-4">
-                      <p className="text-[#F1F1F3] font-medium text-sm">{wh.nome}</p>
-                      <p className="text-[#5A5A72] text-xs mt-0.5">por {wh.usuario.nome}</p>
-                    </td>
-                    <td className="px-5 py-4">
-                      {wh.campanha ? (
-                        <div className="flex items-center gap-1.5">
-                          <Megaphone className="w-3.5 h-3.5 text-[#5A5A72]" />
-                          <span className="text-[#C4C4D4] text-sm">{wh.campanha.nome}</span>
-                        </div>
-                      ) : (
-                        <span className="text-[#5A5A72] text-sm">—</span>
+                      <p className="text-[#F1F1F3] font-medium text-sm">{c.nome}</p>
+                      {c.descricao && (
+                        <p className="text-[#5A5A72] text-xs mt-0.5 truncate max-w-xs">{c.descricao}</p>
                       )}
                     </td>
                     <td className="px-5 py-4">
-                      <div className="flex items-center gap-2 max-w-xs">
-                        <span className="text-[#5A5A72] text-xs font-mono truncate flex-1">
-                          {wh.url_publica}
-                        </span>
-                        <button
-                          onClick={() => handleCopy(wh.url_publica, wh.id)}
-                          className="text-[#5A5A72] hover:text-[#25D366] transition-colors shrink-0"
-                          title="Copiar URL"
-                        >
-                          {copiedId === wh.id ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-[#25D366]" />
-                          ) : (
-                            <Copy className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-                      </div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <Badge variant={wh.status === "ativo" ? "ativo" : "inativo"}>
-                        {wh.status === "ativo" ? "Ativo" : "Inativo"}
+                      <Badge variant={c.status === "ativo" ? "ativo" : "inativo"}>
+                        {c.status === "ativo" ? "Ativa" : "Inativa"}
                       </Badge>
                     </td>
                     <td className="px-5 py-4">
+                      <p className="text-[#8B8B9E] text-sm">
+                        {c.data_inicio || c.data_fim
+                          ? `${formatDate(c.data_inicio)} → ${formatDate(c.data_fim)}`
+                          : "—"}
+                      </p>
+                    </td>
+                    <td className="px-5 py-4">
                       <div className="flex items-center gap-1.5">
-                        <GitBranch className="w-3.5 h-3.5 text-[#5A5A72]" />
-                        <span className="text-[#C4C4D4] text-sm">{wh.flows_count}</span>
+                        <Webhook className="w-3.5 h-3.5 text-[#5A5A72]" />
+                        <span className="text-[#C4C4D4] text-sm">{c.webhooks_count}</span>
                       </div>
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-1.5">
                         <Users2 className="w-3.5 h-3.5 text-[#5A5A72]" />
-                        <span className="text-[#C4C4D4] text-sm">{wh.leads_count}</span>
+                        <span className="text-[#C4C4D4] text-sm">{c.leads_count}</span>
                       </div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="text-[#8B8B9E] text-sm">{formatDate(wh.created_at)}</span>
                     </td>
                     <td className="px-5 py-4">
                       <DropdownMenu>
@@ -275,23 +237,21 @@ export default function WebhooksPage() {
                         <DropdownMenuContent align="end">
                           {canWrite && (
                             <DropdownMenuItem asChild>
-                              <Link href={`/admin/webhooks/${wh.id}/editar`}>Editar / Flows</Link>
+                              <Link href={`/admin/campanhas/${c.id}/editar`}>Editar</Link>
                             </DropdownMenuItem>
                           )}
-                          {canToggle && (
-                            <DropdownMenuItem
-                              onClick={() => handleToggle(wh)}
-                              disabled={actionLoading === wh.id + "-toggle"}
-                            >
-                              {wh.status === "ativo" ? "Desativar" : "Ativar"}
-                            </DropdownMenuItem>
-                          )}
+                          <DropdownMenuItem
+                            onClick={() => handleToggle(c)}
+                            disabled={actionLoading === c.id + "-toggle"}
+                          >
+                            {c.status === "ativo" ? "Desativar" : "Ativar"}
+                          </DropdownMenuItem>
                           {canDelete && (
                             <>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 destructive
-                                onClick={() => setDeleteDialog(wh)}
+                                onClick={() => setDeleteDialog(c)}
                               >
                                 Excluir
                               </DropdownMenuItem>
@@ -312,12 +272,12 @@ export default function WebhooksPage() {
       <Dialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Excluir Webhook</DialogTitle>
+            <DialogTitle>Excluir Campanha</DialogTitle>
           </DialogHeader>
           <p className="text-[#8B8B9E] text-sm">
-            Tem certeza que deseja excluir o webhook{" "}
+            Tem certeza que deseja excluir a campanha{" "}
             <span className="text-[#F1F1F3] font-semibold">{deleteDialog?.nome}</span>?
-            Leads já recebidos não serão apagados, mas novos envios para esta URL serão rejeitados.
+            Esta ação não pode ser desfeita. Campanhas com webhooks ativos não podem ser excluídas.
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteDialog(null)}>

@@ -2,17 +2,16 @@
 
 import React, { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { Copy, CheckCircle2, Info } from "lucide-react"
+import { Copy, CheckCircle2 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
 
-interface Conta {
+interface Campanha {
   id: string
   nome: string
-  page_name: string | null
   status: "ativo" | "inativo"
 }
 
@@ -21,12 +20,10 @@ interface WebhookFormProps {
   initialData?: {
     id: string
     nome: string
-    flow_ns: string
-    flow_nome?: string | null
     status: "ativo" | "inativo"
-    conta: { id: string; nome: string }
     url_publica: string
     leads_count?: number
+    campanha: { id: string; nome: string } | null
   }
 }
 
@@ -35,35 +32,33 @@ export function WebhookForm({ mode, initialData }: WebhookFormProps) {
   const router = useRouter()
 
   const [nome, setNome] = useState(initialData?.nome || "")
-  const [contaId, setContaId] = useState(initialData?.conta.id || "")
-  const [flowNs, setFlowNs] = useState(initialData?.flow_ns || "")
-  const [flowNome, setFlowNome] = useState(initialData?.flow_nome || "")
+  const [campanhaId, setCampanhaId] = useState(initialData?.campanha?.id || "")
   const [status, setStatus] = useState<"ativo" | "inativo">(initialData?.status || "ativo")
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [contas, setContas] = useState<Conta[]>([])
-  const [loadingContas, setLoadingContas] = useState(true)
+  const [campanhas, setCampanhas] = useState<Campanha[]>([])
+  const [loadingCampanhas, setLoadingCampanhas] = useState(true)
   const [copied, setCopied] = useState(false)
 
-  const fetchContas = useCallback(async () => {
+  const fetchCampanhas = useCallback(async () => {
     if (!accessToken) return
     try {
-      const res = await fetch("/api/admin/contas?per_page=100&status=ativo", {
+      const res = await fetch("/api/admin/campanhas?per_page=100&status=ativo", {
         headers: { Authorization: `Bearer ${accessToken}` },
       })
       if (!res.ok) return
       const data = await res.json()
-      setContas(data.contas || [])
+      setCampanhas(data.data || [])
     } catch {
       // silently fail
     } finally {
-      setLoadingContas(false)
+      setLoadingCampanhas(false)
     }
   }, [accessToken])
 
   useEffect(() => {
-    fetchContas()
-  }, [fetchContas])
+    fetchCampanhas()
+  }, [fetchCampanhas])
 
   async function handleCopy(text: string) {
     try {
@@ -82,8 +77,6 @@ export function WebhookForm({ mode, initialData }: WebhookFormProps) {
 
     const newErrors: Record<string, string> = {}
     if (!nome.trim()) newErrors.nome = "Nome é obrigatório"
-    if (!contaId) newErrors.conta_id = "Selecione uma conta Manychat"
-    if (!flowNs.trim()) newErrors.flow_ns = "Flow NS é obrigatório"
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
@@ -91,13 +84,10 @@ export function WebhookForm({ mode, initialData }: WebhookFormProps) {
     }
 
     setLoading(true)
-
     try {
       const body: Record<string, unknown> = {
         nome: nome.trim(),
-        conta_id: contaId,
-        flow_ns: flowNs.trim(),
-        flow_nome: flowNome.trim() || undefined,
+        campanha_id: campanhaId || undefined,
         status,
       }
 
@@ -164,7 +154,9 @@ export function WebhookForm({ mode, initialData }: WebhookFormProps) {
             </Button>
           </div>
           {(initialData.leads_count ?? 0) > 0 && (
-            <p className="text-xs text-[#5A5A72]">{initialData.leads_count} lead{initialData.leads_count !== 1 ? "s" : ""} recebido{initialData.leads_count !== 1 ? "s" : ""}</p>
+            <p className="text-xs text-[#5A5A72]">
+              {initialData.leads_count} lead{initialData.leads_count !== 1 ? "s" : ""} recebido{initialData.leads_count !== 1 ? "s" : ""}
+            </p>
           )}
         </div>
       )}
@@ -178,56 +170,29 @@ export function WebhookForm({ mode, initialData }: WebhookFormProps) {
         required
       />
 
-      {/* Conta Manychat Select */}
+      {/* Campanha Select */}
       <div className="space-y-1.5">
-        <label className="text-sm font-medium text-[#C4C4D4]">
-          Conta Manychat <span className="text-[#F87171]">*</span>
-        </label>
-        {loadingContas ? (
+        <label className="text-sm font-medium text-[#C4C4D4]">Campanha (opcional)</label>
+        {loadingCampanhas ? (
           <div className="h-10 rounded-lg border border-[#1E1E2A] bg-[#111118] flex items-center px-3">
-            <span className="text-[#5A5A72] text-sm">Carregando contas...</span>
-          </div>
-        ) : contas.length === 0 ? (
-          <div className="h-10 rounded-lg border border-[#F87171]/30 bg-[#2A1616] flex items-center px-3 gap-2">
-            <Info className="w-4 h-4 text-[#F87171] shrink-0" />
-            <span className="text-[#F87171] text-sm">Nenhuma conta ativa. Crie uma em Manychat primeiro.</span>
+            <span className="text-[#5A5A72] text-sm">Carregando campanhas...</span>
           </div>
         ) : (
           <select
-            value={contaId}
-            onChange={(e) => setContaId(e.target.value)}
+            value={campanhaId}
+            onChange={(e) => setCampanhaId(e.target.value)}
             className="w-full h-10 px-3 rounded-lg border border-[#1E1E2A] bg-[#111118] text-sm text-[#F1F1F3] focus:outline-none focus:border-[#25D366] transition-colors"
           >
-            <option value="" className="text-[#5A5A72]">Selecione uma conta...</option>
-            {contas.map((c) => (
-              <option key={c.id} value={c.id} className="text-[#F1F1F3]">
-                {c.nome}{c.page_name ? ` — ${c.page_name}` : ""}
+            <option value="">Sem campanha</option>
+            {campanhas.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nome}
               </option>
             ))}
           </select>
         )}
-        {errors.conta_id && (
-          <p className="text-xs text-[#F87171]">{errors.conta_id}</p>
-        )}
+        <p className="text-xs text-[#5A5A72]">Agrupa este webhook em uma campanha/lançamento</p>
       </div>
-
-      <Input
-        label="Flow NS"
-        placeholder="Ex: content20210501abc123..."
-        value={flowNs}
-        onChange={(e) => setFlowNs(e.target.value)}
-        error={errors.flow_ns}
-        helperText="Encontre o NS no Manychat: Automação → Flows → clique no flow → copie o NS da URL"
-        required
-      />
-
-      <Input
-        label="Nome do Flow (opcional)"
-        placeholder="Ex: Flow Perseguição Produto X"
-        value={flowNome}
-        onChange={(e) => setFlowNome(e.target.value)}
-        helperText="Apenas para referência interna"
-      />
 
       <div className="flex items-center justify-between p-4 bg-[#111118] border border-[#1E1E2A] rounded-lg">
         <div>
@@ -246,14 +211,10 @@ export function WebhookForm({ mode, initialData }: WebhookFormProps) {
         <Button type="button" variant="outline" onClick={() => router.back()} disabled={loading}>
           Cancelar
         </Button>
-        <Button type="submit" loading={loading} className="flex-1" disabled={contas.length === 0 && !loadingContas}>
+        <Button type="submit" loading={loading} className="flex-1">
           {loading
-            ? mode === "create"
-              ? "Criando..."
-              : "Salvando..."
-            : mode === "create"
-              ? "Criar Webhook"
-              : "Salvar Alterações"}
+            ? mode === "create" ? "Criando..." : "Salvando..."
+            : mode === "create" ? "Criar Webhook" : "Salvar Alterações"}
         </Button>
       </div>
     </form>

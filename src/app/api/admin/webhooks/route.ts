@@ -7,9 +7,7 @@ import { listarWebhooks, criarWebhook } from "@/lib/services/webhooks.service"
 
 const createWebhookSchema = z.object({
   nome: z.string().min(1, "Nome é obrigatório").max(100),
-  conta_id: z.string().uuid("Conta inválida"),
-  flow_ns: z.string().min(1, "Flow NS é obrigatório"),
-  flow_nome: z.string().max(200).optional(),
+  campanha_id: z.string().uuid().optional(),
   status: z.enum(["ativo", "inativo"]).optional().default("ativo"),
 })
 
@@ -27,6 +25,7 @@ export async function GET(request: NextRequest) {
       page: parseInt(searchParams.get("page") || "1", 10),
       perPage: parseInt(searchParams.get("per_page") || "20", 10),
       search: searchParams.get("q") || "",
+      campanhaId: searchParams.get("campanha_id") || "",
     })
 
     return ok(result)

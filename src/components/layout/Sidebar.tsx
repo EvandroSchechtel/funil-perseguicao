@@ -3,7 +3,7 @@
 import React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Webhook, Users2, Zap, Shield, User, LogOut, Bot } from "lucide-react"
+import { LayoutDashboard, Webhook, Users2, Zap, Shield, User, LogOut, Bot, Megaphone } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -22,6 +22,12 @@ const navItems: NavItem[] = [
     label: "Dashboard",
     href: "/admin",
     icon: <LayoutDashboard className="w-5 h-5" />,
+  },
+  {
+    label: "Campanhas",
+    href: "/admin/campanhas",
+    icon: <Megaphone className="w-5 h-5" />,
+    requiredRoles: ["super_admin", "admin", "operador"],
   },
   {
     label: "Webhooks",
@@ -83,7 +89,6 @@ export function Sidebar() {
   })
 
   function isActive(href: string): boolean {
-    // Dashboard: exact match only
     if (href === "/admin") return pathname === "/admin"
     return pathname.startsWith(href)
   }
@@ -104,7 +109,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
         {visibleItems.map((item) => {
           const active = isActive(item.href)
           return (
