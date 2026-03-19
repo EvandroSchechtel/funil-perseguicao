@@ -1,4 +1,17 @@
 import { NextResponse } from "next/server"
+import { ServiceError } from "@/lib/services/errors"
+
+export function handleServiceError(err: unknown) {
+  if (err instanceof ServiceError) {
+    switch (err.code) {
+      case "not_found": return notFound(err.message)
+      case "bad_request": return badRequest(err.message)
+      case "conflict": return conflict(err.message)
+      case "forbidden": return forbidden(err.message)
+    }
+  }
+  return null
+}
 
 export function ok<T>(data: T, status = 200) {
   return NextResponse.json(data, { status })

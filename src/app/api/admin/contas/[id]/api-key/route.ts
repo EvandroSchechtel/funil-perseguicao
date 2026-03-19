@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server"
-import { prisma } from "@/lib/db/prisma"
 import { getAuthContext } from "@/lib/api/auth-guard"
 import { hasPermission, type Role } from "@/lib/auth/rbac"
-import { ok, forbidden, notFound, serverError } from "@/lib/api/response"
+import { ok, forbidden, serverError, handleServiceError } from "@/lib/api/response"
+import { revelarApiKey } from "@/lib/services/contas.service"
 
 // GET /api/admin/contas/[id]/api-key — revela a API key completa (requer api_keys:reveal)
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -14,17 +14,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!hasPermission(user.role as Role, "api_keys:reveal")) return forbidden("Sem permissão para revelar API keys.")
 
     const { id } = await params
-
-    const conta = await prisma.contaManychat.findFirst({
-      where: { id, deleted_at: null },
-      select: { id: true, nome: true, api_key: true },
-    })
-
-    if (!conta) return notFound("Conta não encontrada.")
-
-    return ok({ api_key: conta.api_key })
+    const result = await revelarApiKey(id)
+    return ok(result)
   } catch (error) {
     console.error("[GET /api/admin/contas/[id]/api-key]", error)
-    return serverError()
+    return handleServiceError(error) ?? serverError()
   }
 }

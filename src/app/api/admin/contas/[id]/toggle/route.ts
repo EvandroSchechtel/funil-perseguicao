@@ -1,10 +1,10 @@
 import { NextRequest } from "next/server"
-import { prisma } from "@/lib/db/prisma"
 import { getAuthContext } from "@/lib/api/auth-guard"
 import { hasPermission, type Role } from "@/lib/auth/rbac"
-import { ok, forbidden, notFound, serverError } from "@/lib/api/response"
+import { ok, forbidden, serverError, handleServiceError } from "@/lib/api/response"
+import { toggleConta } from "@/lib/services/contas.service"
 
-// PATCH /api/admin/contas/[id]/toggle — ativar / desativar
+// PATCH /api/admin/contas/[id]/toggle
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const ctxResult = await getAuthContext(request)
@@ -14,24 +14,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (!hasPermission(user.role as Role, "contas:write")) return forbidden("Sem permissão.")
 
     const { id } = await params
-
-    const existing = await prisma.contaManychat.findFirst({ where: { id, deleted_at: null } })
-    if (!existing) return notFound("Conta não encontrada.")
-
-    const novoStatus = existing.status === "ativo" ? "inativo" : "ativo"
-
-    const conta = await prisma.contaManychat.update({
-      where: { id },
-      data: { status: novoStatus },
-      select: { id: true, status: true },
-    })
-
-    return ok({
-      conta,
-      message: `Conta ${novoStatus === "ativo" ? "ativada" : "desativada"} com sucesso.`,
-    })
+    const result = await toggleConta(id)
+    return ok(result)
   } catch (error) {
     console.error("[PATCH /api/admin/contas/[id]/toggle]", error)
-    return serverError()
+    return handleServiceError(error) ?? serverError()
   }
 }

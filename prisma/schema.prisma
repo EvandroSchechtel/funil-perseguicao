@@ -1,5 +1,5 @@
 // Prisma Schema — Funil Perseguição
-// Phase 2: + Webhook, Lead
+// Phase 3: + AgentSessao, AgentAcao
 
 generator client {
   provider = "prisma-client"
@@ -47,6 +47,7 @@ model Usuario {
   password_reset_tokens PasswordResetToken[]
   contas_manychat       ContaManychat[]
   webhooks              Webhook[]
+  agent_sessoes         AgentSessao[]
 
   @@map("usuarios")
 }
@@ -128,4 +129,39 @@ model Lead {
   updated_at    DateTime   @updatedAt
 
   @@map("leads")
+}
+
+enum AgentSessaoStatus {
+  executando
+  concluido
+  erro
+}
+
+model AgentSessao {
+  id         String            @id @default(uuid())
+  usuario_id String
+  usuario    Usuario           @relation(fields: [usuario_id], references: [id])
+  prompt     String
+  resposta   String?
+  status     AgentSessaoStatus @default(executando)
+  created_at DateTime          @default(now())
+  updated_at DateTime          @updatedAt
+
+  acoes      AgentAcao[]
+
+  @@map("agent_sessoes")
+}
+
+model AgentAcao {
+  id         String      @id @default(uuid())
+  sessao_id  String
+  sessao     AgentSessao @relation(fields: [sessao_id], references: [id])
+  tool_name  String
+  args       Json
+  resultado  Json?
+  erro       String?
+  ordem      Int
+  created_at DateTime    @default(now())
+
+  @@map("agent_acoes")
 }

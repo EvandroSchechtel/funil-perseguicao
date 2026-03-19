@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server"
-import { prisma } from "@/lib/db/prisma"
 import { getAuthContext } from "@/lib/api/auth-guard"
 import { hasPermission, type Role } from "@/lib/auth/rbac"
-import { ok, forbidden, notFound, serverError } from "@/lib/api/response"
+import { ok, forbidden, serverError, handleServiceError } from "@/lib/api/response"
+import { toggleWebhook } from "@/lib/services/webhooks.service"
 
 // PATCH /api/admin/webhooks/[id]/toggle
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -14,24 +14,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (!hasPermission(user.role as Role, "webhooks:toggle")) return forbidden("Sem permissão.")
 
     const { id } = await params
-
-    const existing = await prisma.webhook.findFirst({ where: { id, deleted_at: null } })
-    if (!existing) return notFound("Webhook não encontrado.")
-
-    const novoStatus = existing.status === "ativo" ? "inativo" : "ativo"
-
-    const webhook = await prisma.webhook.update({
-      where: { id },
-      data: { status: novoStatus },
-      select: { id: true, status: true },
-    })
-
-    return ok({
-      webhook,
-      message: `Webhook ${novoStatus === "ativo" ? "ativado" : "desativado"} com sucesso.`,
-    })
+    const result = await toggleWebhook(id)
+    return ok(result)
   } catch (error) {
     console.error("[PATCH /api/admin/webhooks/[id]/toggle]", error)
-    return serverError()
+    return handleServiceError(error) ?? serverError()
   }
 }

@@ -3,7 +3,7 @@
 import React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Webhook, Users2, Zap, Shield, User, LogOut } from "lucide-react"
+import { LayoutDashboard, Webhook, Users2, Zap, Shield, User, LogOut, Bot } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -46,6 +46,12 @@ const navItems: NavItem[] = [
     href: "/admin/usuarios",
     icon: <Shield className="w-5 h-5" />,
     requiredRoles: ["super_admin"],
+  },
+  {
+    label: "Agente IA",
+    href: "/admin/agente",
+    icon: <Bot className="w-5 h-5" />,
+    requiredRoles: ["super_admin", "admin", "operador"],
   },
 ]
 

@@ -1,11 +1,8 @@
 import { NextRequest } from "next/server"
 import { z } from "zod"
-import bcrypt from "bcryptjs"
-import { prisma } from "@/lib/db/prisma"
 import { requireRoles } from "@/lib/api/auth-guard"
-import { sendEmail } from "@/lib/email"
-import { boasVindasTemplate } from "@/lib/email/templates/boas-vindas"
-import { ok, created, badRequest, conflict, serverError } from "@/lib/api/response"
+import { ok, created, badRequest, serverError, handleServiceError } from "@/lib/api/response"
+import { listarUsuarios, criarUsuario } from "@/lib/services/usuarios.service"
 
 // GET — list users
 export async function GET(request: NextRequest) {
@@ -14,54 +11,17 @@ export async function GET(request: NextRequest) {
     if ("error" in result) return result.error
 
     const { searchParams } = request.nextUrl
-    const page = parseInt(searchParams.get("page") || "1", 10)
-    const perPage = parseInt(searchParams.get("per_page") || "20", 10)
-    const search = searchParams.get("q") || ""
-    const role = searchParams.get("role") || ""
-
-    const where = {
-      deleted_at: null,
-      ...(search && {
-        OR: [
-          { nome: { contains: search, mode: "insensitive" as const } },
-          { email: { contains: search, mode: "insensitive" as const } },
-        ],
-      }),
-      ...(role && role !== "all" && { role: role as "super_admin" | "admin" | "operador" | "viewer" }),
-    }
-
-    const [total, usuarios] = await Promise.all([
-      prisma.usuario.count({ where }),
-      prisma.usuario.findMany({
-        where,
-        select: {
-          id: true,
-          nome: true,
-          email: true,
-          role: true,
-          avatar_url: true,
-          status: true,
-          ultimo_login: true,
-          created_at: true,
-        },
-        orderBy: { created_at: "desc" },
-        skip: (page - 1) * perPage,
-        take: perPage,
-      }),
-    ])
-
-    return ok({
-      data: usuarios,
-      meta: {
-        current_page: page,
-        per_page: perPage,
-        total,
-        total_pages: Math.ceil(total / perPage),
-      },
+    const data = await listarUsuarios({
+      page: parseInt(searchParams.get("page") || "1", 10),
+      perPage: parseInt(searchParams.get("per_page") || "20", 10),
+      search: searchParams.get("q") || "",
+      role: searchParams.get("role") || "",
     })
+
+    return ok(data)
   } catch (error) {
     console.error("[GET /api/admin/usuarios]", error)
-    return serverError()
+    return handleServiceError(error) ?? serverError()
   }
 }
 
@@ -82,54 +42,14 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const parsed = createSchema.safeParse(body)
-
     if (!parsed.success) {
       return badRequest("Dados inválidos", parsed.error.flatten().fieldErrors as Record<string, string[]>)
     }
 
-    const { nome, email, senha, role, status, force_password_change } = parsed.data
-
-    const exists = await prisma.usuario.findFirst({
-      where: { email: email.toLowerCase(), deleted_at: null },
-    })
-
-    if (exists) {
-      return conflict("Já existe um usuário com este email.")
-    }
-
-    const hashedPassword = await bcrypt.hash(senha, 12)
-
-    const usuario = await prisma.usuario.create({
-      data: {
-        nome,
-        email: email.toLowerCase(),
-        senha: hashedPassword,
-        role,
-        status,
-        force_password_change,
-      },
-      select: {
-        id: true,
-        nome: true,
-        email: true,
-        role: true,
-        status: true,
-        force_password_change: true,
-        created_at: true,
-      },
-    })
-
-    // Send welcome email
-    const template = boasVindasTemplate({
-      nome,
-      email: email.toLowerCase(),
-      senhaTemporaria: force_password_change ? senha : undefined,
-    })
-    await sendEmail({ to: email, subject: template.subject, html: template.html, text: template.text })
-
-    return created({ data: usuario })
+    const data = await criarUsuario(parsed.data)
+    return created(data)
   } catch (error) {
     console.error("[POST /api/admin/usuarios]", error)
-    return serverError()
+    return handleServiceError(error) ?? serverError()
   }
 }
