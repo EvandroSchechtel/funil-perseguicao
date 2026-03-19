@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
-import { Plus, Search, Megaphone, MoreHorizontal, Users2, Webhook } from "lucide-react"
+import { Plus, Search, Megaphone, MoreHorizontal, Users2, Webhook, Building2 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
 import { Button } from "@/components/ui/button"
@@ -30,6 +30,7 @@ interface CampanhaItem {
   leads_count: number
   created_at: string
   usuario: { nome: string }
+  cliente: { id: string; nome: string } | null
 }
 
 export default function CampanhasPage() {
@@ -187,6 +188,7 @@ export default function CampanhasPage() {
               <thead>
                 <tr className="border-b border-[#1E1E2A]">
                   <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Nome</th>
+                  <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Cliente</th>
                   <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Status</th>
                   <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Período</th>
                   <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Webhooks</th>
@@ -201,6 +203,16 @@ export default function CampanhasPage() {
                       <p className="text-[#F1F1F3] font-medium text-sm">{c.nome}</p>
                       {c.descricao && (
                         <p className="text-[#5A5A72] text-xs mt-0.5 truncate max-w-xs">{c.descricao}</p>
+                      )}
+                    </td>
+                    <td className="px-5 py-4">
+                      {c.cliente ? (
+                        <div className="flex items-center gap-1.5">
+                          <Building2 className="w-3.5 h-3.5 text-[#5A5A72]" />
+                          <span className="text-[#C4C4D4] text-sm">{c.cliente.nome}</span>
+                        </div>
+                      ) : (
+                        <span className="text-[#5A5A72] text-sm">—</span>
                       )}
                     </td>
                     <td className="px-5 py-4">

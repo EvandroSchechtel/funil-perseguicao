@@ -35,6 +35,7 @@ export async function listarCampanhas(params: ListCampanhasParams = {}) {
         data_fim: true,
         created_at: true,
         usuario: { select: { nome: true } },
+        cliente: { select: { id: true, nome: true } },
         _count: { select: { webhooks: true, leads: true } },
       },
       orderBy: { created_at: "desc" },
@@ -69,6 +70,7 @@ export async function buscarCampanha(id: string) {
       created_at: true,
       updated_at: true,
       usuario: { select: { nome: true } },
+      cliente: { select: { id: true, nome: true } },
       _count: { select: { webhooks: true, leads: true } },
     },
   })
@@ -90,30 +92,54 @@ export interface CriarCampanhaParams {
   descricao?: string
   data_inicio?: Date
   data_fim?: Date
+  cliente_id?: string
   userId: string
 }
 
-export async function criarCampanha({ nome, descricao, data_inicio, data_fim, userId }: CriarCampanhaParams) {
-  const campanha = await prisma.campanha.create({
-    data: {
-      nome,
-      descricao: descricao || null,
-      data_inicio: data_inicio || null,
-      data_fim: data_fim || null,
-      created_by: userId,
-    },
-    select: {
-      id: true,
-      nome: true,
-      descricao: true,
-      status: true,
-      data_inicio: true,
-      data_fim: true,
-      created_at: true,
-    },
+export async function criarCampanha({ nome, descricao, data_inicio, data_fim, cliente_id, userId }: CriarCampanhaParams) {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || ""
+
+  const result = await prisma.$transaction(async (tx) => {
+    const campanha = await tx.campanha.create({
+      data: {
+        nome,
+        descricao: descricao || null,
+        data_inicio: data_inicio || null,
+        data_fim: data_fim || null,
+        cliente_id: cliente_id || null,
+        created_by: userId,
+      },
+      select: {
+        id: true,
+        nome: true,
+        descricao: true,
+        status: true,
+        data_inicio: true,
+        data_fim: true,
+        created_at: true,
+      },
+    })
+
+    const webhook = await tx.webhook.create({
+      data: {
+        nome,
+        campanha_id: campanha.id,
+        created_by: userId,
+      },
+      select: { id: true, token: true },
+    })
+
+    return { campanha, webhook }
   })
 
-  return { data: campanha, message: "Campanha criada com sucesso." }
+  return {
+    data: result.campanha,
+    webhook: {
+      id: result.webhook.id,
+      url_publica: `${appUrl}/api/webhook/${result.webhook.token}`,
+    },
+    message: "Campanha criada com sucesso.",
+  }
 }
 
 export interface AtualizarCampanhaParams {
@@ -122,13 +148,14 @@ export interface AtualizarCampanhaParams {
   data_inicio?: Date | null
   data_fim?: Date | null
   status?: "ativo" | "inativo"
+  cliente_id?: string | null
 }
 
 export async function atualizarCampanha(id: string, params: AtualizarCampanhaParams) {
   const existing = await prisma.campanha.findFirst({ where: { id, deleted_at: null } })
   if (!existing) throw new ServiceError("not_found", "Campanha não encontrada.")
 
-  const { nome, descricao, data_inicio, data_fim, status } = params
+  const { nome, descricao, data_inicio, data_fim, status, cliente_id } = params
 
   const campanha = await prisma.campanha.update({
     where: { id },
@@ -138,6 +165,7 @@ export async function atualizarCampanha(id: string, params: AtualizarCampanhaPar
       ...(data_inicio !== undefined && { data_inicio }),
       ...(data_fim !== undefined && { data_fim }),
       ...(status !== undefined && { status }),
+      ...(cliente_id !== undefined && { cliente_id }),
     },
     select: {
       id: true,

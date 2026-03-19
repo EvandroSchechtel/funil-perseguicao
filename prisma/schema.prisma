@@ -54,6 +54,7 @@ model Usuario {
 
   refresh_tokens        RefreshToken[]
   password_reset_tokens PasswordResetToken[]
+  clientes              Cliente[]
   contas_manychat       ContaManychat[]
   campanhas             Campanha[]
   webhooks              Webhook[]
@@ -86,6 +87,25 @@ model PasswordResetToken {
   @@map("password_reset_tokens")
 }
 
+// ── Clientes ──────────────────────────────────────────────────────────────────
+
+model Cliente {
+  id         String    @id @default(uuid())
+  nome       String
+  email      String?
+  telefone   String?
+  created_by String
+  usuario    Usuario   @relation(fields: [created_by], references: [id])
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  contas_manychat ContaManychat[]
+  campanhas       Campanha[]
+
+  @@map("clientes")
+}
+
 // ── Manychat ──────────────────────────────────────────────────────────────────
 
 model ContaManychat {
@@ -98,6 +118,8 @@ model ContaManychat {
   ultimo_sync DateTime?
   created_by  String
   usuario     Usuario   @relation(fields: [created_by], references: [id])
+  cliente_id  String?
+  cliente     Cliente?  @relation(fields: [cliente_id], references: [id])
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
   deleted_at  DateTime?
@@ -118,6 +140,8 @@ model Campanha {
   data_fim    DateTime?
   created_by  String
   usuario     Usuario   @relation(fields: [created_by], references: [id])
+  cliente_id  String?
+  cliente     Cliente?  @relation(fields: [cliente_id], references: [id])
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
   deleted_at  DateTime?
