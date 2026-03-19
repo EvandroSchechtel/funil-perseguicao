@@ -62,6 +62,7 @@ export async function buscarWebhook(id: string) {
       nome: true,
       token: true,
       status: true,
+      campanha_id: true,
       created_at: true,
       updated_at: true,
       campanha: { select: { id: true, nome: true } },

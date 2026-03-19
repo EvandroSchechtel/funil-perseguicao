@@ -35,6 +35,7 @@ interface Conta {
 interface WebhookData {
   id: string
   nome: string
+  token: string
   status: "ativo" | "inativo"
   url_publica: string
   leads_count: number
@@ -219,7 +220,7 @@ export default function EditarWebhookPage() {
     setTesteLoading(true)
     setTesteResultado(null)
     try {
-      const res = await fetch(webhook!.url_publica, {
+      const res = await fetch(`/api/webhook/${webhook!.token}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nome: testeNome.trim(), telefone: testeTelefone.trim() }),
