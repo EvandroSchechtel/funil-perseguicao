@@ -2,7 +2,10 @@
 
 import React, { useEffect, useState, useCallback } from "react"
 import { useParams } from "next/navigation"
-import { Plus, Trash2, ToggleLeft, ToggleRight, GripVertical, Info } from "lucide-react"
+import {
+  Plus, Trash2, ToggleLeft, ToggleRight, GripVertical, Info,
+  FlaskConical, CheckCircle2, XCircle, Loader2
+} from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Header } from "@/components/layout/Header"
 import { WebhookForm } from "@/components/admin/WebhookForm"
@@ -39,15 +42,17 @@ interface WebhookData {
   webhook_flows: Flow[]
 }
 
+type TesteResultado = { ok: true; lead_id: string } | { ok: false; message: string } | null
+
 export default function EditarWebhookPage() {
   const { id } = useParams<{ id: string }>()
   const { accessToken } = useAuth()
   const [webhook, setWebhook] = useState<WebhookData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
-  // Flows state
   const [flows, setFlows] = useState<Flow[]>([])
+
+  // Add flow dialog
   const [showAddFlow, setShowAddFlow] = useState(false)
   const [contas, setContas] = useState<Conta[]>([])
   const [loadingContas, setLoadingContas] = useState(false)
@@ -58,6 +63,14 @@ export default function EditarWebhookPage() {
   const [flowErrors, setFlowErrors] = useState<Record<string, string>>({})
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [deleteFlowDialog, setDeleteFlowDialog] = useState<Flow | null>(null)
+
+  // Test dialog
+  const [showTeste, setShowTeste] = useState(false)
+  const [testeNome, setTesteNome] = useState("")
+  const [testeTelefone, setTesteTelefone] = useState("")
+  const [testeLoading, setTesteLoading] = useState(false)
+  const [testeErrors, setTesteErrors] = useState<Record<string, string>>({})
+  const [testeResultado, setTesteResultado] = useState<TesteResultado>(null)
 
   const fetchWebhook = useCallback(async () => {
     if (!accessToken || !id) return
@@ -120,10 +133,7 @@ export default function EditarWebhookPage() {
     try {
       const res = await fetch(`/api/admin/webhooks/${id}/flows`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify({
           conta_id: flowContaId,
           flow_ns: flowNs.trim(),
@@ -150,10 +160,7 @@ export default function EditarWebhookPage() {
     try {
       const res = await fetch(`/api/admin/webhooks/${id}/flows/${flow.id}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify({ status: flow.status === "ativo" ? "inativo" : "ativo" }),
       })
       const data = await res.json()
@@ -192,6 +199,47 @@ export default function EditarWebhookPage() {
     }
   }
 
+  function handleOpenTeste() {
+    setShowTeste(true)
+    setTesteNome("")
+    setTesteTelefone("")
+    setTesteErrors({})
+    setTesteResultado(null)
+  }
+
+  async function handleEnviarTeste() {
+    const newErrors: Record<string, string> = {}
+    if (!testeNome.trim()) newErrors.nome = "Nome é obrigatório"
+    if (!testeTelefone.trim()) newErrors.telefone = "Telefone é obrigatório"
+    if (Object.keys(newErrors).length > 0) {
+      setTesteErrors(newErrors)
+      return
+    }
+
+    setTesteLoading(true)
+    setTesteResultado(null)
+    try {
+      const res = await fetch(webhook!.url_publica, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nome: testeNome.trim(), telefone: testeTelefone.trim() }),
+      })
+      const data = await res.json()
+      if (res.ok && data.ok) {
+        setTesteResultado({ ok: true, lead_id: data.lead_id })
+        fetchWebhook() // refresh total_enviados
+      } else {
+        setTesteResultado({ ok: false, message: data.message || "Erro ao processar." })
+      }
+    } catch {
+      setTesteResultado({ ok: false, message: "Erro de rede ao enviar." })
+    } finally {
+      setTesteLoading(false)
+    }
+  }
+
+  const activeFlows = flows.filter((f) => f.status === "ativo")
+
   return (
     <div className="flex flex-col h-full">
       <Header
@@ -209,7 +257,6 @@ export default function EditarWebhookPage() {
             <h1 className="text-[#F1F1F3] text-2xl font-bold">Editar Webhook</h1>
             <p className="text-[#8B8B9E] text-sm mt-1">Atualize as configurações do webhook</p>
           </div>
-
           <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-6">
             {loading ? (
               <div className="flex items-center justify-center py-10">
@@ -232,13 +279,21 @@ export default function EditarWebhookPage() {
               <div>
                 <h2 className="text-[#F1F1F3] text-lg font-semibold">Flows Manychat</h2>
                 <p className="text-[#8B8B9E] text-sm mt-0.5">
-                  Leads são distribuídos em round-robin entre os flows ativos
+                  Leads distribuídos em round-robin entre os flows ativos
                 </p>
               </div>
-              <Button size="sm" onClick={handleOpenAddFlow}>
-                <Plus className="w-4 h-4 mr-1.5" />
-                Adicionar Flow
-              </Button>
+              <div className="flex gap-2">
+                {activeFlows.length > 0 && (
+                  <Button size="sm" variant="outline" onClick={handleOpenTeste}>
+                    <FlaskConical className="w-4 h-4 mr-1.5" />
+                    Testar
+                  </Button>
+                )}
+                <Button size="sm" onClick={handleOpenAddFlow}>
+                  <Plus className="w-4 h-4 mr-1.5" />
+                  Adicionar Flow
+                </Button>
+              </div>
             </div>
 
             <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-hidden">
@@ -323,15 +378,13 @@ export default function EditarWebhookPage() {
         )}
       </div>
 
-      {/* Add Flow Dialog */}
+      {/* ── Add Flow Dialog ── */}
       <Dialog open={showAddFlow} onOpenChange={setShowAddFlow}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Adicionar Flow</DialogTitle>
           </DialogHeader>
-
           <div className="space-y-4 py-2">
-            {/* Conta Select */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-[#C4C4D4]">
                 Conta Manychat <span className="text-[#F87171]">*</span>
@@ -359,11 +412,8 @@ export default function EditarWebhookPage() {
                   ))}
                 </select>
               )}
-              {flowErrors.conta_id && (
-                <p className="text-xs text-[#F87171]">{flowErrors.conta_id}</p>
-              )}
+              {flowErrors.conta_id && <p className="text-xs text-[#F87171]">{flowErrors.conta_id}</p>}
             </div>
-
             <Input
               label="Flow NS"
               placeholder="Ex: content20210501abc123..."
@@ -373,7 +423,6 @@ export default function EditarWebhookPage() {
               helperText="Automação → Flows → clique no flow → copie o NS da URL"
               required
             />
-
             <Input
               label="Nome do Flow (opcional)"
               placeholder="Ex: Flow Perseguição Produto X"
@@ -382,19 +431,14 @@ export default function EditarWebhookPage() {
               helperText="Apenas para referência interna"
             />
           </div>
-
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddFlow(false)} disabled={addLoading}>
-              Cancelar
-            </Button>
-            <Button onClick={handleAddFlow} loading={addLoading}>
-              Adicionar Flow
-            </Button>
+            <Button variant="outline" onClick={() => setShowAddFlow(false)} disabled={addLoading}>Cancelar</Button>
+            <Button onClick={handleAddFlow} loading={addLoading}>Adicionar Flow</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Flow Dialog */}
+      {/* ── Delete Flow Dialog ── */}
       <Dialog open={!!deleteFlowDialog} onOpenChange={() => setDeleteFlowDialog(null)}>
         <DialogContent>
           <DialogHeader>
@@ -405,13 +449,11 @@ export default function EditarWebhookPage() {
             <span className="text-[#F1F1F3] font-semibold">
               {deleteFlowDialog?.flow_nome || deleteFlowDialog?.flow_ns}
             </span>{" "}
-            da conta <span className="text-[#F1F1F3] font-semibold">{deleteFlowDialog?.conta.nome}</span>?
-            Leads já processados não serão afetados.
+            da conta{" "}
+            <span className="text-[#F1F1F3] font-semibold">{deleteFlowDialog?.conta.nome}</span>?
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteFlowDialog(null)}>
-              Cancelar
-            </Button>
+            <Button variant="outline" onClick={() => setDeleteFlowDialog(null)}>Cancelar</Button>
             <Button
               variant="destructive"
               onClick={() => deleteFlowDialog && handleDeleteFlow(deleteFlowDialog)}
@@ -420,6 +462,118 @@ export default function EditarWebhookPage() {
               Remover
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Test Webhook Dialog ── */}
+      <Dialog open={showTeste} onOpenChange={(open) => { setShowTeste(open); if (!open) setTesteResultado(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FlaskConical className="w-5 h-5 text-[#25D366]" />
+              Testar Webhook
+            </DialogTitle>
+          </DialogHeader>
+
+          {testeResultado ? (
+            /* ── Resultado do teste ── */
+            <div className="py-4 space-y-4">
+              {testeResultado.ok ? (
+                <div className="flex flex-col items-center gap-3 py-4">
+                  <div className="w-14 h-14 rounded-full bg-[rgba(37,211,102,0.15)] flex items-center justify-center">
+                    <CheckCircle2 className="w-8 h-8 text-[#25D366]" />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[#F1F1F3] font-semibold">Lead enviado com sucesso!</p>
+                    <p className="text-[#8B8B9E] text-sm mt-1">
+                      O flow será disparado pelo worker em instantes.
+                    </p>
+                    <p className="text-[#5A5A72] text-xs mt-2 font-mono">
+                      Lead ID: {testeResultado.lead_id}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-3 py-4">
+                  <div className="w-14 h-14 rounded-full bg-[rgba(248,113,113,0.15)] flex items-center justify-center">
+                    <XCircle className="w-8 h-8 text-[#F87171]" />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[#F1F1F3] font-semibold">Falha no envio</p>
+                    <p className="text-[#F87171] text-sm mt-1">{testeResultado.message}</p>
+                  </div>
+                </div>
+              )}
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setTesteResultado(null)} className="flex-1">
+                  Testar novamente
+                </Button>
+                <Button onClick={() => setShowTeste(false)} className="flex-1">
+                  Fechar
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            /* ── Formulário de teste ── */
+            <div className="space-y-4 py-2">
+              <p className="text-[#8B8B9E] text-sm">
+                Preencha os dados abaixo. Um lead real será criado e o flow será disparado via Manychat.
+              </p>
+
+              {/* Flow que vai receber */}
+              {activeFlows.length > 0 && (
+                <div className="bg-[#111118] border border-[#1E1E2A] rounded-lg px-4 py-3">
+                  <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold mb-1">Flow que receberá</p>
+                  <p className="text-[#C4C4D4] text-sm font-medium">{activeFlows[0].conta.nome}</p>
+                  <p className="text-[#5A5A72] text-xs font-mono mt-0.5">
+                    {activeFlows[0].flow_nome || activeFlows[0].flow_ns}
+                  </p>
+                  {activeFlows.length > 1 && (
+                    <p className="text-[#5A5A72] text-xs mt-1">
+                      +{activeFlows.length - 1} flow(s) no round-robin
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <Input
+                label="Nome"
+                placeholder="Ex: João Silva"
+                value={testeNome}
+                onChange={(e) => setTesteNome(e.target.value)}
+                error={testeErrors.nome}
+                required
+              />
+              <Input
+                label="Telefone"
+                placeholder="Ex: 11999999999"
+                value={testeTelefone}
+                onChange={(e) => setTesteTelefone(e.target.value)}
+                error={testeErrors.telefone}
+                helperText="Número que será enviado ao Manychat"
+                required
+              />
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowTeste(false)} disabled={testeLoading}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleEnviarTeste} disabled={testeLoading}>
+                  {testeLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Enviando...
+                    </>
+                  ) : (
+                    <>
+                      <FlaskConical className="w-4 h-4 mr-2" />
+                      Enviar Teste
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
