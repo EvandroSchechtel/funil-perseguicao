@@ -8,6 +8,7 @@ import { executeTool } from "@/lib/agent/executor"
 import { formatSSE, SSE_HEADERS } from "@/lib/agent/stream"
 import { AGENT_SYSTEM_PROMPT } from "@/lib/agent/prompt"
 import { prisma } from "@/lib/db/prisma"
+import { Prisma } from "@/generated/prisma/client"
 
 const bodySchema = z.object({
   prompt: z.string().min(1).max(4000),
@@ -154,7 +155,7 @@ async function runAgentLoop({ prompt, userId, sessaoId, emit }: LoopParams) {
           sessao_id: sessaoId,
           tool_name: toolUse.name,
           args: args as object,
-          resultado: result.ok ? (result.data as object) : null,
+          resultado: result.ok ? (result.data as Prisma.InputJsonValue) : Prisma.JsonNull,
           erro: result.error ?? null,
           ordem: ordem++,
         },

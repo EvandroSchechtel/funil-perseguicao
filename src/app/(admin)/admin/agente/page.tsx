@@ -214,8 +214,9 @@ export default function AgentePage() {
           if (c.id !== convId) return c
           const steps = [...c.steps]
           for (let i = steps.length - 1; i >= 0; i--) {
-            if (steps[i].type === "tool" && !steps[i].result) {
-              steps[i] = { ...steps[i], result } as StepToolCall
+            const step = steps[i]
+            if (step.type === "tool" && !step.result) {
+              steps[i] = { ...step, result }
               break
             }
           }
