@@ -165,7 +165,7 @@ export default function ClientesPage() {
                             {c.nome.charAt(0).toUpperCase()}
                           </span>
                         </div>
-                        <p className="text-[#F1F1F3] font-medium text-sm">{c.nome}</p>
+                        <Link href={`/admin/clientes/${c.id}/editar`} className="text-[#F1F1F3] font-medium text-sm hover:text-[#25D366] transition-colors">{c.nome}</Link>
                       </div>
                     </td>
                     <td className="px-5 py-4">

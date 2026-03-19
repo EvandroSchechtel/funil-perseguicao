@@ -334,13 +334,13 @@ export default function LeadsPage() {
                     <React.Fragment key={lead.id}>
                       <tr className={`border-b border-[#1E1E2A] last:border-0 hover:bg-[#1C1C28] transition-colors ${expandedId === lead.id ? "bg-[#1C1C28]" : ""}`}>
                         <td className="px-5 py-3">
-                          <div>
-                            <p className="text-[#F1F1F3] text-sm font-medium">{lead.nome}</p>
+                          <Link href={`/admin/leads/${lead.id}`} className="group">
+                            <p className="text-[#F1F1F3] text-sm font-medium group-hover:text-[#25D366] transition-colors">{lead.nome}</p>
                             <p className="text-[#5A5A72] text-xs mt-0.5">{lead.telefone}</p>
                             {lead.email && (
                               <p className="text-[#5A5A72] text-xs">{lead.email}</p>
                             )}
-                          </div>
+                          </Link>
                         </td>
                         <td className="px-5 py-3">
                           <span className="text-[#C4C4D4] text-sm">{lead.webhook.nome}</span>

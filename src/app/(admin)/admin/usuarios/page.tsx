@@ -298,12 +298,12 @@ export default function UsuariosPage() {
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="text-[#F1F1F3] text-sm font-semibold">
+                            <Link href={`/admin/usuarios/${u.id}/editar`} className="text-[#F1F1F3] text-sm font-semibold hover:text-[#25D366] transition-colors">
                               {u.nome}
                               {isSelf(u) && (
                                 <span className="ml-2 text-[#25D366] text-xs font-normal">(você)</span>
                               )}
-                            </p>
+                            </Link>
                             <p className="text-[#8B8B9E] text-xs">{u.email}</p>
                           </div>
                         </div>

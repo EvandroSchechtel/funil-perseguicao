@@ -200,7 +200,7 @@ export default function CampanhasPage() {
                 {campanhas.map((c) => (
                   <tr key={c.id} className="border-b border-[#1E1E2A] last:border-0 hover:bg-[#1C1C28] transition-colors">
                     <td className="px-5 py-4">
-                      <p className="text-[#F1F1F3] font-medium text-sm">{c.nome}</p>
+                      <Link href={`/admin/campanhas/${c.id}/editar`} className="text-[#F1F1F3] font-medium text-sm hover:text-[#25D366] transition-colors">{c.nome}</Link>
                       {c.descricao && (
                         <p className="text-[#5A5A72] text-xs mt-0.5 truncate max-w-xs">{c.descricao}</p>
                       )}
