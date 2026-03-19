@@ -123,6 +123,7 @@ export async function createManychatSubscriber(
         first_name: firstName,
         last_name: lastName,
         phone: lead.telefone,
+        whatsapp_phone_optin: true,
         ...(lead.email && { email: lead.email }),
       }),
       signal,
