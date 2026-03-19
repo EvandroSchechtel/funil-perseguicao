@@ -53,29 +53,33 @@ export function startWebhookWorker(): Worker {
           },
         })
 
-        await prisma.leadTentativa.create({
-          data: {
-            lead_id: leadId,
-            numero: numeroTentativa,
-            status: "sucesso",
-            subscriber_id: result.subscriber_id ?? null,
-            flow_ns: flowNs,
-            conta_nome: conta.nome,
-          },
-        })
+        try {
+          await prisma.leadTentativa.create({
+            data: {
+              lead_id: leadId,
+              numero: numeroTentativa,
+              status: "sucesso",
+              subscriber_id: result.subscriber_id ?? null,
+              flow_ns: flowNs,
+              conta_nome: conta.nome,
+            },
+          })
+        } catch (e) { console.warn("[Worker] leadTentativa.create failed (table may not exist yet):", e) }
 
         // Upsert ContatoConta — vincula o subscriber_id desta conta a este contato
         if (updated.contato_id && result.subscriber_id) {
-          await prisma.contatoConta.upsert({
-            where: { contato_id_conta_id: { contato_id: updated.contato_id, conta_id: contaId } },
-            update: { subscriber_id: result.subscriber_id, campanha_id: updated.campanha_id },
-            create: {
-              contato_id: updated.contato_id,
-              conta_id: contaId,
-              subscriber_id: result.subscriber_id,
-              campanha_id: updated.campanha_id,
-            },
-          })
+          try {
+            await prisma.contatoConta.upsert({
+              where: { contato_id_conta_id: { contato_id: updated.contato_id, conta_id: contaId } },
+              update: { subscriber_id: result.subscriber_id, campanha_id: updated.campanha_id },
+              create: {
+                contato_id: updated.contato_id,
+                conta_id: contaId,
+                subscriber_id: result.subscriber_id,
+                campanha_id: updated.campanha_id,
+              },
+            })
+          } catch (e) { console.warn("[Worker] contatoConta.upsert failed (table may not exist yet):", e) }
         }
 
         // Best-effort: write phone to [esc]whatsapp-id custom field in Manychat
@@ -90,16 +94,18 @@ export function startWebhookWorker(): Worker {
           where: { id: leadId },
           data: { status: "sem_optin", erro_msg: result.error },
         })
-        await prisma.leadTentativa.create({
-          data: {
-            lead_id: leadId,
-            numero: numeroTentativa,
-            status: "sem_optin",
-            erro_msg: result.error ?? null,
-            flow_ns: flowNs,
-            conta_nome: conta.nome,
-          },
-        })
+        try {
+          await prisma.leadTentativa.create({
+            data: {
+              lead_id: leadId,
+              numero: numeroTentativa,
+              status: "sem_optin",
+              erro_msg: result.error ?? null,
+              flow_ns: flowNs,
+              conta_nome: conta.nome,
+            },
+          })
+        } catch (e) { console.warn("[Worker] leadTentativa.create failed:", e) }
         console.warn(`[Worker] Lead ${leadId} sem_optin — skipping retries`)
 
       } else {
@@ -107,16 +113,18 @@ export function startWebhookWorker(): Worker {
           where: { id: leadId },
           data: { status: "falha", erro_msg: result.error },
         })
-        await prisma.leadTentativa.create({
-          data: {
-            lead_id: leadId,
-            numero: numeroTentativa,
-            status: "falha",
-            erro_msg: result.error ?? null,
-            flow_ns: flowNs,
-            conta_nome: conta.nome,
-          },
-        })
+        try {
+          await prisma.leadTentativa.create({
+            data: {
+              lead_id: leadId,
+              numero: numeroTentativa,
+              status: "falha",
+              erro_msg: result.error ?? null,
+              flow_ns: flowNs,
+              conta_nome: conta.nome,
+            },
+          })
+        } catch (e) { console.warn("[Worker] leadTentativa.create failed:", e) }
         throw new Error(result.error) // triggers BullMQ retry
       }
 

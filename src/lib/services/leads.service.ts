@@ -119,8 +119,8 @@ export async function reprocessarLead(id: string) {
   })
 
   if (!lead) throw new ServiceError("not_found", "Lead não encontrado.")
-  if (lead.status !== "falha" && lead.status !== "sem_optin") {
-    throw new ServiceError("bad_request", "Apenas leads com status 'falha' ou 'sem_optin' podem ser reprocessados.")
+  if (!["falha", "sem_optin", "pendente"].includes(lead.status)) {
+    throw new ServiceError("bad_request", "Apenas leads com status 'falha', 'sem_optin' ou 'pendente' podem ser reprocessados.")
   }
   if (!lead.webhook || lead.webhook.deleted_at) {
     throw new ServiceError("bad_request", "O webhook associado a este lead foi removido.")
@@ -142,7 +142,7 @@ export async function reprocessarLead(id: string) {
     nome: lead.nome,
     telefone: lead.telefone,
     email: lead.email || undefined,
-  })
+  }, { forceNew: true })
 
   return { message: "Lead reenfileirado para reprocessamento." }
 }
@@ -181,7 +181,7 @@ export async function reprocessarFalhas(webhookId?: string) {
       nome: lead.nome,
       telefone: lead.telefone,
       email: lead.email || undefined,
-    }).catch((err) => console.error(`[reprocessarFalhas] Failed to queue lead ${lead.id}:`, err))
+    }, { forceNew: true }).catch((err) => console.error(`[reprocessarFalhas] Failed to queue lead ${lead.id}:`, err))
     enqueued++
   }
 
