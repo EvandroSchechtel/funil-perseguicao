@@ -11,6 +11,9 @@
     "db:reset": "npx prisma migrate reset --force && npm run db:seed",
     "postinstall": "prisma generate"
   },
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
