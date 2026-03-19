@@ -119,8 +119,8 @@ export async function reprocessarLead(id: string) {
   })
 
   if (!lead) throw new ServiceError("not_found", "Lead não encontrado.")
-  if (!["falha", "sem_optin", "pendente"].includes(lead.status)) {
-    throw new ServiceError("bad_request", "Apenas leads com status 'falha', 'sem_optin' ou 'pendente' podem ser reprocessados.")
+  if (lead.status === "processando") {
+    throw new ServiceError("bad_request", "Lead já está sendo processado.")
   }
   if (!lead.webhook || lead.webhook.deleted_at) {
     throw new ServiceError("bad_request", "O webhook associado a este lead foi removido.")
@@ -145,6 +145,49 @@ export async function reprocessarLead(id: string) {
   }, { forceNew: true })
 
   return { message: "Lead reenfileirado para reprocessamento." }
+}
+
+export async function reprocessarSelecionados(leadIds: string[]) {
+  const leads = await prisma.lead.findMany({
+    where: {
+      id: { in: leadIds },
+      status: { not: "processando" },
+      webhook: { deleted_at: null },
+      webhook_flow_id: { not: null },
+    },
+    include: {
+      webhook_flow: { select: { id: true, conta_id: true, flow_ns: true } },
+    },
+  })
+
+  if (leads.length === 0) {
+    return { reprocessados: 0, message: "Nenhum lead elegível para reprocessamento." }
+  }
+
+  await prisma.lead.updateMany({
+    where: { id: { in: leads.map((l) => l.id) } },
+    data: { status: "pendente", erro_msg: null },
+  })
+
+  let enqueued = 0
+  for (const lead of leads) {
+    if (!lead.webhook_flow) continue
+    addWebhookJob({
+      leadId: lead.id,
+      webhookId: lead.webhook_id,
+      contaId: lead.webhook_flow.conta_id,
+      flowNs: lead.webhook_flow.flow_ns,
+      nome: lead.nome,
+      telefone: lead.telefone,
+      email: lead.email || undefined,
+    }, { forceNew: true }).catch((err) => console.error(`[reprocessarSelecionados] lead ${lead.id}:`, err))
+    enqueued++
+  }
+
+  return {
+    reprocessados: enqueued,
+    message: `${enqueued} lead${enqueued !== 1 ? "s" : ""} reenfileirado${enqueued !== 1 ? "s" : ""}.`,
+  }
 }
 
 export async function reprocessarFalhas(webhookId?: string) {
