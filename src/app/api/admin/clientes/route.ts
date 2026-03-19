@@ -9,6 +9,10 @@ const createClienteSchema = z.object({
   nome: z.string().min(1, "Nome é obrigatório").max(200),
   email: z.string().email("Email inválido").optional().or(z.literal("")),
   telefone: z.string().max(30).optional(),
+  primeira_conta: z.object({
+    nome: z.string().min(1, "Nome da conta é obrigatório").max(200),
+    api_key: z.string().min(1, "API Key é obrigatória"),
+  }),
 })
 
 // GET /api/admin/clientes
@@ -54,6 +58,7 @@ export async function POST(request: NextRequest) {
       email: parsed.data.email || undefined,
       telefone: parsed.data.telefone,
       userId: user.id,
+      primeira_conta: parsed.data.primeira_conta,
     })
     return created(result)
   } catch (error) {

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db/prisma"
+import { testManychatConnection } from "@/lib/manychat/client"
 import { ServiceError } from "./errors"
 
 export interface ListClientesParams {
@@ -81,25 +82,85 @@ export async function buscarCliente(id: string) {
   }
 }
 
+export interface PrimeiraContaParams {
+  nome: string
+  api_key: string
+}
+
 export interface CriarClienteParams {
   nome: string
   email?: string
   telefone?: string
   userId: string
+  primeira_conta: PrimeiraContaParams
 }
 
-export async function criarCliente({ nome, email, telefone, userId }: CriarClienteParams) {
-  const cliente = await prisma.cliente.create({
-    data: {
-      nome,
-      email: email || null,
-      telefone: telefone || null,
-      created_by: userId,
-    },
-    select: { id: true, nome: true, email: true, telefone: true, created_at: true },
+export async function criarCliente({ nome, email, telefone, userId, primeira_conta }: CriarClienteParams) {
+  // Validate API key before touching the database
+  const connection = await testManychatConnection(primeira_conta.api_key)
+  if (!connection.ok) {
+    throw new ServiceError("bad_request", connection.error || "Falha ao conectar com a API Manychat.")
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const cliente = await tx.cliente.create({
+      data: {
+        nome,
+        email: email || null,
+        telefone: telefone || null,
+        created_by: userId,
+      },
+    })
+
+    const conta = await tx.contaManychat.create({
+      data: {
+        nome: primeira_conta.nome,
+        api_key: primeira_conta.api_key,
+        page_id: connection.page_id,
+        page_name: connection.page_name,
+        ultimo_sync: new Date(),
+        created_by: userId,
+        cliente_id: cliente.id,
+      },
+      select: { id: true, nome: true, page_name: true },
+    })
+
+    return { cliente, conta }
   })
 
-  return { data: cliente, message: "Cliente criado com sucesso." }
+  return {
+    data: { id: result.cliente.id, nome: result.cliente.nome, email: result.cliente.email, telefone: result.cliente.telefone },
+    conta: result.conta,
+    message: `Cliente criado com sucesso. Conta Manychat conectada: ${connection.page_name || primeira_conta.nome}`,
+  }
+}
+
+export async function adicionarContaAoCliente(clienteId: string, params: PrimeiraContaParams & { userId: string }) {
+  const cliente = await prisma.cliente.findFirst({ where: { id: clienteId, deleted_at: null } })
+  if (!cliente) throw new ServiceError("not_found", "Cliente não encontrado.")
+
+  const connection = await testManychatConnection(params.api_key)
+  if (!connection.ok) {
+    throw new ServiceError("bad_request", connection.error || "Falha ao conectar com a API Manychat.")
+  }
+
+  const conta = await prisma.contaManychat.create({
+    data: {
+      nome: params.nome,
+      api_key: params.api_key,
+      page_id: connection.page_id,
+      page_name: connection.page_name,
+      ultimo_sync: new Date(),
+      created_by: params.userId,
+      cliente_id: clienteId,
+    },
+    select: { id: true, nome: true, page_name: true, status: true },
+  })
+
+  return {
+    data: conta,
+    message: `Conta conectada: ${connection.page_name || params.nome}`,
+  }
 }
 
 export interface AtualizarClienteParams {
