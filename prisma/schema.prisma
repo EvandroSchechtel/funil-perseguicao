@@ -28,6 +28,7 @@ enum LeadStatus {
   processando
   sucesso
   falha
+  sem_optin
 }
 
 enum AgentSessaoStatus {
@@ -109,20 +110,21 @@ model Cliente {
 // ── Manychat ──────────────────────────────────────────────────────────────────
 
 model ContaManychat {
-  id          String    @id @default(uuid())
-  nome        String
-  api_key     String
-  page_id     String?
-  page_name   String?
-  status      Status    @default(ativo)
-  ultimo_sync DateTime?
-  created_by  String
-  usuario     Usuario   @relation(fields: [created_by], references: [id])
-  cliente_id  String?
-  cliente     Cliente?  @relation(fields: [cliente_id], references: [id])
-  created_at  DateTime  @default(now())
-  updated_at  DateTime  @updatedAt
-  deleted_at  DateTime?
+  id                  String    @id @default(uuid())
+  nome                String
+  api_key             String
+  page_id             String?
+  page_name           String?
+  status              Status    @default(ativo)
+  ultimo_sync         DateTime?
+  whatsapp_field_id   Int?      // Manychat field ID for [esc]whatsapp-id
+  created_by          String
+  usuario             Usuario   @relation(fields: [created_by], references: [id])
+  cliente_id          String?
+  cliente             Cliente?  @relation(fields: [cliente_id], references: [id])
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+  deleted_at          DateTime?
 
   webhook_flows WebhookFlow[]
 

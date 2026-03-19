@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db/prisma"
-import { testManychatConnection } from "@/lib/manychat/client"
+import { testManychatConnection, ensureWhatsappIdField } from "@/lib/manychat/client"
 import { ServiceError } from "./errors"
 
 export interface ListClientesParams {
@@ -64,7 +64,7 @@ export async function buscarCliente(id: string) {
       updated_at: true,
       contas_manychat: {
         where: { deleted_at: null },
-        select: { id: true, nome: true, page_name: true, status: true },
+        select: { id: true, nome: true, page_name: true, status: true, whatsapp_field_id: true },
         orderBy: { nome: "asc" },
       },
       _count: { select: { campanhas: true } },
@@ -102,6 +102,12 @@ export async function criarCliente({ nome, email, telefone, userId, primeira_con
     throw new ServiceError("bad_request", connection.error || "Falha ao conectar com a API Manychat.")
   }
 
+  // Ensure [esc]whatsapp-id custom field exists and capture its ID
+  const fieldResult = await ensureWhatsappIdField(primeira_conta.api_key).catch((e) => {
+    console.warn("[criarCliente] ensureWhatsappIdField failed:", e)
+    return null
+  })
+
   const result = await prisma.$transaction(async (tx) => {
     const cliente = await tx.cliente.create({
       data: {
@@ -121,6 +127,7 @@ export async function criarCliente({ nome, email, telefone, userId, primeira_con
         ultimo_sync: new Date(),
         created_by: userId,
         cliente_id: cliente.id,
+        whatsapp_field_id: fieldResult?.fieldId ?? null,
       },
       select: { id: true, nome: true, page_name: true },
     })
@@ -144,6 +151,12 @@ export async function adicionarContaAoCliente(clienteId: string, params: Primeir
     throw new ServiceError("bad_request", connection.error || "Falha ao conectar com a API Manychat.")
   }
 
+  // Ensure [esc]whatsapp-id custom field exists and capture its ID
+  const fieldResult = await ensureWhatsappIdField(params.api_key).catch((e) => {
+    console.warn("[adicionarContaAoCliente] ensureWhatsappIdField failed:", e)
+    return null
+  })
+
   const conta = await prisma.contaManychat.create({
     data: {
       nome: params.nome,
@@ -153,6 +166,7 @@ export async function adicionarContaAoCliente(clienteId: string, params: Primeir
       ultimo_sync: new Date(),
       created_by: params.userId,
       cliente_id: clienteId,
+      whatsapp_field_id: fieldResult?.fieldId ?? null,
     },
     select: { id: true, nome: true, page_name: true, status: true },
   })

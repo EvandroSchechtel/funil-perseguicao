@@ -128,13 +128,14 @@ export interface AtualizarContaParams {
   nome?: string
   api_key?: string
   status?: "ativo" | "inativo"
+  whatsapp_field_id?: number | null
 }
 
 export async function atualizarConta(id: string, data: AtualizarContaParams) {
   const existing = await prisma.contaManychat.findFirst({ where: { id, deleted_at: null } })
   if (!existing) throw new ServiceError("not_found", "Conta não encontrada.")
 
-  const { nome, api_key, status } = data
+  const { nome, api_key, status, whatsapp_field_id } = data
   let page_id = existing.page_id
   let page_name = existing.page_name
   let ultimo_sync = existing.ultimo_sync
@@ -155,6 +156,7 @@ export async function atualizarConta(id: string, data: AtualizarContaParams) {
       ...(nome && { nome }),
       ...(api_key && { api_key }),
       ...(status && { status }),
+      ...(whatsapp_field_id !== undefined && { whatsapp_field_id }),
       page_id,
       page_name,
       ultimo_sync,

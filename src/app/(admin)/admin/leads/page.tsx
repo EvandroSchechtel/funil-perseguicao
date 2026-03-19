@@ -15,7 +15,7 @@ interface Lead {
   nome: string
   telefone: string
   email: string | null
-  status: "pendente" | "processando" | "sucesso" | "falha"
+  status: "pendente" | "processando" | "sucesso" | "falha" | "sem_optin"
   erro_msg: string | null
   tentativas: number
   processado_at: string | null
@@ -34,6 +34,7 @@ const STATUS_OPTIONS = [
   { value: "processando", label: "Processando" },
   { value: "sucesso", label: "Sucesso" },
   { value: "falha", label: "Falha" },
+  { value: "sem_optin", label: "Sem Opt-in" },
 ]
 
 function statusBadge(status: string) {
@@ -42,6 +43,7 @@ function statusBadge(status: string) {
     processando: { label: "Processando", class: "bg-[#1E1E2A] text-[#60A5FA] border-[#60A5FA]/30" },
     sucesso: { label: "Sucesso", class: "bg-[#162516] text-[#25D366] border-[#25D366]/30" },
     falha: { label: "Falha", class: "bg-[#2A1616] text-[#F87171] border-[#F87171]/30" },
+    sem_optin: { label: "Sem Opt-in", class: "bg-[#2A2010] text-[#F59E0B] border-[#F59E0B]/30" },
   }
   const v = variants[status] || variants.pendente
   return (

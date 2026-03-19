@@ -1,7 +1,7 @@
 import { Worker, Job } from "bullmq"
 import { getRedisConfig } from "./redis"
 import { prisma } from "@/lib/db/prisma"
-import { processLeadInManychat } from "@/lib/manychat/client"
+import { processLeadInManychat, setWhatsappIdField } from "@/lib/manychat/client"
 import type { WebhookJobData } from "./queues"
 
 export function startWebhookWorker(): Worker {
@@ -21,7 +21,7 @@ export function startWebhookWorker(): Worker {
       // 2. Get API key from conta
       const conta = await prisma.contaManychat.findFirst({
         where: { id: contaId, deleted_at: null },
-        select: { api_key: true },
+        select: { api_key: true, whatsapp_field_id: true },
       })
 
       if (!conta) {
@@ -39,9 +39,27 @@ export function startWebhookWorker(): Worker {
       if (result.ok) {
         await prisma.lead.update({
           where: { id: leadId },
-          data: { status: "sucesso", processado_at: new Date(), erro_msg: null },
+          data: {
+            status: "sucesso",
+            processado_at: new Date(),
+            subscriber_id: result.subscriber_id ?? null,
+            erro_msg: null,
+          },
         })
+
+        // Best-effort: record WhatsApp phone in [esc]whatsapp-id custom field
+        if (result.subscriber_id) {
+          setWhatsappIdField(conta.api_key, result.subscriber_id, telefone, conta.whatsapp_field_id).catch(() => {})
+        }
+
         console.log(`[Worker] Lead ${leadId} processed successfully (subscriber: ${result.subscriber_id})`)
+      } else if (result.sem_optin) {
+        // Subscriber has not opted in — no point retrying
+        await prisma.lead.update({
+          where: { id: leadId },
+          data: { status: "sem_optin", erro_msg: result.error },
+        })
+        console.warn(`[Worker] Lead ${leadId} sem_optin — skipping retries`)
       } else {
         await prisma.lead.update({
           where: { id: leadId },

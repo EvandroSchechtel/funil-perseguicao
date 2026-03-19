@@ -9,6 +9,7 @@ const updateContaSchema = z.object({
   nome: z.string().min(1).max(100).optional(),
   api_key: z.string().min(1).optional(),
   status: z.enum(["ativo", "inativo"]).optional(),
+  whatsapp_field_id: z.number().int().positive().nullable().optional(),
 })
 
 // GET /api/admin/contas/[id]

@@ -107,8 +107,8 @@ export async function reprocessarLead(id: string) {
   })
 
   if (!lead) throw new ServiceError("not_found", "Lead não encontrado.")
-  if (lead.status !== "falha") {
-    throw new ServiceError("bad_request", "Apenas leads com status 'falha' podem ser reprocessados.")
+  if (lead.status !== "falha" && lead.status !== "sem_optin") {
+    throw new ServiceError("bad_request", "Apenas leads com status 'falha' ou 'sem_optin' podem ser reprocessados.")
   }
   if (!lead.webhook || lead.webhook.deleted_at) {
     throw new ServiceError("bad_request", "O webhook associado a este lead foi removido.")
@@ -138,7 +138,7 @@ export async function reprocessarLead(id: string) {
 export async function reprocessarFalhas(webhookId?: string) {
   const leads = await prisma.lead.findMany({
     where: {
-      status: "falha",
+      status: { in: ["falha", "sem_optin"] },
       ...(webhookId ? { webhook_id: webhookId } : {}),
       webhook: { deleted_at: null },
       webhook_flow_id: { not: null },
@@ -197,7 +197,7 @@ export interface ExportLeadsParams {
 
 export async function exportarLeads(params: ExportLeadsParams = {}) {
   const { search = "", status, webhookId, campanhaId } = params
-  const validStatuses: LeadStatus[] = ["pendente", "processando", "sucesso", "falha"]
+  const validStatuses: LeadStatus[] = ["pendente", "processando", "sucesso", "falha", "sem_optin"]
   const statusFilter =
     status && status !== "todos" && validStatuses.includes(status as LeadStatus)
       ? (status as LeadStatus)

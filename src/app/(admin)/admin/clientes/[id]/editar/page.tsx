@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from "react"
 import { useParams } from "next/navigation"
-import { Plus, Zap, Eye, EyeOff, CheckCircle2, XCircle, Loader2, ToggleRight, ToggleLeft } from "lucide-react"
+import { Plus, Zap, Eye, EyeOff, CheckCircle2, XCircle, Loader2, ToggleRight, ToggleLeft, Hash, AlertCircle, Pencil } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Header } from "@/components/layout/Header"
 import { ClienteForm } from "@/components/admin/ClienteForm"
@@ -17,6 +17,7 @@ interface Conta {
   nome: string
   page_name: string | null
   status: "ativo" | "inativo"
+  whatsapp_field_id: number | null
 }
 
 interface ClienteData {
@@ -46,6 +47,11 @@ export default function EditarClientePage() {
   const [addLoading, setAddLoading] = useState(false)
   const [addErrors, setAddErrors] = useState<Record<string, string>>({})
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+
+  // Edit field ID dialog
+  const [editFieldConta, setEditFieldConta] = useState<Conta | null>(null)
+  const [fieldIdInput, setFieldIdInput] = useState("")
+  const [fieldIdLoading, setFieldIdLoading] = useState(false)
 
   const fetchCliente = useCallback(async () => {
     if (!accessToken || !id) return
@@ -156,6 +162,40 @@ export default function EditarClientePage() {
     }
   }
 
+  function handleOpenEditFieldId(conta: Conta) {
+    setEditFieldConta(conta)
+    setFieldIdInput(conta.whatsapp_field_id ? String(conta.whatsapp_field_id) : "")
+  }
+
+  async function handleSaveFieldId() {
+    if (!editFieldConta) return
+    const num = parseInt(fieldIdInput.trim(), 10)
+    if (!fieldIdInput.trim() || isNaN(num) || num <= 0) {
+      toast.error("Informe um ID numérico válido.")
+      return
+    }
+    setFieldIdLoading(true)
+    try {
+      const res = await fetch(`/api/admin/contas/${editFieldConta.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ whatsapp_field_id: num }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast.success("Field ID salvo com sucesso.")
+        setEditFieldConta(null)
+        fetchCliente()
+      } else {
+        toast.error(data.message || "Erro ao salvar.")
+      }
+    } catch {
+      toast.error("Erro de conexão.")
+    } finally {
+      setFieldIdLoading(false)
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       <Header
@@ -215,47 +255,60 @@ export default function EditarClientePage() {
                   </Button>
                 </div>
               ) : (
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-[#1E1E2A]">
-                      <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Conta</th>
-                      <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Página</th>
-                      <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Status</th>
-                      <th className="px-5 py-3" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cliente.contas_manychat.map((conta) => (
-                      <tr key={conta.id} className="border-b border-[#1E1E2A] last:border-0 hover:bg-[#1C1C28] transition-colors">
-                        <td className="px-5 py-3">
-                          <p className="text-[#C4C4D4] text-sm font-medium">{conta.nome}</p>
-                        </td>
-                        <td className="px-5 py-3">
-                          <p className="text-[#8B8B9E] text-sm">{conta.page_name || "—"}</p>
-                        </td>
-                        <td className="px-5 py-3">
-                          <Badge variant={conta.status === "ativo" ? "ativo" : "inativo"}>
-                            {conta.status === "ativo" ? "Ativa" : "Inativa"}
-                          </Badge>
-                        </td>
-                        <td className="px-5 py-3">
-                          <button
-                            onClick={() => handleToggleConta(conta)}
-                            disabled={actionLoading === conta.id}
-                            className="p-1.5 text-[#5A5A72] hover:text-[#25D366] transition-colors disabled:opacity-50"
-                            title={conta.status === "ativo" ? "Desativar" : "Ativar"}
-                          >
-                            {conta.status === "ativo" ? (
-                              <ToggleRight className="w-5 h-5 text-[#25D366]" />
+                <div>
+                  {cliente.contas_manychat.map((conta) => (
+                    <div key={conta.id} className="border-b border-[#1E1E2A] last:border-0 px-5 py-4 hover:bg-[#1C1C28] transition-colors">
+                      <div className="flex items-center gap-3">
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-[#C4C4D4] text-sm font-medium">{conta.nome}</p>
+                            <Badge variant={conta.status === "ativo" ? "ativo" : "inativo"}>
+                              {conta.status === "ativo" ? "Ativa" : "Inativa"}
+                            </Badge>
+                          </div>
+                          <p className="text-[#8B8B9E] text-xs mt-0.5">{conta.page_name || "—"}</p>
+
+                          {/* Field ID row */}
+                          <div className="flex items-center gap-2 mt-2">
+                            <Hash className="w-3 h-3 text-[#5A5A72]" />
+                            {conta.whatsapp_field_id ? (
+                              <span className="text-xs font-mono text-[#25D366]">
+                                [esc]whatsapp-id · field_id: {conta.whatsapp_field_id}
+                              </span>
                             ) : (
-                              <ToggleLeft className="w-5 h-5" />
+                              <span className="text-xs text-[#F59E0B] flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3" />
+                                field_id não registrado — informe manualmente
+                              </span>
                             )}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                            <button
+                              onClick={() => handleOpenEditFieldId(conta)}
+                              className="text-[#5A5A72] hover:text-[#C4C4D4] transition-colors"
+                              title="Editar field ID"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Toggle */}
+                        <button
+                          onClick={() => handleToggleConta(conta)}
+                          disabled={actionLoading === conta.id}
+                          className="p-1.5 text-[#5A5A72] hover:text-[#25D366] transition-colors disabled:opacity-50"
+                          title={conta.status === "ativo" ? "Desativar" : "Ativar"}
+                        >
+                          {conta.status === "ativo" ? (
+                            <ToggleRight className="w-5 h-5 text-[#25D366]" />
+                          ) : (
+                            <ToggleLeft className="w-5 h-5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>
@@ -343,6 +396,43 @@ export default function EditarClientePage() {
             </Button>
             <Button onClick={handleAddConta} loading={addLoading}>
               Adicionar Conta
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Field ID Dialog */}
+      <Dialog open={!!editFieldConta} onOpenChange={(open) => { if (!open) setEditFieldConta(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Field ID — [esc]whatsapp-id</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="bg-[#1A1A28] border border-[#2A2A3A] rounded-lg p-3 text-xs text-[#8B8B9E]">
+              <p className="font-medium text-[#C4C4D4] mb-1">Como encontrar o Field ID</p>
+              <p>No Manychat, vá em <span className="text-[#F1F1F3]">Configurações → Campos do Usuário</span>, passe o mouse sobre o campo <span className="font-mono text-[#A78BFA]">[esc]whatsapp-id</span> e anote o ID exibido no tooltip.</p>
+              {editFieldConta?.whatsapp_field_id && (
+                <p className="mt-2 text-[#25D366]">Field ID atual: <span className="font-mono font-bold">{editFieldConta.whatsapp_field_id}</span></p>
+              )}
+            </div>
+
+            <Input
+              label="Field ID"
+              placeholder="Ex: 11947822"
+              type="number"
+              value={fieldIdInput}
+              onChange={(e) => setFieldIdInput(e.target.value)}
+              required
+            />
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditFieldConta(null)} disabled={fieldIdLoading}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveFieldId} loading={fieldIdLoading}>
+              Salvar Field ID
             </Button>
           </DialogFooter>
         </DialogContent>
