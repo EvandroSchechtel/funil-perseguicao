@@ -197,25 +197,29 @@ export async function processLeadInManychat(
   lead: { nome: string; telefone: string; email?: string },
   flowNs: string
 ): Promise<ManychatActionResult> {
+  const phone = normalizePhone(lead.telefone)
+  console.log(`[Manychat] processLead — phone: ${phone}, flow: ${flowNs}`)
+
   // 1. Try to find existing subscriber by WhatsApp phone
   let subscriber = await findSubscriberByPhone(apiKey, lead.telefone)
+  console.log(`[Manychat] findBySystemField(${phone}) →`, subscriber ? `found id=${subscriber.id}` : "not found")
 
   // 2. If not found, try to create
   if (!subscriber) {
     const created = await createManychatSubscriber(apiKey, lead)
+    console.log(`[Manychat] createSubscriber →`, JSON.stringify(created))
 
     if (created && "id" in created) {
-      // Successfully created
       subscriber = { id: created.id }
     } else if (created && "alreadyExists" in created) {
-      // Subscriber exists in Manychat but wasn't found by phone yet (e.g. opt-in happened
-      // after we checked). Retry findBySystemField as fallback.
+      // Already exists but findBySystemField missed it — retry
       subscriber = await findSubscriberByPhone(apiKey, lead.telefone)
+      console.log(`[Manychat] retry findBySystemField →`, subscriber ? `found id=${subscriber.id}` : "still not found")
     }
-    // else: null → both create and find failed
   }
 
   if (!subscriber) {
+    console.warn(`[Manychat] subscriber not found for phone ${phone}`)
     return {
       ok: false,
       sem_optin: true,
@@ -224,7 +228,9 @@ export async function processLeadInManychat(
   }
 
   // 3. Send flow
+  console.log(`[Manychat] sendFlow — subscriber_id=${subscriber.id}, flow_ns=${flowNs}`)
   const result = await sendFlowToSubscriber(apiKey, subscriber.id, flowNs)
+  console.log(`[Manychat] sendFlow result →`, JSON.stringify(result))
   return { ok: result.ok, subscriber_id: subscriber.id, error: result.error }
 }
 
