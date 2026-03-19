@@ -5,19 +5,18 @@ export interface ListWebhooksParams {
   page?: number
   perPage?: number
   search?: string
+  campanhaId?: string
 }
 
 export async function listarWebhooks(params: ListWebhooksParams = {}) {
-  const { page = 1, perPage = 20, search = "" } = params
+  const { page = 1, perPage = 20, search = "", campanhaId = "" } = params
 
   const where = {
     deleted_at: null,
     ...(search && {
-      OR: [
-        { nome: { contains: search, mode: "insensitive" as const } },
-        { flow_ns: { contains: search, mode: "insensitive" as const } },
-      ],
+      nome: { contains: search, mode: "insensitive" as const },
     }),
+    ...(campanhaId && { campanha_id: campanhaId }),
   }
 
   const [total, webhooks] = await Promise.all([
@@ -28,13 +27,11 @@ export async function listarWebhooks(params: ListWebhooksParams = {}) {
         id: true,
         nome: true,
         token: true,
-        flow_ns: true,
-        flow_nome: true,
         status: true,
         created_at: true,
-        conta: { select: { id: true, nome: true, page_name: true } },
+        campanha: { select: { id: true, nome: true } },
         usuario: { select: { nome: true } },
-        _count: { select: { leads: true } },
+        _count: { select: { leads: true, webhook_flows: true } },
       },
       orderBy: { created_at: "desc" },
       skip: (page - 1) * perPage,
@@ -47,6 +44,7 @@ export async function listarWebhooks(params: ListWebhooksParams = {}) {
     ...w,
     url_publica: `${appUrl}/api/webhook/${w.token}`,
     leads_count: w._count.leads,
+    flows_count: w._count.webhook_flows,
     _count: undefined,
   }))
 
@@ -63,13 +61,24 @@ export async function buscarWebhook(id: string) {
       id: true,
       nome: true,
       token: true,
-      flow_ns: true,
-      flow_nome: true,
       status: true,
       created_at: true,
       updated_at: true,
-      conta: { select: { id: true, nome: true, page_name: true } },
+      campanha: { select: { id: true, nome: true } },
       usuario: { select: { nome: true } },
+      webhook_flows: {
+        where: { deleted_at: null },
+        select: {
+          id: true,
+          flow_ns: true,
+          flow_nome: true,
+          ordem: true,
+          total_enviados: true,
+          status: true,
+          conta: { select: { id: true, nome: true } },
+        },
+        orderBy: { ordem: "asc" },
+      },
       _count: { select: { leads: true } },
     },
   })
@@ -89,37 +98,26 @@ export async function buscarWebhook(id: string) {
 
 export interface CriarWebhookParams {
   nome: string
-  conta_id: string
-  flow_ns: string
-  flow_nome?: string
+  campanha_id?: string
   status?: "ativo" | "inativo"
   userId: string
 }
 
-export async function criarWebhook({ nome, conta_id, flow_ns, flow_nome, status = "ativo", userId }: CriarWebhookParams) {
-  const conta = await prisma.contaManychat.findFirst({
-    where: { id: conta_id, status: "ativo", deleted_at: null },
-  })
-  if (!conta) throw new ServiceError("bad_request", "Conta Manychat não encontrada ou inativa.")
+export async function criarWebhook({ nome, campanha_id, status = "ativo", userId }: CriarWebhookParams) {
+  if (campanha_id) {
+    const campanha = await prisma.campanha.findFirst({ where: { id: campanha_id, deleted_at: null } })
+    if (!campanha) throw new ServiceError("bad_request", "Campanha não encontrada.")
+  }
 
   const webhook = await prisma.webhook.create({
-    data: {
-      nome,
-      conta_id,
-      flow_ns,
-      flow_nome: flow_nome || null,
-      status,
-      created_by: userId,
-    },
+    data: { nome, campanha_id: campanha_id || null, status, created_by: userId },
     select: {
       id: true,
       nome: true,
       token: true,
-      flow_ns: true,
-      flow_nome: true,
       status: true,
       created_at: true,
-      conta: { select: { id: true, nome: true } },
+      campanha: { select: { id: true, nome: true } },
     },
   })
 
@@ -132,8 +130,7 @@ export async function criarWebhook({ nome, conta_id, flow_ns, flow_nome, status 
 
 export interface AtualizarWebhookParams {
   nome?: string
-  flow_ns?: string
-  flow_nome?: string
+  campanha_id?: string | null
   status?: "ativo" | "inativo"
 }
 
@@ -141,25 +138,14 @@ export async function atualizarWebhook(id: string, data: AtualizarWebhookParams)
   const existing = await prisma.webhook.findFirst({ where: { id, deleted_at: null } })
   if (!existing) throw new ServiceError("not_found", "Webhook não encontrado.")
 
-  const { nome, flow_ns, flow_nome, status } = data
-
   const webhook = await prisma.webhook.update({
     where: { id },
     data: {
-      ...(nome && { nome }),
-      ...(flow_ns && { flow_ns }),
-      ...(flow_nome !== undefined && { flow_nome }),
-      ...(status && { status }),
+      ...(data.nome && { nome: data.nome }),
+      ...(data.campanha_id !== undefined && { campanha_id: data.campanha_id }),
+      ...(data.status && { status: data.status }),
     },
-    select: {
-      id: true,
-      nome: true,
-      token: true,
-      flow_ns: true,
-      flow_nome: true,
-      status: true,
-      updated_at: true,
-    },
+    select: { id: true, nome: true, token: true, status: true, updated_at: true },
   })
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || ""
@@ -174,7 +160,6 @@ export async function deletarWebhook(id: string) {
   if (!existing) throw new ServiceError("not_found", "Webhook não encontrado.")
 
   await prisma.webhook.update({ where: { id }, data: { deleted_at: new Date() } })
-
   return { message: "Webhook removido com sucesso." }
 }
 
@@ -183,7 +168,6 @@ export async function toggleWebhook(id: string) {
   if (!existing) throw new ServiceError("not_found", "Webhook não encontrado.")
 
   const novoStatus = existing.status === "ativo" ? "inativo" : "ativo"
-
   const webhook = await prisma.webhook.update({
     where: { id },
     data: { status: novoStatus },

@@ -9,10 +9,11 @@ export interface ListLeadsParams {
   search?: string
   status?: string
   webhookId?: string
+  campanhaId?: string
 }
 
 export async function listarLeads(params: ListLeadsParams = {}) {
-  const { page = 1, perPage = 20, search = "", status = "", webhookId = "" } = params
+  const { page = 1, perPage = 20, search = "", status = "", webhookId = "", campanhaId = "" } = params
 
   const where = {
     ...(search && {
@@ -24,6 +25,7 @@ export async function listarLeads(params: ListLeadsParams = {}) {
     }),
     ...(status && status !== "todos" && { status: status as LeadStatus }),
     ...(webhookId && { webhook_id: webhookId }),
+    ...(campanhaId && { campanha_id: campanhaId }),
   }
 
   const [total, leads] = await Promise.all([
@@ -38,9 +40,13 @@ export async function listarLeads(params: ListLeadsParams = {}) {
         status: true,
         erro_msg: true,
         tentativas: true,
+        subscriber_id: true,
+        flow_executado: true,
+        conta_nome: true,
         processado_at: true,
         created_at: true,
         webhook: { select: { id: true, nome: true } },
+        campanha: { select: { id: true, nome: true } },
       },
       orderBy: { created_at: "desc" },
       skip: (page - 1) * perPage,
@@ -65,14 +71,20 @@ export async function buscarLead(id: string) {
       status: true,
       erro_msg: true,
       tentativas: true,
+      subscriber_id: true,
+      flow_executado: true,
+      conta_nome: true,
+      manychat_log: true,
       processado_at: true,
       created_at: true,
       updated_at: true,
-      webhook: {
+      webhook: { select: { id: true, nome: true } },
+      campanha: { select: { id: true, nome: true } },
+      webhook_flow: {
         select: {
           id: true,
-          nome: true,
           flow_ns: true,
+          flow_nome: true,
           conta: { select: { id: true, nome: true } },
         },
       },
@@ -87,8 +99,9 @@ export async function reprocessarLead(id: string) {
   const lead = await prisma.lead.findUnique({
     where: { id },
     include: {
-      webhook: {
-        select: { id: true, conta_id: true, flow_ns: true, status: true, deleted_at: true },
+      webhook: { select: { id: true, status: true, deleted_at: true } },
+      webhook_flow: {
+        include: { conta: { select: { id: true, api_key: true, status: true } } },
       },
     },
   })
@@ -100,6 +113,9 @@ export async function reprocessarLead(id: string) {
   if (!lead.webhook || lead.webhook.deleted_at) {
     throw new ServiceError("bad_request", "O webhook associado a este lead foi removido.")
   }
+  if (!lead.webhook_flow) {
+    throw new ServiceError("bad_request", "Este lead não possui flow associado para reprocessamento.")
+  }
 
   await prisma.lead.update({
     where: { id },
@@ -109,8 +125,8 @@ export async function reprocessarLead(id: string) {
   await addWebhookJob({
     leadId: lead.id,
     webhookId: lead.webhook_id,
-    contaId: lead.webhook.conta_id,
-    flowNs: lead.webhook.flow_ns,
+    contaId: lead.webhook_flow.conta_id,
+    flowNs: lead.webhook_flow.flow_ns,
     nome: lead.nome,
     telefone: lead.telefone,
     email: lead.email || undefined,
@@ -125,9 +141,10 @@ export async function reprocessarFalhas(webhookId?: string) {
       status: "falha",
       ...(webhookId ? { webhook_id: webhookId } : {}),
       webhook: { deleted_at: null },
+      webhook_flow_id: { not: null },
     },
     include: {
-      webhook: { select: { id: true, conta_id: true, flow_ns: true } },
+      webhook_flow: { select: { id: true, conta_id: true, flow_ns: true } },
     },
     take: 500,
   })
@@ -143,11 +160,12 @@ export async function reprocessarFalhas(webhookId?: string) {
 
   let enqueued = 0
   for (const lead of leads) {
+    if (!lead.webhook_flow) continue
     addWebhookJob({
       leadId: lead.id,
       webhookId: lead.webhook_id,
-      contaId: lead.webhook.conta_id,
-      flowNs: lead.webhook.flow_ns,
+      contaId: lead.webhook_flow.conta_id,
+      flowNs: lead.webhook_flow.flow_ns,
       nome: lead.nome,
       telefone: lead.telefone,
       email: lead.email || undefined,
@@ -174,10 +192,11 @@ export interface ExportLeadsParams {
   search?: string
   status?: string
   webhookId?: string
+  campanhaId?: string
 }
 
 export async function exportarLeads(params: ExportLeadsParams = {}) {
-  const { search = "", status, webhookId } = params
+  const { search = "", status, webhookId, campanhaId } = params
   const validStatuses: LeadStatus[] = ["pendente", "processando", "sucesso", "falha"]
   const statusFilter =
     status && status !== "todos" && validStatuses.includes(status as LeadStatus)
@@ -187,6 +206,7 @@ export async function exportarLeads(params: ExportLeadsParams = {}) {
   const where = {
     ...(statusFilter ? { status: statusFilter } : {}),
     ...(webhookId ? { webhook_id: webhookId } : {}),
+    ...(campanhaId ? { campanha_id: campanhaId } : {}),
     ...(search && {
       OR: [
         { nome: { contains: search, mode: "insensitive" as const } },
@@ -205,17 +225,22 @@ export async function exportarLeads(params: ExportLeadsParams = {}) {
       email: true,
       status: true,
       tentativas: true,
+      subscriber_id: true,
+      flow_executado: true,
+      conta_nome: true,
       created_at: true,
       processado_at: true,
       erro_msg: true,
       webhook: { select: { nome: true } },
+      campanha: { select: { nome: true } },
     },
     orderBy: { created_at: "desc" },
     take: 10000,
   })
 
   const csvHeaders = [
-    "id", "nome", "telefone", "email", "status", "webhook",
+    "id", "nome", "telefone", "email", "status", "webhook", "campanha",
+    "conta_manychat", "flow_executado", "subscriber_id",
     "tentativas", "recebido_em", "processado_em", "erro_msg",
   ]
 
@@ -227,6 +252,10 @@ export async function exportarLeads(params: ExportLeadsParams = {}) {
       escapeCsv(l.email),
       escapeCsv(l.status),
       escapeCsv(l.webhook.nome),
+      escapeCsv(l.campanha?.nome),
+      escapeCsv(l.conta_nome),
+      escapeCsv(l.flow_executado),
+      escapeCsv(l.subscriber_id),
       escapeCsv(String(l.tentativas)),
       escapeCsv(l.created_at.toISOString()),
       escapeCsv(l.processado_at?.toISOString()),

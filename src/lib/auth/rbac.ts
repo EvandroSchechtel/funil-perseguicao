@@ -9,6 +9,8 @@ type Permission =
   | "webhooks:write"
   | "webhooks:toggle"
   | "webhooks:delete"
+  | "campanhas:write"
+  | "campanhas:read"
   | "leads:reprocess"
   | "leads:read"
   | "api_keys:reveal"
@@ -26,6 +28,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "webhooks:write",
     "webhooks:toggle",
     "webhooks:delete",
+    "campanhas:write",
+    "campanhas:read",
     "leads:reprocess",
     "leads:read",
     "api_keys:reveal",
@@ -41,6 +45,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "webhooks:write",
     "webhooks:toggle",
     "webhooks:delete",
+    "campanhas:write",
+    "campanhas:read",
     "leads:reprocess",
     "leads:read",
     "api_keys:reveal",
@@ -52,6 +58,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "contas:read",
     "webhooks:write",
     "webhooks:toggle",
+    "campanhas:write",
+    "campanhas:read",
     "leads:reprocess",
     "leads:read",
     "dados:export",
@@ -60,6 +68,7 @@ const rolePermissions: Record<Role, Permission[]> = {
   viewer: [
     "clientes:read",
     "contas:read",
+    "campanhas:read",
     "leads:read",
     "dashboard:read",
   ],

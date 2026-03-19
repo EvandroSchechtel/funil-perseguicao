@@ -18,15 +18,28 @@ export async function POST(
   try {
     const { token } = await params
 
-    // 1. Find webhook by token
+    // 1. Find webhook with active flows (ordered for round-robin)
     const webhook = await prisma.webhook.findFirst({
       where: { token, deleted_at: null },
       select: {
         id: true,
         nome: true,
-        conta_id: true,
-        flow_ns: true,
         status: true,
+        campanha_id: true,
+        campanha: { select: { nome: true } },
+        webhook_flows: {
+          where: { status: "ativo", deleted_at: null },
+          select: {
+            id: true,
+            flow_ns: true,
+            flow_nome: true,
+            ordem: true,
+            total_enviados: true,
+            conta_id: true,
+            conta: { select: { nome: true } },
+          },
+          orderBy: [{ total_enviados: "asc" }, { ordem: "asc" }],
+        },
       },
     })
 
@@ -48,10 +61,17 @@ export async function POST(
 
     const { nome, telefone, email } = parsed.data
 
-    // 3. Create Lead record
+    // 3. Round-robin: pick flow with fewest sends
+    const flow = webhook.webhook_flows[0] ?? null
+
+    // 4. Create Lead record
     const lead = await prisma.lead.create({
       data: {
         webhook_id: webhook.id,
+        campanha_id: webhook.campanha_id || null,
+        webhook_flow_id: flow?.id || null,
+        flow_executado: flow?.flow_ns || null,
+        conta_nome: flow?.conta.nome || null,
         nome,
         telefone,
         email: email || null,
@@ -59,16 +79,26 @@ export async function POST(
       },
     })
 
-    // 4. Queue job for async processing (best-effort — lead stays as pendente if Redis is down)
-    addWebhookJob({
-      leadId: lead.id,
-      webhookId: webhook.id,
-      contaId: webhook.conta_id,
-      flowNs: webhook.flow_ns,
-      nome,
-      telefone,
-      email: email || undefined,
-    }).catch((err) => console.error("[addWebhookJob] Redis unavailable, lead queued manually later:", err))
+    // 5. Increment flow counter
+    if (flow) {
+      await prisma.webhookFlow.update({
+        where: { id: flow.id },
+        data: { total_enviados: { increment: 1 } },
+      })
+    }
+
+    // 6. Queue job for async processing
+    if (flow) {
+      addWebhookJob({
+        leadId: lead.id,
+        webhookId: webhook.id,
+        contaId: flow.conta_id,
+        flowNs: flow.flow_ns,
+        nome,
+        telefone,
+        email: email || undefined,
+      }).catch((err) => console.error("[addWebhookJob] Redis unavailable:", err))
+    }
 
     return ok({ ok: true, lead_id: lead.id })
   } catch (error) {

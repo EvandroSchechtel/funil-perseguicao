@@ -81,9 +81,7 @@ export async function executeTool(
       case "criar_webhook":
         data = await webhooksService.criarWebhook({
           nome: args.nome,
-          conta_id: args.conta_id,
-          flow_ns: args.flow_ns,
-          flow_nome: args.flow_nome,
+          campanha_id: args.campanha_id,
           status: args.status,
           userId: ctx.userId,
         })
@@ -92,8 +90,7 @@ export async function executeTool(
       case "atualizar_webhook":
         data = await webhooksService.atualizarWebhook(args.id, {
           nome: args.nome,
-          flow_ns: args.flow_ns,
-          flow_nome: args.flow_nome,
+          campanha_id: args.campanha_id,
           status: args.status,
         })
         break
