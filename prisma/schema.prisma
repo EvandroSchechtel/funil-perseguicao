@@ -1,0 +1,131 @@
+// Prisma Schema — Funil Perseguição
+// Phase 2: + Webhook, Lead
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  super_admin
+  admin
+  operador
+  viewer
+}
+
+enum Status {
+  ativo
+  inativo
+}
+
+enum LeadStatus {
+  pendente
+  processando
+  sucesso
+  falha
+}
+
+model Usuario {
+  id                    String    @id @default(uuid())
+  nome                  String
+  email                 String    @unique
+  senha                 String
+  role                  Role      @default(viewer)
+  avatar_url            String?
+  status                Status    @default(ativo)
+  ultimo_login          DateTime?
+  force_password_change Boolean   @default(false)
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @updatedAt
+  deleted_at            DateTime?
+
+  refresh_tokens        RefreshToken[]
+  password_reset_tokens PasswordResetToken[]
+  contas_manychat       ContaManychat[]
+  webhooks              Webhook[]
+
+  @@map("usuarios")
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid())
+  token      String    @unique
+  usuario_id String
+  usuario    Usuario   @relation(fields: [usuario_id], references: [id])
+  expires_at DateTime
+  revoked_at DateTime?
+  created_at DateTime  @default(now())
+
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id         String    @id @default(uuid())
+  token      String    @unique
+  usuario_id String
+  usuario    Usuario   @relation(fields: [usuario_id], references: [id])
+  expires_at DateTime
+  used_at    DateTime?
+  created_at DateTime  @default(now())
+
+  @@map("password_reset_tokens")
+}
+
+model ContaManychat {
+  id           String    @id @default(uuid())
+  nome         String
+  api_key      String
+  page_id      String?
+  page_name    String?
+  status       Status    @default(ativo)
+  ultimo_sync  DateTime?
+  created_by   String
+  usuario      Usuario   @relation(fields: [created_by], references: [id])
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+  deleted_at   DateTime?
+
+  webhooks     Webhook[]
+
+  @@map("contas_manychat")
+}
+
+model Webhook {
+  id         String        @id @default(uuid())
+  nome       String
+  token      String        @unique @default(uuid())
+  conta_id   String
+  conta      ContaManychat @relation(fields: [conta_id], references: [id])
+  flow_ns    String
+  flow_nome  String?
+  status     Status        @default(ativo)
+  created_by String
+  usuario    Usuario       @relation(fields: [created_by], references: [id])
+  leads      Lead[]
+  created_at DateTime      @default(now())
+  updated_at DateTime      @updatedAt
+  deleted_at DateTime?
+
+  @@map("webhooks")
+}
+
+model Lead {
+  id            String     @id @default(uuid())
+  webhook_id    String
+  webhook       Webhook    @relation(fields: [webhook_id], references: [id])
+  nome          String
+  telefone      String
+  email         String?
+  status        LeadStatus @default(pendente)
+  erro_msg      String?
+  tentativas    Int        @default(0)
+  processado_at DateTime?
+  created_at    DateTime   @default(now())
+  updated_at    DateTime   @updatedAt
+
+  @@map("leads")
+}
