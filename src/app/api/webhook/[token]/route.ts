@@ -23,10 +23,8 @@ export async function POST(
       where: { token, deleted_at: null },
       select: {
         id: true,
-        nome: true,
         status: true,
         campanha_id: true,
-        campanha: { select: { nome: true } },
         webhook_flows: {
           where: { status: "ativo", deleted_at: null },
           select: {
@@ -48,9 +46,7 @@ export async function POST(
 
     // 2. Validate body
     let body: unknown
-    try {
-      body = await request.json()
-    } catch {
+    try { body = await request.json() } catch {
       return badRequest("Body JSON inválido.")
     }
 
@@ -64,22 +60,62 @@ export async function POST(
     // 3. Round-robin: pick flow with fewest sends
     const flow = webhook.webhook_flows[0] ?? null
 
-    // 4. Create Lead record
-    const lead = await prisma.lead.create({
-      data: {
-        webhook_id: webhook.id,
-        campanha_id: webhook.campanha_id || null,
-        webhook_flow_id: flow?.id || null,
-        flow_executado: flow?.flow_ns || null,
-        conta_nome: flow?.conta.nome || null,
-        nome,
-        telefone,
-        email: email || null,
-        status: "pendente",
-      },
+    // 4. Upsert Contato by telefone (pessoa = número de celular)
+    const contato = await prisma.contato.upsert({
+      where: { telefone },
+      update: { nome, email: email || null },
+      create: { telefone, nome, email: email || null },
+      select: { id: true },
     })
 
-    // 5. Increment flow counter
+    // 5. Upsert Lead by (webhook_id, contato_id)
+    //    - processando → skip (already in flight)
+    //    - falha/sem_optin/pendente → reuse, reset to pendente
+    //    - sucesso → create new (legitimate re-send after success)
+    const existing = await prisma.lead.findUnique({
+      where: { webhook_id_contato_id: { webhook_id: webhook.id, contato_id: contato.id } },
+      select: { id: true, status: true },
+    })
+
+    let leadId: string
+
+    if (existing?.status === "processando") {
+      return ok({ ok: true, lead_id: existing.id, deduped: true })
+    }
+
+    if (existing && existing.status !== "sucesso") {
+      await prisma.lead.update({
+        where: { id: existing.id },
+        data: {
+          nome,
+          email: email || null,
+          webhook_flow_id: flow?.id ?? null,
+          flow_executado: flow?.flow_ns ?? null,
+          conta_nome: flow?.conta.nome ?? null,
+          status: "pendente",
+          erro_msg: null,
+        },
+      })
+      leadId = existing.id
+    } else {
+      const lead = await prisma.lead.create({
+        data: {
+          contato_id: contato.id,
+          webhook_id: webhook.id,
+          campanha_id: webhook.campanha_id || null,
+          webhook_flow_id: flow?.id || null,
+          flow_executado: flow?.flow_ns || null,
+          conta_nome: flow?.conta.nome || null,
+          nome,
+          telefone,
+          email: email || null,
+          status: "pendente",
+        },
+      })
+      leadId = lead.id
+    }
+
+    // 6. Increment flow counter
     if (flow) {
       await prisma.webhookFlow.update({
         where: { id: flow.id },
@@ -87,10 +123,10 @@ export async function POST(
       })
     }
 
-    // 6. Queue job for async processing
+    // 7. Queue job
     if (flow) {
       addWebhookJob({
-        leadId: lead.id,
+        leadId,
         webhookId: webhook.id,
         contaId: flow.conta_id,
         flowNs: flow.flow_ns,
@@ -100,7 +136,7 @@ export async function POST(
       }).catch((err) => console.error("[addWebhookJob] Redis unavailable:", err))
     }
 
-    return ok({ ok: true, lead_id: lead.id })
+    return ok({ ok: true, lead_id: leadId })
   } catch (error) {
     console.error("[POST /api/webhook/[token]]", error)
     return serverError()

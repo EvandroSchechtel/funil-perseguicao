@@ -12,31 +12,37 @@ export function startWebhookWorker(): Worker {
 
       console.log(`[Worker] Processing lead ${leadId} (job ${job.id})`)
 
-      // 1. Mark lead as processando
-      await prisma.lead.update({
+      // 1. Mark lead as processando, increment tentativas
+      const updated = await prisma.lead.update({
         where: { id: leadId },
         data: { status: "processando", tentativas: { increment: 1 } },
+        select: { tentativas: true, contato_id: true, campanha_id: true },
       })
+      const numeroTentativa = updated.tentativas
 
       // 2. Get API key from conta
       const conta = await prisma.contaManychat.findFirst({
         where: { id: contaId, deleted_at: null },
-        select: { api_key: true, whatsapp_field_id: true },
+        select: { api_key: true, whatsapp_field_id: true, nome: true },
       })
 
       if (!conta) {
+        const errMsg = "Conta Manychat não encontrada ou inativa."
         await prisma.lead.update({
           where: { id: leadId },
-          data: { status: "falha", erro_msg: "Conta Manychat não encontrada ou inativa." },
+          data: { status: "falha", erro_msg: errMsg },
         })
-        throw new Error("Conta Manychat não encontrada")
+        await prisma.leadTentativa.create({
+          data: { lead_id: leadId, numero: numeroTentativa, status: "falha", erro_msg: errMsg, flow_ns: flowNs },
+        })
+        throw new Error(errMsg)
       }
 
-      // 3. Process in Manychat (find/create subscriber → send flow)
+      // 3. Process in Manychat
       const result = await processLeadInManychat(conta.api_key, { nome, telefone, email }, flowNs)
 
-      // 4. Update lead status based on result
       if (result.ok) {
+        // 4a. Success — update lead + record tentativa + upsert ContatoConta
         await prisma.lead.update({
           where: { id: leadId },
           data: {
@@ -47,23 +53,69 @@ export function startWebhookWorker(): Worker {
           },
         })
 
-        // Best-effort: record WhatsApp phone in [esc]whatsapp-id custom field
+        await prisma.leadTentativa.create({
+          data: {
+            lead_id: leadId,
+            numero: numeroTentativa,
+            status: "sucesso",
+            subscriber_id: result.subscriber_id ?? null,
+            flow_ns: flowNs,
+            conta_nome: conta.nome,
+          },
+        })
+
+        // Upsert ContatoConta — vincula o subscriber_id desta conta a este contato
+        if (updated.contato_id && result.subscriber_id) {
+          await prisma.contatoConta.upsert({
+            where: { contato_id_conta_id: { contato_id: updated.contato_id, conta_id: contaId } },
+            update: { subscriber_id: result.subscriber_id, campanha_id: updated.campanha_id },
+            create: {
+              contato_id: updated.contato_id,
+              conta_id: contaId,
+              subscriber_id: result.subscriber_id,
+              campanha_id: updated.campanha_id,
+            },
+          })
+        }
+
+        // Best-effort: write phone to [esc]whatsapp-id custom field in Manychat
         if (result.subscriber_id) {
           setWhatsappIdField(conta.api_key, result.subscriber_id, telefone, conta.whatsapp_field_id).catch(() => {})
         }
 
         console.log(`[Worker] Lead ${leadId} processed successfully (subscriber: ${result.subscriber_id})`)
+
       } else if (result.sem_optin) {
-        // Subscriber has not opted in — no point retrying
         await prisma.lead.update({
           where: { id: leadId },
           data: { status: "sem_optin", erro_msg: result.error },
         })
+        await prisma.leadTentativa.create({
+          data: {
+            lead_id: leadId,
+            numero: numeroTentativa,
+            status: "sem_optin",
+            erro_msg: result.error ?? null,
+            flow_ns: flowNs,
+            conta_nome: conta.nome,
+          },
+        })
         console.warn(`[Worker] Lead ${leadId} sem_optin — skipping retries`)
+
       } else {
         await prisma.lead.update({
           where: { id: leadId },
           data: { status: "falha", erro_msg: result.error },
+        })
+        await prisma.leadTentativa.create({
+          data: {
+            lead_id: leadId,
+            numero: numeroTentativa,
+            status: "falha",
+            erro_msg: result.error ?? null,
+            flow_ns: flowNs,
+            conta_nome: conta.nome,
+          },
         })
         throw new Error(result.error) // triggers BullMQ retry
       }

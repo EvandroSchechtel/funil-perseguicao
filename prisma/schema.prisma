@@ -126,7 +126,8 @@ model ContaManychat {
   updated_at          DateTime  @updatedAt
   deleted_at          DateTime?
 
-  webhook_flows WebhookFlow[]
+  webhook_flows     WebhookFlow[]
+  contatos_vinculados ContatoConta[]
 
   @@map("contas_manychat")
 }
@@ -196,31 +197,84 @@ model WebhookFlow {
   @@map("webhook_flows")
 }
 
+// ── Contatos ──────────────────────────────────────────────────────────────────
+// Identidade única por telefone — pessoa, independente de campanha ou conta
+
+model Contato {
+  id         String   @id @default(uuid())
+  telefone   String   @unique  // chave natural — o número é a identidade
+  nome       String
+  email      String?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  leads            Lead[]
+  contas_vinculadas ContatoConta[]
+
+  @@map("contatos")
+}
+
+// Vínculo entre um Contato e uma ContaManychat específica
+// Armazena o subscriber_id para aquela conta
+model ContatoConta {
+  id            String        @id @default(uuid())
+  contato_id    String
+  contato       Contato       @relation(fields: [contato_id], references: [id])
+  conta_id      String
+  conta         ContaManychat @relation(fields: [conta_id], references: [id])
+  campanha_id   String?       // campanha que originou o vínculo
+  subscriber_id String?       // ID do subscriber nessa conta Manychat
+  created_at    DateTime      @default(now())
+  updated_at    DateTime      @updatedAt
+
+  @@unique([contato_id, conta_id])
+  @@map("contato_contas")
+}
+
 // ── Leads ─────────────────────────────────────────────────────────────────────
 
 model Lead {
-  id              String      @id @default(uuid())
+  id              String       @id @default(uuid())
+  contato_id      String
+  contato         Contato      @relation(fields: [contato_id], references: [id])
   webhook_id      String
-  webhook         Webhook     @relation(fields: [webhook_id], references: [id])
+  webhook         Webhook      @relation(fields: [webhook_id], references: [id])
   campanha_id     String?
-  campanha        Campanha?   @relation(fields: [campanha_id], references: [id])
+  campanha        Campanha?    @relation(fields: [campanha_id], references: [id])
   webhook_flow_id String?
   webhook_flow    WebhookFlow? @relation(fields: [webhook_flow_id], references: [id])
-  nome            String
-  telefone        String
+  nome            String       // snapshot do nome no momento do cadastro
+  telefone        String       // snapshot do telefone
   email           String?
-  subscriber_id   String?     // ID do subscriber no Manychat
-  flow_executado  String?     // flow_ns que foi disparado
-  conta_nome      String?     // nome da conta Manychat que recebeu
-  status          LeadStatus  @default(pendente)
+  subscriber_id   String?      // subscriber_id na conta que processou
+  flow_executado  String?
+  conta_nome      String?
+  status          LeadStatus   @default(pendente)
   erro_msg        String?
-  tentativas      Int         @default(0)
-  manychat_log    Json?       // log detalhado do que aconteceu no Manychat
+  tentativas      Int          @default(0)
   processado_at   DateTime?
-  created_at      DateTime    @default(now())
-  updated_at      DateTime    @updatedAt
+  created_at      DateTime     @default(now())
+  updated_at      DateTime     @updatedAt
 
+  tentativas_hist LeadTentativa[]
+
+  @@unique([webhook_id, contato_id])  // um lead por webhook+contato
   @@map("leads")
+}
+
+model LeadTentativa {
+  id            String    @id @default(uuid())
+  lead_id       String
+  lead          Lead      @relation(fields: [lead_id], references: [id])
+  numero        Int
+  status        String    // "sucesso" | "falha" | "sem_optin"
+  erro_msg      String?
+  subscriber_id String?
+  flow_ns       String?
+  conta_nome    String?
+  executado_at  DateTime  @default(now())
+
+  @@map("lead_tentativas")
 }
 
 // ── Agent ─────────────────────────────────────────────────────────────────────

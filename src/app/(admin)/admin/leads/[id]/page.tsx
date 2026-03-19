@@ -15,6 +15,17 @@ import { Badge } from "@/components/ui/badge"
 import { Header } from "@/components/layout/Header"
 import { toast } from "sonner"
 
+interface LeadTentativa {
+  id: string
+  numero: number
+  status: string
+  erro_msg: string | null
+  subscriber_id: string | null
+  flow_ns: string | null
+  conta_nome: string | null
+  executado_at: string
+}
+
 interface LeadDetail {
   id: string
   nome: string
@@ -26,7 +37,6 @@ interface LeadDetail {
   subscriber_id: string | null
   flow_executado: string | null
   conta_nome: string | null
-  manychat_log: unknown
   processado_at: string | null
   created_at: string
   updated_at: string
@@ -38,6 +48,7 @@ interface LeadDetail {
     flow_nome: string | null
     conta: { id: string; nome: string }
   } | null
+  tentativas_hist: LeadTentativa[]
 }
 
 const STATUS_CONFIG = {
@@ -105,99 +116,10 @@ function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label:
   )
 }
 
-interface TimelineEvent {
-  at: string
-  icon: React.ElementType
-  iconColor: string
-  title: string
-  description?: string
-  mono?: string
-}
-
-function buildTimeline(lead: LeadDetail): TimelineEvent[] {
-  const events: TimelineEvent[] = []
-
-  // 1. Lead received
-  events.push({
-    at: lead.created_at,
-    icon: Webhook,
-    iconColor: "text-[#60A5FA]",
-    title: "Lead recebido via Webhook",
-    description: `Webhook: ${lead.webhook.nome}${lead.campanha ? ` · Campanha: ${lead.campanha.nome}` : ""}`,
-  })
-
-  // 2. Flow assigned
-  if (lead.webhook_flow) {
-    events.push({
-      at: lead.created_at,
-      icon: Zap,
-      iconColor: "text-[#A78BFA]",
-      title: "Flow selecionado pelo rodízio",
-      description: `${lead.webhook_flow.flow_nome || lead.webhook_flow.flow_ns} · Conta: ${lead.webhook_flow.conta.nome}`,
-      mono: lead.webhook_flow.flow_ns,
-    })
-  }
-
-  // 3. Processing attempts (tentativas > 0 means it was picked up)
-  if (lead.tentativas > 0) {
-    events.push({
-      at: lead.updated_at,
-      icon: Loader2,
-      iconColor: "text-[#60A5FA]",
-      title: `${lead.tentativas} tentativa${lead.tentativas > 1 ? "s" : ""} de processamento`,
-      description:
-        lead.tentativas > 1
-          ? `Foram realizadas ${lead.tentativas} tentativas com backoff exponencial (5s, 25s, 125s)`
-          : "Processamento iniciado pelo worker",
-    })
-  }
-
-  // 4. Sem optin
-  if (lead.status === "sem_optin") {
-    events.push({
-      at: lead.updated_at,
-      icon: AlertTriangle,
-      iconColor: "text-[#F59E0B]",
-      title: "Contato sem opt-in no Manychat",
-      description:
-        "O número de telefone não foi encontrado como subscriber no Manychat. O contato precisa iniciar uma conversa pelo WhatsApp para habilitar o envio de flows.",
-    })
-  }
-
-  // 5. Error
-  if (lead.status === "falha" && lead.erro_msg) {
-    events.push({
-      at: lead.updated_at,
-      icon: XCircle,
-      iconColor: "text-[#F87171]",
-      title: "Erro no processamento",
-      mono: lead.erro_msg,
-    })
-  }
-
-  // 6. Success
-  if (lead.status === "sucesso" && lead.processado_at) {
-    events.push({
-      at: lead.processado_at,
-      icon: Send,
-      iconColor: "text-[#25D366]",
-      title: "Flow disparado com sucesso",
-      description: `Conta: ${lead.conta_nome || lead.webhook_flow?.conta.nome || "—"} · Flow: ${lead.flow_executado || lead.webhook_flow?.flow_ns || "—"}`,
-    })
-
-    if (lead.subscriber_id) {
-      events.push({
-        at: lead.processado_at,
-        icon: UserCheck,
-        iconColor: "text-[#25D366]",
-        title: "Subscriber identificado no Manychat",
-        description: "ID do subscriber registrado no lead",
-        mono: lead.subscriber_id,
-      })
-    }
-  }
-
-  return events.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+const TENTATIVA_STATUS_CONFIG: Record<string, { icon: React.ElementType; color: string; label: string }> = {
+  sucesso:   { icon: CheckCircle2,   color: "text-[#25D366]", label: "Flow enviado" },
+  falha:     { icon: XCircle,        color: "text-[#F87171]", label: "Falhou" },
+  sem_optin: { icon: AlertTriangle,  color: "text-[#F59E0B]", label: "Sem Opt-in" },
 }
 
 export default function LeadDetailPage() {
@@ -416,43 +338,75 @@ export default function LeadDetailPage() {
               )}
             </div>
 
-            {/* ── Timeline / Histórico ── */}
+            {/* ── Histórico de Tentativas ── */}
             <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-5">
-              <h2 className="text-[#F1F1F3] font-semibold mb-1">Histórico de Ações</h2>
-              <p className="text-[#5A5A72] text-xs mb-5">Linha do tempo completa do processamento deste lead</p>
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="text-[#F1F1F3] font-semibold">Histórico de Tentativas</h2>
+                {lead.tentativas > 0 && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-[#1E1E2A] text-[#5A5A72] border border-[#2A2A3A]">
+                    {lead.tentativas} tentativa{lead.tentativas !== 1 ? "s" : ""}
+                  </span>
+                )}
+              </div>
+              <p className="text-[#5A5A72] text-xs mb-5">Cada execução do worker registrada em ordem cronológica</p>
 
-              <div className="relative">
-                {buildTimeline(lead).map((event, i, arr) => {
-                  const Icon = event.icon
-                  const isLast = i === arr.length - 1
+              {/* Lead received event */}
+              <div className="flex gap-4">
+                <div className="flex flex-col items-center">
+                  <div className="w-8 h-8 rounded-full bg-[#1E1E2A] border border-[#2A2A3A] flex items-center justify-center shrink-0">
+                    <Webhook className="w-3.5 h-3.5 text-[#60A5FA]" />
+                  </div>
+                  {(lead.tentativas_hist.length > 0) && <div className="w-px flex-1 bg-[#1E1E2A] my-1" />}
+                </div>
+                <div className="pb-5 flex-1 min-w-0">
+                  <p className="text-[#F1F1F3] text-sm font-medium">Lead recebido</p>
+                  <p className="text-[#8B8B9E] text-xs mt-0.5">
+                    {lead.webhook.nome}{lead.campanha ? ` · ${lead.campanha.nome}` : ""}
+                    {lead.webhook_flow && ` · Flow: ${lead.webhook_flow.flow_nome || lead.webhook_flow.flow_ns}`}
+                  </p>
+                  <p className="text-[#3A3A52] text-xs mt-1">{formatDate(lead.created_at)}</p>
+                </div>
+              </div>
+
+              {lead.tentativas_hist.length === 0 ? (
+                <p className="text-[#5A5A72] text-xs text-center py-4">Nenhuma tentativa registrada ainda</p>
+              ) : (
+                lead.tentativas_hist.map((t, i) => {
+                  const cfg = TENTATIVA_STATUS_CONFIG[t.status] ?? TENTATIVA_STATUS_CONFIG.falha
+                  const Icon = cfg.icon
+                  const isLast = i === lead.tentativas_hist.length - 1
                   return (
-                    <div key={i} className="flex gap-4">
-                      {/* Spine */}
+                    <div key={t.id} className="flex gap-4">
                       <div className="flex flex-col items-center">
-                        <div className={`w-8 h-8 rounded-full bg-[#1E1E2A] border border-[#2A2A3A] flex items-center justify-center shrink-0`}>
-                          <Icon className={`w-3.5 h-3.5 ${event.iconColor}`} />
+                        <div className="w-8 h-8 rounded-full bg-[#1E1E2A] border border-[#2A2A3A] flex items-center justify-center shrink-0">
+                          <Icon className={`w-3.5 h-3.5 ${cfg.color}`} />
                         </div>
                         {!isLast && <div className="w-px flex-1 bg-[#1E1E2A] my-1" />}
                       </div>
-                      {/* Content */}
-                      <div className={`pb-5 flex-1 min-w-0 ${isLast ? "" : ""}`}>
-                        <p className="text-[#F1F1F3] text-sm font-medium">{event.title}</p>
-                        {event.description && (
-                          <p className="text-[#8B8B9E] text-xs mt-0.5">{event.description}</p>
+                      <div className="pb-5 flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className={`text-sm font-medium ${cfg.color}`}>Tentativa {t.numero} — {cfg.label}</p>
+                        </div>
+                        {t.conta_nome && (
+                          <p className="text-[#8B8B9E] text-xs mt-0.5">Conta: {t.conta_nome}</p>
                         )}
-                        {event.mono && (
-                          <p className="text-xs font-mono text-[#A78BFA] bg-[#1A1A28] border border-[#2A2A3A] rounded px-2 py-1 mt-1.5 break-all">
-                            {event.mono}
+                        {t.flow_ns && (
+                          <p className="font-mono text-xs text-[#5A5A72] mt-0.5">{t.flow_ns}</p>
+                        )}
+                        {t.subscriber_id && (
+                          <p className="text-xs text-[#25D366] mt-0.5">subscriber_id: <span className="font-mono">{t.subscriber_id}</span></p>
+                        )}
+                        {t.erro_msg && (
+                          <p className="text-xs font-mono text-[#F87171] bg-[#1A1010] border border-[#F87171]/20 rounded px-2 py-1 mt-1.5 break-all">
+                            {t.erro_msg}
                           </p>
                         )}
-                        <p className="text-[#3A3A52] text-xs mt-1.5">
-                          {formatDate(event.at)}
-                        </p>
+                        <p className="text-[#3A3A52] text-xs mt-1.5">{formatDate(t.executado_at)}</p>
                       </div>
                     </div>
                   )
-                })}
-              </div>
+                })
+              )}
             </div>
 
             {/* ── Datas ── */}
