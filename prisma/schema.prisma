@@ -1,5 +1,4 @@
 // Prisma Schema — Funil Perseguição
-// Phase 3: + AgentSessao, AgentAcao
 
 generator client {
   provider = "prisma-client"
@@ -9,6 +8,8 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+// ── Enums ─────────────────────────────────────────────────────────────────────
 
 enum Role {
   super_admin
@@ -29,6 +30,14 @@ enum LeadStatus {
   falha
 }
 
+enum AgentSessaoStatus {
+  executando
+  concluido
+  erro
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
 model Usuario {
   id                    String    @id @default(uuid())
   nome                  String
@@ -46,6 +55,7 @@ model Usuario {
   refresh_tokens        RefreshToken[]
   password_reset_tokens PasswordResetToken[]
   contas_manychat       ContaManychat[]
+  campanhas             Campanha[]
   webhooks              Webhook[]
   agent_sessoes         AgentSessao[]
 
@@ -76,66 +86,118 @@ model PasswordResetToken {
   @@map("password_reset_tokens")
 }
 
-model ContaManychat {
-  id           String    @id @default(uuid())
-  nome         String
-  api_key      String
-  page_id      String?
-  page_name    String?
-  status       Status    @default(ativo)
-  ultimo_sync  DateTime?
-  created_by   String
-  usuario      Usuario   @relation(fields: [created_by], references: [id])
-  created_at   DateTime  @default(now())
-  updated_at   DateTime  @updatedAt
-  deleted_at   DateTime?
+// ── Manychat ──────────────────────────────────────────────────────────────────
 
-  webhooks     Webhook[]
+model ContaManychat {
+  id          String    @id @default(uuid())
+  nome        String
+  api_key     String
+  page_id     String?
+  page_name   String?
+  status      Status    @default(ativo)
+  ultimo_sync DateTime?
+  created_by  String
+  usuario     Usuario   @relation(fields: [created_by], references: [id])
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+  deleted_at  DateTime?
+
+  webhook_flows WebhookFlow[]
 
   @@map("contas_manychat")
 }
 
+// ── Campanhas ─────────────────────────────────────────────────────────────────
+
+model Campanha {
+  id          String    @id @default(uuid())
+  nome        String
+  descricao   String?
+  status      Status    @default(ativo)
+  data_inicio DateTime?
+  data_fim    DateTime?
+  created_by  String
+  usuario     Usuario   @relation(fields: [created_by], references: [id])
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+  deleted_at  DateTime?
+
+  webhooks Webhook[]
+  leads    Lead[]
+
+  @@map("campanhas")
+}
+
+// ── Webhooks ──────────────────────────────────────────────────────────────────
+
 model Webhook {
-  id         String        @id @default(uuid())
-  nome       String
-  token      String        @unique @default(uuid())
-  conta_id   String
-  conta      ContaManychat @relation(fields: [conta_id], references: [id])
-  flow_ns    String
-  flow_nome  String?
-  status     Status        @default(ativo)
-  created_by String
-  usuario    Usuario       @relation(fields: [created_by], references: [id])
-  leads      Lead[]
-  created_at DateTime      @default(now())
-  updated_at DateTime      @updatedAt
-  deleted_at DateTime?
+  id          String    @id @default(uuid())
+  nome        String
+  token       String    @unique @default(uuid())
+  campanha_id String?
+  campanha    Campanha? @relation(fields: [campanha_id], references: [id])
+  status      Status    @default(ativo)
+  created_by  String
+  usuario     Usuario   @relation(fields: [created_by], references: [id])
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+  deleted_at  DateTime?
+
+  webhook_flows WebhookFlow[]
+  leads         Lead[]
 
   @@map("webhooks")
 }
 
+// Cada item do rodízio: um flow em uma conta Manychat específica
+model WebhookFlow {
+  id             String        @id @default(uuid())
+  webhook_id     String
+  webhook        Webhook       @relation(fields: [webhook_id], references: [id])
+  conta_id       String
+  conta          ContaManychat @relation(fields: [conta_id], references: [id])
+  flow_ns        String
+  flow_nome      String?
+  ordem          Int           @default(0)
+  total_enviados Int           @default(0)
+  status         Status        @default(ativo)
+  created_at     DateTime      @default(now())
+  updated_at     DateTime      @updatedAt
+  deleted_at     DateTime?
+
+  leads Lead[]
+
+  @@map("webhook_flows")
+}
+
+// ── Leads ─────────────────────────────────────────────────────────────────────
+
 model Lead {
-  id            String     @id @default(uuid())
-  webhook_id    String
-  webhook       Webhook    @relation(fields: [webhook_id], references: [id])
-  nome          String
-  telefone      String
-  email         String?
-  status        LeadStatus @default(pendente)
-  erro_msg      String?
-  tentativas    Int        @default(0)
-  processado_at DateTime?
-  created_at    DateTime   @default(now())
-  updated_at    DateTime   @updatedAt
+  id              String      @id @default(uuid())
+  webhook_id      String
+  webhook         Webhook     @relation(fields: [webhook_id], references: [id])
+  campanha_id     String?
+  campanha        Campanha?   @relation(fields: [campanha_id], references: [id])
+  webhook_flow_id String?
+  webhook_flow    WebhookFlow? @relation(fields: [webhook_flow_id], references: [id])
+  nome            String
+  telefone        String
+  email           String?
+  subscriber_id   String?     // ID do subscriber no Manychat
+  flow_executado  String?     // flow_ns que foi disparado
+  conta_nome      String?     // nome da conta Manychat que recebeu
+  status          LeadStatus  @default(pendente)
+  erro_msg        String?
+  tentativas      Int         @default(0)
+  manychat_log    Json?       // log detalhado do que aconteceu no Manychat
+  processado_at   DateTime?
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
 
   @@map("leads")
 }
 
-enum AgentSessaoStatus {
-  executando
-  concluido
-  erro
-}
+// ── Agent ─────────────────────────────────────────────────────────────────────
 
 model AgentSessao {
   id         String            @id @default(uuid())
@@ -147,7 +209,7 @@ model AgentSessao {
   created_at DateTime          @default(now())
   updated_at DateTime          @updatedAt
 
-  acoes      AgentAcao[]
+  acoes AgentAcao[]
 
   @@map("agent_sessoes")
 }
