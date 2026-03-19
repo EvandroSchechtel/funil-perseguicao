@@ -52,6 +52,7 @@ export default function FilaPage() {
   const [data, setData] = useState<QueueData | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [apiError, setApiError] = useState<string | null>(null)
 
   const fetchData = useCallback(async (isRefresh = false) => {
     if (!accessToken) return
@@ -64,7 +65,13 @@ export default function FilaPage() {
       if (res.ok) {
         const json = await res.json()
         setData(json.data)
+        setApiError(null)
+      } else {
+        const err = await res.json().catch(() => ({}))
+        setApiError(err?.error || `Erro ${res.status} ao carregar dados da fila`)
       }
+    } catch {
+      setApiError("Não foi possível conectar à API")
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -104,6 +111,16 @@ export default function FilaPage() {
             Atualizar
           </Button>
         </div>
+
+        {apiError && (
+          <div className="bg-[#16161E] border border-[#F87171]/30 rounded-xl p-4 flex items-center gap-3">
+            <XCircle className="w-5 h-5 text-[#F87171] shrink-0" />
+            <div>
+              <p className="text-[#F87171] text-sm font-medium">Erro ao carregar dados</p>
+              <p className="text-[#8B8B9E] text-xs mt-0.5">{apiError}</p>
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center py-20">

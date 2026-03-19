@@ -122,7 +122,8 @@ export async function createManychatSubscriber(
       body: JSON.stringify({
         first_name: firstName,
         last_name: lastName,
-        phone: lead.telefone,
+        phone: normalizePhone(lead.telefone),
+        whatsapp_phone: normalizePhone(lead.telefone),
         whatsapp_phone_optin: true,
         ...(lead.email && { email: lead.email }),
       }),

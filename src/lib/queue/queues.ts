@@ -47,8 +47,9 @@ export async function getQueueStats() {
       queue.getFailedCount(),
       queue.getDelayedCount(),
     ])
-    return { waiting, active, completed, failed, delayed, total: waiting + active + delayed }
-  } catch {
-    return { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0, total: 0 }
+    return { waiting, active, completed, failed, delayed, paused: 0, total: waiting + active + delayed }
+  } catch (err) {
+    console.error("[getQueueStats] Redis error:", err)
+    return { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0, paused: 0, total: 0 }
   }
 }
