@@ -214,8 +214,17 @@ export default function WebhooksPage() {
                 {webhooks.map((wh) => (
                   <tr key={wh.id} className="border-b border-[#1E1E2A] last:border-0 hover:bg-[#1C1C28] transition-colors">
                     <td className="px-5 py-4">
-                      <p className="text-[#F1F1F3] font-medium text-sm">{wh.nome}</p>
-                      <p className="text-[#5A5A72] text-xs mt-0.5">por {wh.usuario.nome}</p>
+                      {canWrite ? (
+                        <Link href={`/admin/webhooks/${wh.id}/editar`} className="group">
+                          <p className="text-[#F1F1F3] font-medium text-sm group-hover:text-[#25D366] transition-colors">{wh.nome}</p>
+                          <p className="text-[#5A5A72] text-xs mt-0.5">por {wh.usuario.nome}</p>
+                        </Link>
+                      ) : (
+                        <>
+                          <p className="text-[#F1F1F3] font-medium text-sm">{wh.nome}</p>
+                          <p className="text-[#5A5A72] text-xs mt-0.5">por {wh.usuario.nome}</p>
+                        </>
+                      )}
                     </td>
                     <td className="px-5 py-4">
                       {wh.campanha ? (
