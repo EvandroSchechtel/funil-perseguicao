@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback } from "react"
-import { CheckCircle2, XCircle, Clock, Loader2, AlertTriangle, Activity, RefreshCw } from "lucide-react"
+import { CheckCircle2, XCircle, Clock, Loader2, AlertTriangle, Activity, RefreshCw, PauseCircle } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Header } from "@/components/layout/Header"
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,7 @@ interface LeadCounts {
   sucesso?: number
   falha?: number
   sem_optin?: number
+  aguardando?: number
 }
 
 interface FailedJob {
@@ -153,13 +154,14 @@ export default function FilaPage() {
               <h2 className="text-[#8B8B9E] text-xs uppercase tracking-wider font-semibold mb-3">
                 Leads por Status — {totalLeads} total
               </h2>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
                 {[
                   { key: "pendente", label: "Pendente", icon: Clock, color: "text-[#8B8B9E]" },
                   { key: "processando", label: "Processando", icon: Loader2, color: "text-[#60A5FA]" },
                   { key: "sucesso", label: "Sucesso", icon: CheckCircle2, color: "text-[#25D366]" },
                   { key: "falha", label: "Falha", icon: XCircle, color: "text-[#F87171]" },
                   { key: "sem_optin", label: "Sem Opt-in", icon: AlertTriangle, color: "text-[#F59E0B]" },
+                  { key: "aguardando", label: "Pausados", icon: PauseCircle, color: "text-[#F59E0B]" },
                 ].map(({ key, label, icon: Icon, color }) => (
                   <div key={key} className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-4">
                     <div className="flex items-center gap-2 mb-2">
