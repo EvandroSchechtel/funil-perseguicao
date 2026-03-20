@@ -140,12 +140,15 @@ export async function criarGrupo(data: CriarGrupoParams) {
   const inst = await prisma.instanciaZApi.findFirst({ where: { id: data.instancia_id, deleted_at: null } })
   if (!inst) throw new ServiceError("not_found", "Instância não encontrada.")
 
-  // Check unique constraint
+  // Check for duplicate nome_filtro on the same instance
   const existing = await prisma.grupoMonitoramento.findFirst({
-    where: { campanha_id: data.campanha_id, instancia_id: data.instancia_id },
+    where: {
+      instancia_id: data.instancia_id,
+      nome_filtro: { equals: data.nome_filtro, mode: "insensitive" },
+    },
   })
   if (existing) {
-    throw new ServiceError("conflict", "Já existe um grupo monitorado para esta campanha nesta instância.")
+    throw new ServiceError("conflict", "Já existe um grupo com este nome de filtro nesta instância.")
   }
 
   const grupo = await prisma.grupoMonitoramento.create({
