@@ -19,6 +19,7 @@ export interface ManychatActionResult {
   subscriber_id?: string
   error?: string
   sem_optin?: boolean // subscriber not found — no opt-in yet, do not retry
+  autoDetectedFieldId?: number // if wrong field_id was configured, this is the correct one
 }
 
 // Helper to create an AbortController with timeout
@@ -82,24 +83,36 @@ export async function findSubscriberByPhone(
   apiKey: string,
   phone: string
 ): Promise<{ id: string } | null> {
-  const normalized = normalizePhone(phone)
-  const { signal, clear } = withTimeout(10000)
-  try {
-    const url = `${MANYCHAT_API_BASE}/fb/subscriber/findBySystemField?system_field=whatsapp_phone&value=${encodeURIComponent(normalized)}`
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      signal,
-    })
-    clear()
+  const normalized = normalizePhone(phone) // +55...
+  const digits = phone.replace(/\D/g, "")  // 55... (no +)
 
-    if (!res.ok) return null
-    const data = await res.json()
-    if (data.status !== "success" || !data.data?.id) return null
-    return { id: String(data.data.id) }
-  } catch {
-    clear()
-    return null
+  // Swagger: params are "phone" or "email" directly (not system_field=X&value=Y)
+  // Try both +55... and 55... formats
+  for (const value of [normalized, digits]) {
+    const { signal, clear } = withTimeout(10000)
+    try {
+      const url = `${MANYCHAT_API_BASE}/fb/subscriber/findBySystemField?phone=${encodeURIComponent(value)}`
+      console.log(`[Manychat] findBySystemField phone="${value}"`)
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        signal,
+      })
+      clear()
+
+      const body = await res.text()
+      console.log(`[Manychat] findBySystemField HTTP ${res.status} → ${body.slice(0, 200)}`)
+
+      if (!res.ok) continue
+      let data: Record<string, unknown>
+      try { data = JSON.parse(body) } catch { continue }
+      if (data.status !== "success" || !(data.data as Record<string, unknown>)?.id) continue
+      console.log(`[Manychat] findBySystemField found phone="${value}"`)
+      return { id: String((data.data as Record<string, unknown>).id) }
+    } catch {
+      clear()
+    }
   }
+  return null
 }
 
 /**
@@ -114,19 +127,26 @@ export async function findSubscriberByCustomField(
 ): Promise<{ id: string } | null> {
   const { signal, clear } = withTimeout(10000)
   try {
-    const url = `${MANYCHAT_API_BASE}/fb/subscriber/findByCustomField?field_id=${fieldId}&value=${encodeURIComponent(value)}`
+    // Swagger: param is "field_value" (not "value")
+    const url = `${MANYCHAT_API_BASE}/fb/subscriber/findByCustomField?field_id=${fieldId}&field_value=${encodeURIComponent(value)}`
+    console.log(`[Manychat] findByCustomField field_id=${fieldId} field_value="${value}"`)
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       signal,
     })
     clear()
 
+    const body = await res.text()
+    console.log(`[Manychat] findByCustomField HTTP ${res.status} → ${body.slice(0, 300)}`)
+
     if (!res.ok) return null
-    const data = await res.json()
-    if (data.status !== "success" || !data.data?.id) return null
-    return { id: String(data.data.id) }
-  } catch {
+    let data: Record<string, unknown>
+    try { data = JSON.parse(body) } catch { return null }
+    if (data.status !== "success" || !(data.data as Record<string, unknown>)?.id) return null
+    return { id: String((data.data as Record<string, unknown>).id) }
+  } catch (err) {
     clear()
+    console.error(`[Manychat] findByCustomField error:`, err)
     return null
   }
 }
@@ -160,19 +180,28 @@ export async function createManychatSubscriber(
     })
     clear()
 
-    const data = await res.json().catch(() => ({}))
+    const rawBody = await res.text()
+    console.log(`[Manychat] createSubscriber HTTP ${res.status} → ${rawBody.slice(0, 500)}`)
+
+    let data: Record<string, unknown> = {}
+    try { data = JSON.parse(rawBody) } catch { /* ignore */ }
 
     if (!res.ok) {
       // Manychat returns 4xx with a message when subscriber already exists
-      const msg: string = data?.message || ""
-      if (msg.toLowerCase().includes("already exist") || msg.toLowerCase().includes("já existe")) {
+      const msg: string = String(data?.message || "")
+      if (
+        msg.toLowerCase().includes("already exist") ||
+        msg.toLowerCase().includes("já existe") ||
+        msg.toLowerCase().includes("already") ||
+        res.status === 409
+      ) {
         return { alreadyExists: true }
       }
       return null
     }
 
-    if (data.status !== "success" || !data.data?.id) return null
-    return { id: String(data.data.id) }
+    if (data.status !== "success" || !(data.data as Record<string, unknown>)?.id) return null
+    return { id: String((data.data as Record<string, unknown>).id) }
   } catch {
     clear()
     return null
@@ -227,30 +256,35 @@ export async function processLeadInManychat(
   apiKey: string,
   lead: { nome: string; telefone: string; email?: string },
   flowNs: string,
-  whatsappFieldId?: number | null
+  whatsappFieldId?: number | null,
+  knownSubscriberId?: string
 ): Promise<ManychatActionResult> {
-  const phone = normalizePhone(lead.telefone)
-  const rawPhone = lead.telefone.replace(/\D/g, "")
-  console.log(`[Manychat] processLead — phone: ${phone}, flow: ${flowNs}, fieldId: ${whatsappFieldId}`)
+  const phone = normalizePhone(lead.telefone)   // "+5542998234664"
+  console.log(`[Manychat] processLead — phone: ${phone}, flow: ${flowNs}, fieldId: ${whatsappFieldId}, knownSubscriberId: ${knownSubscriberId ?? "none"}`)
 
-  // 1. Try custom field lookup (primary — works across all accounts)
-  let subscriber: { id: string } | null = null
-
-  if (whatsappFieldId) {
-    subscriber = await findSubscriberByCustomField(apiKey, whatsappFieldId, rawPhone)
-    console.log(`[Manychat] findByCustomField(${whatsappFieldId}, ${rawPhone}) →`, subscriber ? `found id=${subscriber.id}` : "not found")
-
-    if (!subscriber) {
-      // Also try with + prefix
-      subscriber = await findSubscriberByCustomField(apiKey, whatsappFieldId, phone)
-      console.log(`[Manychat] findByCustomField(${whatsappFieldId}, ${phone}) →`, subscriber ? `found id=${subscriber.id}` : "not found")
+  // 0. If subscriber_id is already known, skip all lookups
+  if (knownSubscriberId) {
+    console.log(`[Manychat] Using known subscriber_id=${knownSubscriberId}, skipping lookup`)
+    if (whatsappFieldId) {
+      setWhatsappIdField(apiKey, knownSubscriberId, phone, whatsappFieldId).catch(() => {})
     }
+    const result = await sendFlowToSubscriber(apiKey, knownSubscriberId, flowNs)
+    console.log(`[Manychat] sendFlow result →`, JSON.stringify(result))
+    return { ok: result.ok, subscriber_id: knownSubscriberId, error: result.error }
   }
 
-  // 2. Fallback: find by whatsapp_phone system field
+  let subscriber: { id: string } | null = null
+
+  // 1. Custom field lookup — value stored as "+55..." (E.164 with +)
+  if (whatsappFieldId) {
+    subscriber = await findSubscriberByCustomField(apiKey, whatsappFieldId, phone)
+    console.log(`[Manychat] findByCustomField(${whatsappFieldId}, "${phone}") →`, subscriber ? `found id=${subscriber.id}` : "not found")
+  }
+
+  // 2. System field lookup — try both "+55..." and "55..." formats
   if (!subscriber) {
     subscriber = await findSubscriberByPhone(apiKey, lead.telefone)
-    console.log(`[Manychat] findBySystemField(${phone}) →`, subscriber ? `found id=${subscriber.id}` : "not found")
+    console.log(`[Manychat] findBySystemField(whatsapp_phone) →`, subscriber ? `found id=${subscriber.id}` : "not found")
   }
 
   // 3. Create subscriber if not found
@@ -261,10 +295,9 @@ export async function processLeadInManychat(
     if (created && "id" in created) {
       subscriber = { id: created.id }
     } else if (created && "alreadyExists" in created) {
-      // Subscriber exists but we couldn't find them — retry both lookups
+      // Subscriber exists but not found — retry all lookups
       if (whatsappFieldId) {
-        subscriber = await findSubscriberByCustomField(apiKey, whatsappFieldId, rawPhone)
-          ?? await findSubscriberByCustomField(apiKey, whatsappFieldId, phone)
+        subscriber = await findSubscriberByCustomField(apiKey, whatsappFieldId, phone)
         console.log(`[Manychat] retry findByCustomField →`, subscriber ? `found id=${subscriber.id}` : "not found")
       }
       if (!subscriber) {
@@ -283,9 +316,9 @@ export async function processLeadInManychat(
     }
   }
 
-  // 4. Ensure custom field is set (best-effort, so future lookups work)
+  // 4. Ensure custom field is set with "+phone" format (best-effort, so future lookups work)
   if (whatsappFieldId && subscriber) {
-    setWhatsappIdField(apiKey, subscriber.id, rawPhone, whatsappFieldId).catch(() => {})
+    setWhatsappIdField(apiKey, subscriber.id, phone, whatsappFieldId).catch(() => {})
   }
 
   // 5. Send flow
@@ -296,6 +329,30 @@ export async function processLeadInManychat(
 }
 
 export const WHATSAPP_ID_FIELD = "[esc]whatsapp-id"
+
+/**
+ * Fetches the field_id of [esc]whatsapp-id from Manychat custom fields.
+ * Returns the correct field_id, or null if not found.
+ * Does NOT create the field — use ensureWhatsappIdField for that.
+ */
+export async function getWhatsappIdFieldId(apiKey: string): Promise<number | null> {
+  const { signal, clear } = withTimeout(10000)
+  try {
+    const res = await fetch(`${MANYCHAT_API_BASE}/fb/subscriber/getCustomFields`, {
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      signal,
+    })
+    clear()
+    if (!res.ok) return null
+    const data = await res.json()
+    const fields: Array<{ id: number; name: string }> = data?.data ?? []
+    const found = fields.find((f) => f.name === WHATSAPP_ID_FIELD)
+    return found ? found.id : null
+  } catch {
+    clear()
+    return null
+  }
+}
 
 export interface EnsureFieldResult {
   ok: boolean

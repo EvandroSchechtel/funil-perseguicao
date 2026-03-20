@@ -16,7 +16,7 @@ export function startWebhookWorker(): Worker {
       const updated = await prisma.lead.update({
         where: { id: leadId },
         data: { status: "processando", tentativas: { increment: 1 } },
-        select: { tentativas: true, contato_id: true, campanha_id: true },
+        select: { tentativas: true, contato_id: true, campanha_id: true, subscriber_id: true },
       })
       const numeroTentativa = updated.tentativas
 
@@ -38,8 +38,15 @@ export function startWebhookWorker(): Worker {
         throw new Error(errMsg)
       }
 
-      // 3. Process in Manychat
-      const result = await processLeadInManychat(conta.api_key, { nome, telefone, email }, flowNs, conta.whatsapp_field_id)
+      // 3. Process in Manychat — if subscriber_id already known, skip lookup
+      const knownSubscriberId = updated.subscriber_id ?? undefined
+      const result = await processLeadInManychat(
+        conta.api_key,
+        { nome, telefone, email },
+        flowNs,
+        conta.whatsapp_field_id,
+        knownSubscriberId,
+      )
 
       if (result.ok) {
         // 4a. Success — update lead + record tentativa + upsert ContatoConta

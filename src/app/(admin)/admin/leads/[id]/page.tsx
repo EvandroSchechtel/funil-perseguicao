@@ -13,6 +13,7 @@ import { hasPermission } from "@/lib/auth/rbac"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Header } from "@/components/layout/Header"
+import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
 
 interface LeadTentativa {
@@ -130,6 +131,9 @@ export default function LeadDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reprocessing, setReprocessing] = useState(false)
+  const [showSubscriberForm, setShowSubscriberForm] = useState(false)
+  const [subscriberInput, setSubscriberInput] = useState("")
+  const [savingSubscriber, setSavingSubscriber] = useState(false)
 
   const canReprocess = user ? hasPermission(user.role, "leads:reprocess") : false
 
@@ -169,6 +173,31 @@ export default function LeadDetailPage() {
       toast.error("Erro ao reprocessar lead.")
     } finally {
       setReprocessing(false)
+    }
+  }
+
+  async function handleSetSubscriberId() {
+    if (!lead || !subscriberInput.trim()) return
+    setSavingSubscriber(true)
+    try {
+      const res = await fetch(`/api/admin/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ subscriber_id: subscriberInput.trim(), reprocess: true }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast.success(data.message || "Subscriber ID salvo. Lead reenfileirado.")
+        setShowSubscriberForm(false)
+        setSubscriberInput("")
+        await fetchLead()
+      } else {
+        toast.error(data.message || "Erro ao salvar subscriber ID.")
+      }
+    } catch {
+      toast.error("Erro de conexão.")
+    } finally {
+      setSavingSubscriber(false)
     }
   }
 
@@ -236,28 +265,77 @@ export default function LeadDetailPage() {
 
               {/* Reprocess section */}
               {(lead.status === "falha" || lead.status === "sem_optin") && (
-                <div className="mt-4 pt-4 border-t border-[#FFFFFF08] flex items-center justify-between gap-3">
-                  <div className="text-xs text-[#8B8B9E]">
-                    {!lead.webhook_flow ? (
-                      <span className="text-[#F87171]">Reprocessamento indisponível — flow não encontrado para este lead.</span>
-                    ) : !canReprocess ? (
-                      <span>Você não tem permissão para reprocessar leads.</span>
-                    ) : lead.status === "sem_optin" ? (
-                      <span>O contato precisará ter feito opt-in no WhatsApp antes de reprocessar.</span>
-                    ) : (
-                      <span>Reenfileira o lead para uma nova tentativa de envio.</span>
-                    )}
+                <div className="mt-4 pt-4 border-t border-[#FFFFFF08] space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs text-[#8B8B9E]">
+                      {!lead.webhook_flow ? (
+                        <span className="text-[#F87171]">Reprocessamento indisponível — flow não encontrado para este lead.</span>
+                      ) : !canReprocess ? (
+                        <span>Você não tem permissão para reprocessar leads.</span>
+                      ) : lead.status === "sem_optin" ? (
+                        <span>Informe o Subscriber ID do Manychat abaixo, ou reprocesse após o contato fazer opt-in.</span>
+                      ) : (
+                        <span>Reenfileira o lead para uma nova tentativa de envio.</span>
+                      )}
+                    </div>
+                    <Button
+                      onClick={handleReprocess}
+                      loading={reprocessing}
+                      disabled={!canReprocess || !lead.webhook_flow}
+                      className="shrink-0"
+                      size="sm"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                      Reprocessar Lead
+                    </Button>
                   </div>
-                  <Button
-                    onClick={handleReprocess}
-                    loading={reprocessing}
-                    disabled={!canReprocess || !lead.webhook_flow}
-                    className="shrink-0"
-                    size="sm"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-                    Reprocessar Lead
-                  </Button>
+
+                  {/* Manual subscriber_id override for sem_optin */}
+                  {lead.status === "sem_optin" && canReprocess && (
+                    <div className="bg-[#0B0B0F] border border-[#2A2A3A] rounded-lg p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-medium text-[#C4C4D4]">
+                          Informar Subscriber ID manualmente
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setShowSubscriberForm((v) => !v)}
+                          className="text-xs text-[#5A5A72] hover:text-[#8B8B9E] transition-colors"
+                        >
+                          {showSubscriberForm ? "Cancelar" : "Expandir"}
+                        </button>
+                      </div>
+                      {!showSubscriberForm ? (
+                        <p className="text-xs text-[#5A5A72]">
+                          Se o subscriber já existe no Manychat mas não foi encontrado automaticamente, cole o subscriber_id aqui para vincular e disparar o flow.
+                        </p>
+                      ) : (
+                        <div className="space-y-2 pt-1">
+                          <p className="text-xs text-[#5A5A72]">
+                            Encontre em Manychat → Contacts → selecione o contato → copie o ID da URL ou do perfil.
+                          </p>
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Ex: 7042882217"
+                              value={subscriberInput}
+                              onChange={(e) => setSubscriberInput(e.target.value)}
+                              leftIcon={<UserCheck className="w-4 h-4" />}
+                            />
+                            <Button
+                              onClick={handleSetSubscriberId}
+                              loading={savingSubscriber}
+                              disabled={!subscriberInput.trim()}
+                              size="sm"
+                              className="shrink-0"
+                            >
+                              <Send className="w-3.5 h-3.5 mr-1.5" />
+                              Salvar e Executar
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
