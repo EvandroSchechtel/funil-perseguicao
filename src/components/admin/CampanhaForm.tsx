@@ -271,8 +271,9 @@ export function CampanhaForm({ mode, initialData }: CampanhaFormProps) {
           onChange={(e) => setDescricao(e.target.value)}
           placeholder="Descreva o objetivo desta campanha..."
           rows={3}
-          className="w-full px-3 py-2 rounded-lg border border-[#1E1E2A] bg-[#111118] text-sm text-[#F1F1F3] placeholder-[#5A5A72] focus:outline-none focus:border-[#25D366] transition-colors resize-none"
+          className={`w-full px-3 py-2 rounded-lg border bg-[#111118] text-sm text-[#F1F1F3] placeholder-[#5A5A72] focus:outline-none transition-colors resize-none ${errors.descricao ? "border-[#F87171]" : "border-[#1E1E2A] focus:border-[#25D366]"}`}
         />
+        {errors.descricao && <p className="text-xs text-[#F87171]">{errors.descricao}</p>}
       </div>
 
       <div className="grid grid-cols-2 gap-4">

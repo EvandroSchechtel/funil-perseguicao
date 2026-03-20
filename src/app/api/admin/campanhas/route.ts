@@ -7,10 +7,10 @@ import { listarCampanhas, criarCampanha } from "@/lib/services/campanhas.service
 
 const createCampanhaSchema = z.object({
   nome: z.string().min(1, "Nome é obrigatório").max(200),
-  descricao: z.string().max(1000).optional(),
-  data_inicio: z.coerce.date().optional(),
-  data_fim: z.coerce.date().optional(),
-  cliente_id: z.string().uuid("Cliente inválido").optional(),
+  descricao: z.string().max(1000).optional().nullable(),
+  data_inicio: z.coerce.date().optional().nullable(),
+  data_fim: z.coerce.date().optional().nullable(),
+  cliente_id: z.string().uuid("Cliente inválido").optional().nullable(),
 })
 
 // GET /api/admin/campanhas
