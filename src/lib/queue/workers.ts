@@ -39,7 +39,7 @@ export function startWebhookWorker(): Worker {
       }
 
       // 3. Process in Manychat
-      const result = await processLeadInManychat(conta.api_key, { nome, telefone, email }, flowNs)
+      const result = await processLeadInManychat(conta.api_key, { nome, telefone, email }, flowNs, conta.whatsapp_field_id)
 
       if (result.ok) {
         // 4a. Success — update lead + record tentativa + upsert ContatoConta

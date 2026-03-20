@@ -103,6 +103,35 @@ export async function findSubscriberByPhone(
 }
 
 /**
+ * Finds a Manychat subscriber by the value stored in a custom field.
+ * Used to look up subscribers via the [esc]whatsapp-id custom field.
+ * Returns { id } or null if not found.
+ */
+export async function findSubscriberByCustomField(
+  apiKey: string,
+  fieldId: number,
+  value: string
+): Promise<{ id: string } | null> {
+  const { signal, clear } = withTimeout(10000)
+  try {
+    const url = `${MANYCHAT_API_BASE}/fb/subscriber/findByCustomField?field_id=${fieldId}&value=${encodeURIComponent(value)}`
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      signal,
+    })
+    clear()
+
+    if (!res.ok) return null
+    const data = await res.json()
+    if (data.status !== "success" || !data.data?.id) return null
+    return { id: String(data.data.id) }
+  } catch {
+    clear()
+    return null
+  }
+}
+
+/**
  * Creates a new Manychat subscriber.
  * Returns { id } on success, { alreadyExists: true } if subscriber already exists,
  * or null on other failures.
@@ -188,24 +217,43 @@ export async function sendFlowToSubscriber(
  * Used by the BullMQ worker to process leads.
  *
  * Strategy:
- * 1. Try findBySystemField(whatsapp_phone) — fastest path for existing subscribers
- * 2. If not found, try createSubscriber
- * 3. If createSubscriber returns "already exists" → retry findBySystemField (race condition)
- * 4. If subscriber found at any step → sendFlow
+ * 1. Try findByCustomField([esc]whatsapp-id, phone) — primary lookup for all accounts
+ * 2. Try findBySystemField(whatsapp_phone) — fallback for subscribers created via Manychat
+ * 3. If not found, createSubscriber (with whatsapp_phone + optin + custom field set)
+ * 4. If alreadyExists → retry both lookups
+ * 5. If subscriber found at any step → setCustomField (to ensure it's stored) → sendFlow
  */
 export async function processLeadInManychat(
   apiKey: string,
   lead: { nome: string; telefone: string; email?: string },
-  flowNs: string
+  flowNs: string,
+  whatsappFieldId?: number | null
 ): Promise<ManychatActionResult> {
   const phone = normalizePhone(lead.telefone)
-  console.log(`[Manychat] processLead — phone: ${phone}, flow: ${flowNs}`)
+  const rawPhone = lead.telefone.replace(/\D/g, "")
+  console.log(`[Manychat] processLead — phone: ${phone}, flow: ${flowNs}, fieldId: ${whatsappFieldId}`)
 
-  // 1. Try to find existing subscriber by WhatsApp phone
-  let subscriber = await findSubscriberByPhone(apiKey, lead.telefone)
-  console.log(`[Manychat] findBySystemField(${phone}) →`, subscriber ? `found id=${subscriber.id}` : "not found")
+  // 1. Try custom field lookup (primary — works across all accounts)
+  let subscriber: { id: string } | null = null
 
-  // 2. If not found, try to create
+  if (whatsappFieldId) {
+    subscriber = await findSubscriberByCustomField(apiKey, whatsappFieldId, rawPhone)
+    console.log(`[Manychat] findByCustomField(${whatsappFieldId}, ${rawPhone}) →`, subscriber ? `found id=${subscriber.id}` : "not found")
+
+    if (!subscriber) {
+      // Also try with + prefix
+      subscriber = await findSubscriberByCustomField(apiKey, whatsappFieldId, phone)
+      console.log(`[Manychat] findByCustomField(${whatsappFieldId}, ${phone}) →`, subscriber ? `found id=${subscriber.id}` : "not found")
+    }
+  }
+
+  // 2. Fallback: find by whatsapp_phone system field
+  if (!subscriber) {
+    subscriber = await findSubscriberByPhone(apiKey, lead.telefone)
+    console.log(`[Manychat] findBySystemField(${phone}) →`, subscriber ? `found id=${subscriber.id}` : "not found")
+  }
+
+  // 3. Create subscriber if not found
   if (!subscriber) {
     const created = await createManychatSubscriber(apiKey, lead)
     console.log(`[Manychat] createSubscriber →`, JSON.stringify(created))
@@ -213,9 +261,16 @@ export async function processLeadInManychat(
     if (created && "id" in created) {
       subscriber = { id: created.id }
     } else if (created && "alreadyExists" in created) {
-      // Already exists but findBySystemField missed it — retry
-      subscriber = await findSubscriberByPhone(apiKey, lead.telefone)
-      console.log(`[Manychat] retry findBySystemField →`, subscriber ? `found id=${subscriber.id}` : "still not found")
+      // Subscriber exists but we couldn't find them — retry both lookups
+      if (whatsappFieldId) {
+        subscriber = await findSubscriberByCustomField(apiKey, whatsappFieldId, rawPhone)
+          ?? await findSubscriberByCustomField(apiKey, whatsappFieldId, phone)
+        console.log(`[Manychat] retry findByCustomField →`, subscriber ? `found id=${subscriber.id}` : "not found")
+      }
+      if (!subscriber) {
+        subscriber = await findSubscriberByPhone(apiKey, lead.telefone)
+        console.log(`[Manychat] retry findBySystemField →`, subscriber ? `found id=${subscriber.id}` : "not found")
+      }
     }
   }
 
@@ -224,11 +279,16 @@ export async function processLeadInManychat(
     return {
       ok: false,
       sem_optin: true,
-      error: "Subscriber não encontrado no Manychat. O contato precisa ter feito opt-in pelo WhatsApp.",
+      error: `Subscriber não encontrado no Manychat para o número ${phone}. Verifique se o contato existe e se o custom field [esc]whatsapp-id (id: ${whatsappFieldId ?? "não configurado"}) está corretamente configurado na conta.`,
     }
   }
 
-  // 3. Send flow
+  // 4. Ensure custom field is set (best-effort, so future lookups work)
+  if (whatsappFieldId && subscriber) {
+    setWhatsappIdField(apiKey, subscriber.id, rawPhone, whatsappFieldId).catch(() => {})
+  }
+
+  // 5. Send flow
   console.log(`[Manychat] sendFlow — subscriber_id=${subscriber.id}, flow_ns=${flowNs}`)
   const result = await sendFlowToSubscriber(apiKey, subscriber.id, flowNs)
   console.log(`[Manychat] sendFlow result →`, JSON.stringify(result))
