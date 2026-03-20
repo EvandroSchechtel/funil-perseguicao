@@ -48,12 +48,6 @@ const navItems: NavItem[] = [
     requiredRoles: ["super_admin", "admin", "operador"],
   },
   {
-    label: "Webhooks",
-    href: "/admin/webhooks",
-    icon: <Webhook className="w-5 h-5" />,
-    requiredRoles: ["super_admin", "admin", "operador"],
-  },
-  {
     label: "Leads",
     href: "/admin/leads",
     icon: <Users2 className="w-5 h-5" />,
@@ -69,18 +63,6 @@ const navItems: NavItem[] = [
     label: "Fila",
     href: "/admin/fila",
     icon: <Activity className="w-5 h-5" />,
-    requiredRoles: ["super_admin", "admin"],
-  },
-  {
-    label: "Manychat",
-    href: "/admin/manychat",
-    icon: <Zap className="w-5 h-5" />,
-    requiredRoles: ["super_admin", "admin"],
-  },
-  {
-    label: "Z-API / Grupos WA",
-    href: "/admin/zapi",
-    icon: <MessageSquare className="w-5 h-5" />,
     requiredRoles: ["super_admin", "admin"],
   },
   {

@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
       search: searchParams.get("q") || "",
       status: searchParams.get("status") || "",
       webhookId: searchParams.get("webhook_id") || "",
+      campanhaId: searchParams.get("campanha_id") || "",
     })
 
     return ok(result)

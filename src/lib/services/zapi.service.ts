@@ -4,9 +4,9 @@ import { ServiceError } from "./errors"
 
 // ── Instâncias ─────────────────────────────────────────────────────────────────
 
-export async function listarInstancias(userId: string) {
+export async function listarInstancias(userId: string, clienteId?: string) {
   return prisma.instanciaZApi.findMany({
-    where: { deleted_at: null },
+    where: { deleted_at: null, ...(clienteId && { cliente_id: clienteId }) },
     include: {
       cliente: { select: { id: true, nome: true } },
       _count: { select: { grupos: true } },

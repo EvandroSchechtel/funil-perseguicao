@@ -9,7 +9,9 @@ export async function GET(request: NextRequest) {
     if ("error" in ctx) return ctx.error
     const { user } = ctx.context
     if (!["super_admin", "admin"].includes(user.role)) return forbidden()
-    const data = await listarInstancias(user.id)
+    const { searchParams } = request.nextUrl
+    const clienteId = searchParams.get("cliente_id") || undefined
+    const data = await listarInstancias(user.id, clienteId)
     return ok({ instancias: data })
   } catch (error) {
     return handleServiceError(error) ?? serverError()

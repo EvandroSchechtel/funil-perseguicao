@@ -165,7 +165,7 @@ export default function ClientesPage() {
                             {c.nome.charAt(0).toUpperCase()}
                           </span>
                         </div>
-                        <Link href={`/admin/clientes/${c.id}/editar`} className="text-[#F1F1F3] font-medium text-sm hover:text-[#25D366] transition-colors">{c.nome}</Link>
+                        <Link href={`/admin/clientes/${c.id}`} className="text-[#F1F1F3] font-medium text-sm hover:text-[#25D366] transition-colors">{c.nome}</Link>
                       </div>
                     </td>
                     <td className="px-5 py-4">
@@ -196,7 +196,7 @@ export default function ClientesPage() {
                         <DropdownMenuContent align="end">
                           {canWrite && (
                             <DropdownMenuItem asChild>
-                              <Link href={`/admin/clientes/${c.id}/editar`}>Editar</Link>
+                              <Link href={`/admin/clientes/${c.id}`}>Ver / Editar</Link>
                             </DropdownMenuItem>
                           )}
                           {canWrite && (

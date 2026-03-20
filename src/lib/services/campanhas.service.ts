@@ -6,14 +6,16 @@ export interface ListCampanhasParams {
   perPage?: number
   search?: string
   status?: "ativo" | "inativo"
+  clienteId?: string
 }
 
 export async function listarCampanhas(params: ListCampanhasParams = {}) {
-  const { page = 1, perPage = 20, search = "", status } = params
+  const { page = 1, perPage = 20, search = "", status, clienteId } = params
 
   const where = {
     deleted_at: null,
     ...(status && { status }),
+    ...(clienteId && { cliente_id: clienteId }),
     ...(search && {
       OR: [
         { nome: { contains: search, mode: "insensitive" as const } },
