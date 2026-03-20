@@ -486,16 +486,24 @@ export async function getMetricasGrupos(filters: DashboardFilters) {
     .sort((a, b) => a.dia.localeCompare(b.dia))
 
   // Aggregate por campanha (sem filtro de data — taxa sobre total histórico da campanha)
-  const leadBaseWhere: Prisma.LeadWhereInput = {
-    ...(campanhaId ? { campanha_id: campanhaId } : {}),
-    ...(clienteId ? { campanha: { cliente_id: clienteId } } : {}),
+  // groupBy não suporta filtros de relação — resolve IDs escalares primeiro
+  let leadGroupByWhere: Prisma.LeadWhereInput = {}
+  if (campanhaId) {
+    leadGroupByWhere = { campanha_id: campanhaId }
+  } else if (clienteId) {
+    const campanhasDoCliente = await prisma.campanha.findMany({
+      where: { cliente_id: clienteId, deleted_at: null },
+      select: { id: true },
+    })
+    const ids = campanhasDoCliente.map((c) => c.id)
+    leadGroupByWhere = ids.length > 0 ? { campanha_id: { in: ids } } : { campanha_id: "___none___" }
   }
 
   const [totalPorCampanha, entradosPorCampanha] = await Promise.all([
-    prisma.lead.groupBy({ by: ["campanha_id"], where: leadBaseWhere, _count: { id: true } }),
+    prisma.lead.groupBy({ by: ["campanha_id"], where: leadGroupByWhere, _count: { id: true } }),
     prisma.lead.groupBy({
       by: ["campanha_id"],
-      where: { ...leadBaseWhere, grupo_entrou_at: { not: null } },
+      where: { ...leadGroupByWhere, grupo_entrou_at: { not: null } },
       _count: { id: true },
     }),
   ])
