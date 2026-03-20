@@ -1,11 +1,17 @@
 import { defineConfig } from "prisma/config";
+import * as fs from "fs";
 
-// Load .env file for local development.
-// In production (Railway, etc.) the env vars are injected directly,
-// so dotenv may not be installed — the try-catch handles that gracefully.
+// Load env files for local development.
+// Next.js loads .env.local automatically at runtime, but Prisma CLI does not.
+// We try .env.local first (real credentials), then fall back to .env.
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  require("dotenv/config");
+  const dotenv = require("dotenv");
+  if (fs.existsSync(".env.local")) {
+    dotenv.config({ path: ".env.local", override: true });
+  } else {
+    dotenv.config();
+  }
 } catch {
   // dotenv not available (production build) — DATABASE_URL must be set externally
 }
