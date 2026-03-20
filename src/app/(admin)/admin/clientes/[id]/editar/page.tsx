@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from "react"
 import { useParams } from "next/navigation"
-import { Plus, Zap, Eye, EyeOff, CheckCircle2, XCircle, Loader2, ToggleRight, ToggleLeft, Hash, AlertCircle, Pencil, MessageSquare, Save } from "lucide-react"
+import { Plus, Zap, Eye, EyeOff, CheckCircle2, XCircle, Loader2, ToggleRight, ToggleLeft, Hash, AlertCircle, Pencil, MessageSquare, Save, WifiOff } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Header } from "@/components/layout/Header"
 import { ClienteForm } from "@/components/admin/ClienteForm"
@@ -131,6 +131,36 @@ export default function EditarClientePage() {
       setSavingWa(false)
     }
   }
+
+  async function handleDisableWa() {
+    setSavingWa(true)
+    try {
+      const res = await fetch(`/api/admin/clientes/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({
+          grupo_wa_id: null,
+          grupo_wa_nome: null,
+          instancia_zapi_notif_id: null,
+        }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setGrupoWaId("")
+        setGrupoWaNome("")
+        setInstanciaNotifId("")
+        toast.success("Notificações WhatsApp desligadas.")
+      } else {
+        toast.error(data.message || "Erro ao desligar.")
+      }
+    } catch {
+      toast.error("Erro de conexão.")
+    } finally {
+      setSavingWa(false)
+    }
+  }
+
+  const waAtivo = !!(instanciaNotifId || grupoWaId)
 
   async function handleTestarConexao() {
     if (!apiKey.trim()) {
@@ -439,7 +469,22 @@ export default function EditarClientePage() {
                   </p>
                 </div>
 
-                <div className="flex justify-end">
+                <div className="flex items-center justify-between gap-3 pt-1">
+                  {waAtivo ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={savingWa}
+                      onClick={handleDisableWa}
+                      className="text-[#F87171] border-[#F87171]/30 hover:bg-[#F87171]/10 hover:border-[#F87171]/50"
+                    >
+                      <WifiOff className="w-4 h-4" />
+                      Desligar Notificações
+                    </Button>
+                  ) : (
+                    <div />
+                  )}
                   <Button type="submit" loading={savingWa} size="sm">
                     <Save className="w-4 h-4" />
                     Salvar Configuração WA
