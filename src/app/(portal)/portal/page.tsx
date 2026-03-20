@@ -142,11 +142,14 @@ export default function PortalDashboardPage() {
     if (!accessToken || !user) return
     setLoading(true)
     try {
-      const [dashRes, demandasRes] = await Promise.all([
+      const [dashRes, demandasRes, demandasAllRes] = await Promise.all([
         fetch(`/api/admin/dashboard?section=geral&from=${encodeURIComponent(new Date(Date.now() - 7 * 86400000).toISOString())}&to=${encodeURIComponent(new Date().toISOString())}&clienteId=${user.cliente_id ?? ""}`, {
           headers: { Authorization: `Bearer ${accessToken}` },
         }),
         fetch("/api/portal/demandas?per_page=5", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }),
+        fetch("/api/portal/demandas?per_page=200", {
           headers: { Authorization: `Bearer ${accessToken}` },
         }),
       ])
@@ -169,8 +172,12 @@ export default function PortalDashboardPage() {
 
       if (demandasRes.ok) {
         const dem = await demandasRes.json()
-        demandas_recentes = dem.data ?? []
-        const all = dem.data ?? []
+        demandas_recentes = dem.demandas ?? []
+      }
+
+      if (demandasAllRes.ok) {
+        const allDem = await demandasAllRes.json()
+        const all = allDem.demandas ?? []
         kpis.demandas_abertas = all.filter((d: { status: string }) => d.status === "aberta").length
         kpis.demandas_em_execucao = all.filter((d: { status: string }) => d.status === "em_execucao").length
       }

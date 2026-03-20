@@ -1,29 +1,55 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, Wifi } from "lucide-react"
+import { ArrowLeft, Wifi, Info } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Header } from "@/components/layout/Header"
 import { toast } from "sonner"
 
+interface Cliente {
+  id: string
+  nome: string
+}
+
+function FieldHint({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="flex items-start gap-1.5 text-[11px] text-[#3F3F58] mt-1.5">
+      <Info className="w-3 h-3 mt-0.5 shrink-0" />
+      {children}
+    </p>
+  )
+}
+
 export default function NovaInstanciaPage() {
   const router = useRouter()
   const { accessToken } = useAuth()
   const [loading, setLoading] = useState(false)
+  const [clientes, setClientes] = useState<Cliente[]>([])
   const [form, setForm] = useState({
     nome: "",
     instance_id: "",
     token: "",
     client_token: "",
+    cliente_id: "",
   })
 
-  function setField(field: keyof typeof form) {
-    return (e: React.ChangeEvent<HTMLInputElement>) =>
-      setForm((prev) => ({ ...prev, [field]: e.target.value }))
+  useEffect(() => {
+    if (!accessToken) return
+    fetch("/api/admin/clientes?per_page=200", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+      .then((r) => r.json())
+      .then((d) => setClientes(d.clientes || []))
+      .catch(() => {})
+  }, [accessToken])
+
+  function set(field: keyof typeof form) {
+    return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      setForm((p) => ({ ...p, [field]: e.target.value }))
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -37,11 +63,11 @@ export default function NovaInstanciaPage() {
       const res = await fetch("/api/admin/zapi/instancias", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, cliente_id: form.cliente_id || undefined }),
       })
       const data = await res.json()
       if (res.ok) {
-        toast.success(data.message || "Instância conectada com sucesso.")
+        toast.success("Instância conectada com sucesso.")
         router.push(`/admin/zapi/${data.instancia?.id ?? ""}`)
       } else {
         toast.error(data.message || "Erro ao criar instância.")
@@ -58,92 +84,136 @@ export default function NovaInstanciaPage() {
       <Header
         breadcrumbs={[
           { label: "Admin", href: "/admin" },
-          { label: "Z-API / Grupos WA", href: "/admin/zapi" },
+          { label: "Z-API / WhatsApp", href: "/admin/zapi" },
           { label: "Nova Instância" },
         ]}
       />
 
-      <div className="p-6 max-w-lg">
+      <div className="p-6 max-w-xl">
         <Link
           href="/admin/zapi"
-          className="inline-flex items-center gap-2 text-[#8B8B9E] hover:text-[#F1F1F3] text-sm mb-6 transition-colors"
+          className="inline-flex items-center gap-2 text-[#7F7F9E] hover:text-[#EEEEF5] text-sm mb-7 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          Voltar
+          Voltar para Z-API
         </Link>
 
-        <div className="mb-6">
-          <h1 className="text-[#F1F1F3] text-2xl font-bold">Conectar Instância Z-API</h1>
-          <p className="text-[#8B8B9E] text-sm mt-1">
-            Adicione uma instância do Z-API para monitorar grupos do WhatsApp
-          </p>
+        <div className="flex items-center gap-3 mb-7">
+          <div className="w-10 h-10 rounded-xl bg-[#22C55E]/10 flex items-center justify-center">
+            <Wifi className="w-5 h-5 text-[#22C55E]" />
+          </div>
+          <div>
+            <h1 className="text-[#EEEEF5] text-xl font-bold">Conectar Instância Z-API</h1>
+            <p className="text-[#7F7F9E] text-xs mt-0.5">
+              Configure as credenciais para monitorar grupos do WhatsApp
+            </p>
+          </div>
         </div>
 
-        <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[#8B8B9E] uppercase tracking-wider">
-                Nome da instância <span className="text-[#F87171]">*</span>
-              </label>
-              <Input
-                placeholder="Ex: WhatsApp Principal"
-                value={form.nome}
-                onChange={setField("nome")}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[#8B8B9E] uppercase tracking-wider">
-                Instance ID (Z-API) <span className="text-[#F87171]">*</span>
-              </label>
-              <Input
-                placeholder="Ex: 3C0A9..."
-                value={form.instance_id}
-                onChange={setField("instance_id")}
-              />
-              <p className="text-xs text-[#5A5A72]">
-                Encontrado no painel Z-API → sua instância
+        <form onSubmit={handleSubmit}>
+          <div className="bg-[#0F0F1A] border border-[#1C1C2C] rounded-2xl shadow-[0_4px_32px_rgba(0,0,0,0.45)] overflow-hidden">
+            {/* Section: Identificação */}
+            <div className="px-6 pt-6 pb-5 space-y-4 border-b border-[#1C1C2C]">
+              <p className="text-[#3F3F58] text-[10px] font-semibold uppercase tracking-widest">
+                Identificação
               </p>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#9898B0]">
+                  Nome da instância <span className="text-[#F87171]">*</span>
+                </label>
+                <Input
+                  placeholder="Ex: WhatsApp Mari Tortella"
+                  value={form.nome}
+                  onChange={set("nome")}
+                  autoFocus
+                />
+                <FieldHint>Um nome descritivo para identificar esta instância na plataforma.</FieldHint>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#9898B0]">
+                  Cliente vinculado
+                </label>
+                <select
+                  value={form.cliente_id}
+                  onChange={set("cliente_id")}
+                  className="w-full h-10 bg-[#13131F] border border-[#1C1C2C] text-[#EEEEF5] text-sm rounded-lg px-3 focus:outline-none focus:border-[#25D366]/50 focus:shadow-[0_0_0_2px_rgba(37,211,102,0.1)] transition-all appearance-none cursor-pointer"
+                >
+                  <option value="" className="bg-[#13131F] text-[#7F7F9E]">
+                    — Selecionar cliente (opcional) —
+                  </option>
+                  {clientes.map((c) => (
+                    <option key={c.id} value={c.id} className="bg-[#13131F]">
+                      {c.nome}
+                    </option>
+                  ))}
+                </select>
+                <FieldHint>
+                  Vincule ao cliente para que os grupos desta instância possam ser associados
+                  às campanhas dele.
+                </FieldHint>
+              </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[#8B8B9E] uppercase tracking-wider">
-                Token <span className="text-[#F87171]">*</span>
-              </label>
-              <Input
-                type="password"
-                placeholder="Token de acesso Z-API"
-                value={form.token}
-                onChange={setField("token")}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[#8B8B9E] uppercase tracking-wider">
-                Client Token <span className="text-[#F87171]">*</span>
-              </label>
-              <Input
-                type="password"
-                placeholder="Client token Z-API"
-                value={form.client_token}
-                onChange={setField("client_token")}
-              />
-              <p className="text-xs text-[#5A5A72]">
-                Encontrado em Z-API → Security → Client Token
+            {/* Section: Credenciais */}
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-[#3F3F58] text-[10px] font-semibold uppercase tracking-widest">
+                Credenciais Z-API
               </p>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#9898B0]">
+                  Instance ID <span className="text-[#F87171]">*</span>
+                </label>
+                <Input
+                  placeholder="Ex: 3C0A9B2..."
+                  value={form.instance_id}
+                  onChange={set("instance_id")}
+                />
+                <FieldHint>Painel Z-API → sua instância → copiar Instance ID.</FieldHint>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#9898B0]">
+                  Token <span className="text-[#F87171]">*</span>
+                </label>
+                <Input
+                  type="password"
+                  placeholder="Token de acesso da instância"
+                  value={form.token}
+                  onChange={set("token")}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#9898B0]">
+                  Client Token <span className="text-[#F87171]">*</span>
+                </label>
+                <Input
+                  type="password"
+                  placeholder="Client token Z-API"
+                  value={form.client_token}
+                  onChange={set("client_token")}
+                />
+                <FieldHint>
+                  Z-API → Security → Client Token (diferente do token da instância).
+                </FieldHint>
+              </div>
             </div>
 
-            <div className="pt-2 flex gap-3">
-              <Button type="submit" loading={loading} className="flex-1">
-                <Wifi className="w-4 h-4 mr-2" />
+            {/* Actions */}
+            <div className="px-6 py-4 bg-[#0A0A12] border-t border-[#1C1C2C] flex gap-3">
+              <Button type="submit" loading={loading} className="flex-1 shadow-lg shadow-[#25D366]/10">
+                <Wifi className="w-4 h-4" />
                 Conectar e Salvar
               </Button>
               <Button type="button" variant="outline" onClick={() => router.back()}>
                 Cancelar
               </Button>
             </div>
-          </form>
-        </div>
+          </div>
+        </form>
       </div>
     </div>
   )

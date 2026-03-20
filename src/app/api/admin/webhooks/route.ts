@@ -7,7 +7,7 @@ import { listarWebhooks, criarWebhook } from "@/lib/services/webhooks.service"
 
 const createWebhookSchema = z.object({
   nome: z.string().min(1, "Nome é obrigatório").max(100),
-  campanha_id: z.string().uuid().optional(),
+  campanha_id: z.string().uuid({ message: "Campanha é obrigatória" }),
   status: z.enum(["ativo", "inativo"]).optional().default("ativo"),
 })
 

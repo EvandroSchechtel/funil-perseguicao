@@ -2,19 +2,18 @@
 
 import React, { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
-import { Plus, MessageSquare, CheckCircle2, XCircle, MoreHorizontal, Wifi } from "lucide-react"
+import { Plus, Wifi, Layers, ChevronRight, Circle } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog"
 import { Header } from "@/components/layout/Header"
 import { toast } from "sonner"
 
@@ -28,12 +27,28 @@ interface Instancia {
   _count: { grupos: number }
 }
 
+function groupByClient(list: Instancia[]) {
+  const map = new Map<string, { label: string; items: Instancia[] }>()
+  for (const inst of list) {
+    const key = inst.cliente?.id ?? "__none"
+    const label = inst.cliente?.nome ?? "Sem cliente vinculado"
+    if (!map.has(key)) map.set(key, { label, items: [] })
+    map.get(key)!.items.push(inst)
+  }
+  return Array.from(map.entries()).sort(([a], [b]) => {
+    if (a === "__none") return 1
+    if (b === "__none") return -1
+    return 0
+  })
+}
+
 export default function ZApiPage() {
   const { accessToken, user } = useAuth()
   const [instancias, setInstancias] = useState<Instancia[]>([])
   const [loading, setLoading] = useState(true)
   const [deleteDialog, setDeleteDialog] = useState<Instancia | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [clienteFilter, setClienteFilter] = useState("all")
 
   const canWrite = user ? hasPermission(user.role, "contas:write") : false
 
@@ -57,7 +72,7 @@ export default function ZApiPage() {
   useEffect(() => { fetchInstancias() }, [fetchInstancias])
 
   async function handleDelete(inst: Instancia) {
-    setActionLoading(inst.id + "-delete")
+    setActionLoading(inst.id)
     try {
       const res = await fetch(`/api/admin/zapi/instancias/${inst.id}`, {
         method: "DELETE",
@@ -78,153 +93,218 @@ export default function ZApiPage() {
     }
   }
 
-  function formatDate(dateStr: string) {
-    return new Date(dateStr).toLocaleDateString("pt-BR", {
-      day: "2-digit", month: "2-digit", year: "numeric",
-    })
-  }
+  const filtered = clienteFilter === "all"
+    ? instancias
+    : instancias.filter((i) => (i.cliente?.id ?? "__none") === clienteFilter)
+
+  const grouped = groupByClient(filtered)
+  const totalAtivas = instancias.filter((i) => i.status === "ativo").length
+  const totalGrupos = instancias.reduce((s, i) => s + i._count.grupos, 0)
+  const clientes = Array.from(
+    new Map(instancias.filter((i) => i.cliente).map((i) => [i.cliente!.id, i.cliente!.nome])).entries()
+  )
 
   return (
     <div className="flex flex-col h-full">
-      <Header
-        breadcrumbs={[
-          { label: "Admin", href: "/admin" },
-          { label: "Z-API / Grupos WA" },
-        ]}
-      />
+      <Header breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Z-API / WhatsApp" }]} />
 
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-6">
+      <div className="p-6 space-y-6 max-w-4xl">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-[#F1F1F3] text-2xl font-bold">Z-API / Grupos WhatsApp</h1>
-            <p className="text-[#8B8B9E] text-sm mt-1">
-              Monitore entradas em grupos e aplique tags no Manychat automaticamente
+            <h1 className="text-[#EEEEF5] text-2xl font-bold tracking-tight">Z-API / WhatsApp</h1>
+            <p className="text-[#7F7F9E] text-sm mt-1">
+              Instâncias por cliente · Grupos monitorados · Tags automáticas no Manychat
             </p>
           </div>
           {canWrite && (
             <Link href="/admin/zapi/nova">
-              <Button>
-                <Plus className="w-4 h-4 mr-2" />
+              <Button className="shadow-lg shadow-[#25D366]/10">
+                <Plus className="w-4 h-4" />
                 Nova Instância
               </Button>
             </Link>
           )}
         </div>
 
-        <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-hidden">
-          {loading ? (
-            <div className="flex items-center justify-center py-20">
-              <div className="animate-spin w-6 h-6 border-2 border-[#25D366] border-t-transparent rounded-full" />
-            </div>
-          ) : instancias.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-[#1E1E2A] flex items-center justify-center">
-                <MessageSquare className="w-8 h-8 text-[#25D366]" />
+        {/* Stats strip */}
+        {!loading && instancias.length > 0 && (
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: "Instâncias", value: instancias.length, icon: <Wifi className="w-4 h-4 text-[#7F7F9E]" />, color: "text-[#EEEEF5]" },
+              { label: "Ativas", value: totalAtivas, icon: <Circle className="w-3.5 h-3.5 fill-[#22C55E] text-[#22C55E]" />, color: "text-[#22C55E]" },
+              { label: "Grupos monitorados", value: totalGrupos, icon: <Layers className="w-4 h-4 text-[#7F7F9E]" />, color: "text-[#A78BFA]" },
+            ].map((s) => (
+              <div
+                key={s.label}
+                className="bg-[#0F0F1A] border border-[#1C1C2C] rounded-xl px-5 py-4 flex items-center gap-3.5 shadow-[0_2px_20px_rgba(0,0,0,0.4)]"
+              >
+                <div className="w-9 h-9 rounded-lg bg-[#13131F] flex items-center justify-center shrink-0">
+                  {s.icon}
+                </div>
+                <div>
+                  <p className={`text-2xl font-bold leading-none ${s.color}`}>{s.value}</p>
+                  <p className="text-[#7F7F9E] text-[11px] mt-1">{s.label}</p>
+                </div>
               </div>
-              <div className="text-center">
-                <p className="text-[#F1F1F3] font-semibold text-lg">Nenhuma instância Z-API</p>
-                <p className="text-[#8B8B9E] text-sm mt-1">
-                  Conecte sua primeira instância para monitorar grupos do WhatsApp
-                </p>
-              </div>
-              {canWrite && (
-                <Link href="/admin/zapi/nova">
-                  <Button>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Conectar Instância
-                  </Button>
-                </Link>
-              )}
+            ))}
+          </div>
+        )}
+
+        {/* Client filter pills */}
+        {!loading && clientes.length > 1 && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {[{ id: "all", nome: "Todos os clientes" }, ...clientes.map(([id, nome]) => ({ id, nome }))].map(
+              ({ id, nome }) => (
+                <button
+                  key={id}
+                  onClick={() => setClienteFilter(id)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${
+                    clienteFilter === id
+                      ? "bg-[#25D366]/12 text-[#25D366] border-[#25D366]/25"
+                      : "text-[#7F7F9E] border-[#1C1C2C] hover:border-[#252535] hover:text-[#EEEEF5]"
+                  }`}
+                >
+                  {nome}
+                </button>
+              )
+            )}
+          </div>
+        )}
+
+        {/* Content */}
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-24 gap-3">
+            <div className="w-7 h-7 border-2 border-[#25D366] border-t-transparent rounded-full animate-spin" />
+            <p className="text-[#7F7F9E] text-sm">Carregando instâncias…</p>
+          </div>
+        ) : instancias.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 gap-5">
+            <div className="w-20 h-20 rounded-2xl bg-[#0F0F1A] border border-[#1C1C2C] flex items-center justify-center shadow-[0_4px_32px_rgba(0,0,0,0.5)]">
+              <Wifi className="w-8 h-8 text-[#3F3F58]" />
             </div>
-          ) : (
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-[#1E1E2A]">
-                  <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Instância</th>
-                  <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Instance ID</th>
-                  <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Cliente</th>
-                  <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Grupos</th>
-                  <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Status</th>
-                  <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Criado em</th>
-                  <th className="px-5 py-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {instancias.map((inst) => (
-                  <tr key={inst.id} className="border-b border-[#1E1E2A] last:border-0 hover:bg-[#1C1C28] transition-colors">
-                    <td className="px-5 py-4">
-                      <Link href={`/admin/zapi/${inst.id}`} className="text-[#F1F1F3] font-medium text-sm hover:text-[#25D366] transition-colors">
-                        {inst.nome}
-                      </Link>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="text-[#8B8B9E] text-xs font-mono">{inst.instance_id}</span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="text-[#C4C4D4] text-sm">{inst.cliente?.nome || <span className="text-[#5A5A72]">—</span>}</span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="text-[#C4C4D4] text-sm">{inst._count.grupos}</span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <Badge variant={inst.status === "ativo" ? "ativo" : "inativo"}>
-                        {inst.status === "ativo" ? "Ativo" : "Inativo"}
-                      </Badge>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="text-[#8B8B9E] text-sm">{formatDate(inst.created_at)}</span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" className="h-8 w-8 p-0">
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem asChild>
-                            <Link href={`/admin/zapi/${inst.id}`}>Ver detalhes</Link>
-                          </DropdownMenuItem>
-                          {canWrite && (
-                            <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                destructive
-                                onClick={() => setDeleteDialog(inst)}
-                              >
-                                Excluir
-                              </DropdownMenuItem>
-                            </>
+            <div className="text-center">
+              <p className="text-[#EEEEF5] font-semibold text-lg">Nenhuma instância Z-API</p>
+              <p className="text-[#7F7F9E] text-sm mt-1.5 max-w-xs">
+                Conecte sua primeira instância para monitorar grupos e aplicar tags no Manychat automaticamente.
+              </p>
+            </div>
+            {canWrite && (
+              <Link href="/admin/zapi/nova">
+                <Button className="shadow-lg shadow-[#25D366]/10">
+                  <Plus className="w-4 h-4" />
+                  Conectar Instância
+                </Button>
+              </Link>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-7">
+            {grouped.map(([key, { label, items }]) => (
+              <div key={key}>
+                {/* Client group header */}
+                <div className="flex items-center gap-2.5 mb-3">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#25D366] shrink-0" />
+                  <span className="text-[#EEEEF5] text-sm font-semibold">{label}</span>
+                  <span className="text-[#3F3F58] text-xs">
+                    {items.length} instância{items.length !== 1 ? "s" : ""}
+                  </span>
+                  <div className="flex-1 h-px bg-[#1C1C2C]" />
+                </div>
+
+                <div className="space-y-2">
+                  {items.map((inst) => (
+                    <Link key={inst.id} href={`/admin/zapi/${inst.id}`}>
+                      <div className="group bg-[#0F0F1A] border border-[#1C1C2C] rounded-xl px-5 py-4 flex items-center gap-4 hover:border-[#252535] hover:bg-[#121220] transition-all duration-200 shadow-[0_1px_12px_rgba(0,0,0,0.3)] cursor-pointer">
+                        {/* Status icon */}
+                        <div className="relative shrink-0">
+                          <div
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                              inst.status === "ativo" ? "bg-[#22C55E]/10" : "bg-[#13131F]"
+                            }`}
+                          >
+                            <Wifi
+                              className={`w-[18px] h-[18px] ${
+                                inst.status === "ativo" ? "text-[#22C55E]" : "text-[#3F3F58]"
+                              }`}
+                            />
+                          </div>
+                          {inst.status === "ativo" && (
+                            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#22C55E] shadow-[0_0_8px_rgba(34,197,94,0.65)] ring-2 ring-[#0F0F1A]" />
                           )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+                        </div>
+
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-[#EEEEF5] font-semibold text-sm group-hover:text-white transition-colors">
+                              {inst.nome}
+                            </p>
+                            {inst.status === "inativo" && (
+                              <span className="text-[10px] font-medium text-[#3F3F58] bg-[#13131F] border border-[#1C1C2C] px-1.5 py-0.5 rounded">
+                                Inativo
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[#3F3F58] text-xs font-mono mt-0.5 truncate">
+                            {inst.instance_id}
+                          </p>
+                        </div>
+
+                        {/* Groups */}
+                        <div className="text-right shrink-0">
+                          <p className="text-[#EEEEF5] text-sm font-semibold">{inst._count.grupos}</p>
+                          <p className="text-[#3F3F58] text-[10px] uppercase tracking-wider">
+                            {inst._count.grupos === 1 ? "grupo" : "grupos"}
+                          </p>
+                        </div>
+
+                        {/* Delete */}
+                        {canWrite && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              setDeleteDialog(inst)
+                            }}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-[#3F3F58] hover:text-[#F87171] hover:bg-[#F87171]/10 transition-all opacity-0 group-hover:opacity-100 shrink-0 text-lg leading-none pb-0.5"
+                            title="Excluir"
+                          >
+                            ×
+                          </button>
+                        )}
+
+                        <ChevronRight className="w-4 h-4 text-[#3F3F58] group-hover:text-[#7F7F9E] transition-colors shrink-0" />
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
+      {/* Delete dialog */}
       <Dialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Excluir Instância</DialogTitle>
+            <DialogTitle>Excluir instância</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir{" "}
+              <strong className="text-[#EEEEF5]">{deleteDialog?.nome}</strong>? Todos os grupos e
+              entradas vinculados serão removidos permanentemente.
+            </DialogDescription>
           </DialogHeader>
-          <p className="text-[#8B8B9E] text-sm">
-            Tem certeza que deseja excluir a instância{" "}
-            <span className="text-[#F1F1F3] font-semibold">{deleteDialog?.nome}</span>?
-            Esta ação não pode ser desfeita.
-          </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialog(null)}>
+            <Button variant="ghost" onClick={() => setDeleteDialog(null)}>
               Cancelar
             </Button>
             <Button
               variant="destructive"
               onClick={() => deleteDialog && handleDelete(deleteDialog)}
-              loading={actionLoading === deleteDialog?.id + "-delete"}
+              loading={actionLoading === deleteDialog?.id}
             >
               Excluir
             </Button>

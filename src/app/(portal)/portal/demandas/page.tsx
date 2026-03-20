@@ -18,7 +18,7 @@ interface Demanda {
   tipo: string
   status: string
   prioridade: string
-  comentarios_count: number
+  _count: { comentarios: number }
   updated_at: string
   created_at: string
 }
@@ -164,7 +164,7 @@ function DemandaCard({ demanda }: { demanda: Demanda }) {
         <div className="flex items-center justify-between text-xs text-[#5A5A72]">
           <div className="flex items-center gap-1">
             <MessageSquare className="w-3.5 h-3.5" />
-            <span>{demanda.comentarios_count ?? 0} comentários</span>
+            <span>{demanda._count?.comentarios ?? 0} comentários</span>
           </div>
           <span className={recent ? "text-[#25D366]/70" : ""}>
             Atualizado {formatRelative(demanda.updated_at || demanda.created_at)}
@@ -194,7 +194,7 @@ export default function PortalDemandasPage() {
       })
       if (!res.ok) throw new Error()
       const data = await res.json()
-      setDemandas(data.data ?? [])
+      setDemandas(data.demandas ?? [])
     } catch {
       toast.error("Erro ao carregar demandas.")
     } finally {

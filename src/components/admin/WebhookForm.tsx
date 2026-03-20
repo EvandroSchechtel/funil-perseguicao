@@ -77,6 +77,7 @@ export function WebhookForm({ mode, initialData }: WebhookFormProps) {
 
     const newErrors: Record<string, string> = {}
     if (!nome.trim()) newErrors.nome = "Nome é obrigatório"
+    if (!campanhaId) newErrors.campanha_id = "Campanha é obrigatória"
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
@@ -87,7 +88,7 @@ export function WebhookForm({ mode, initialData }: WebhookFormProps) {
     try {
       const body: Record<string, unknown> = {
         nome: nome.trim(),
-        campanha_id: campanhaId || undefined,
+        campanha_id: campanhaId,
         status,
       }
 
@@ -170,20 +171,22 @@ export function WebhookForm({ mode, initialData }: WebhookFormProps) {
         required
       />
 
-      {/* Campanha Select */}
+      {/* Campanha Select — obrigatório */}
       <div className="space-y-1.5">
-        <label className="text-sm font-medium text-[#C4C4D4]">Campanha (opcional)</label>
+        <label className="text-sm font-medium text-[#C4C4D4]">
+          Campanha <span className="text-[#F87171]">*</span>
+        </label>
         {loadingCampanhas ? (
           <div className="h-10 rounded-lg border border-[#1E1E2A] bg-[#111118] flex items-center px-3">
-            <span className="text-[#5A5A72] text-sm">Carregando campanhas...</span>
+            <span className="text-[#5A5A72] text-sm">Carregando campanhas…</span>
           </div>
         ) : (
           <select
             value={campanhaId}
             onChange={(e) => setCampanhaId(e.target.value)}
-            className="w-full h-10 px-3 rounded-lg border border-[#1E1E2A] bg-[#111118] text-sm text-[#F1F1F3] focus:outline-none focus:border-[#25D366] transition-colors"
+            className={`w-full h-10 px-3 rounded-lg border bg-[#111118] text-sm text-[#F1F1F3] focus:outline-none focus:border-[#25D366] transition-colors ${errors.campanha_id ? "border-[#F87171]" : "border-[#1E1E2A]"}`}
           >
-            <option value="">Sem campanha</option>
+            <option value="">— Selecionar campanha —</option>
             {campanhas.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.nome}
@@ -191,7 +194,11 @@ export function WebhookForm({ mode, initialData }: WebhookFormProps) {
             ))}
           </select>
         )}
-        <p className="text-xs text-[#5A5A72]">Agrupa este webhook em uma campanha/lançamento</p>
+        {errors.campanha_id ? (
+          <p className="text-xs text-[#F87171]">{errors.campanha_id}</p>
+        ) : (
+          <p className="text-xs text-[#5A5A72]">Todos os leads deste webhook serão agrupados nesta campanha</p>
+        )}
       </div>
 
       <div className="flex items-center justify-between p-4 bg-[#111118] border border-[#1E1E2A] rounded-lg">
