@@ -15,7 +15,7 @@ interface Lead {
   nome: string
   telefone: string
   email: string | null
-  status: "pendente" | "processando" | "sucesso" | "falha" | "sem_optin"
+  status: "pendente" | "processando" | "sucesso" | "falha" | "sem_optin" | "aguardando"
   erro_msg: string | null
   tentativas: number
   grupo_entrou_at: string | null
@@ -31,6 +31,7 @@ interface WebhookOption {
 
 const STATUS_OPTIONS = [
   { value: "todos", label: "Todos os status" },
+  { value: "aguardando", label: "Aguardando" },
   { value: "pendente", label: "Pendente" },
   { value: "processando", label: "Processando" },
   { value: "sucesso", label: "Sucesso" },
@@ -40,6 +41,7 @@ const STATUS_OPTIONS = [
 
 function statusBadge(status: string) {
   const variants: Record<string, { label: string; class: string }> = {
+    aguardando: { label: "Aguardando", class: "bg-[#1A1500] text-[#F59E0B] border-[#F59E0B]/40" },
     pendente: { label: "Pendente", class: "bg-[#2A2A1E] text-[#F59E0B] border-[#F59E0B]/30" },
     processando: { label: "Processando", class: "bg-[#1E1E2A] text-[#60A5FA] border-[#60A5FA]/30" },
     sucesso: { label: "Sucesso", class: "bg-[#162516] text-[#25D366] border-[#25D366]/30" },

@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { ServiceError } from "./errors"
+import { addWebhookJob } from "@/lib/queue/queues"
+import { getTodayUsageMap, msUntilMidnightBRT } from "./uso-diario.service"
 
 export interface ListCampanhasParams {
   page?: number
@@ -33,6 +35,7 @@ export async function listarCampanhas(params: ListCampanhasParams = {}) {
         nome: true,
         descricao: true,
         status: true,
+        pausado_at: true,
         data_inicio: true,
         data_fim: true,
         created_at: true,
@@ -60,22 +63,26 @@ export async function listarCampanhas(params: ListCampanhasParams = {}) {
 }
 
 export async function buscarCampanha(id: string) {
-  const campanha = await prisma.campanha.findFirst({
-    where: { id, deleted_at: null },
-    select: {
-      id: true,
-      nome: true,
-      descricao: true,
-      status: true,
-      data_inicio: true,
-      data_fim: true,
-      created_at: true,
-      updated_at: true,
-      usuario: { select: { nome: true } },
-      cliente: { select: { id: true, nome: true } },
-      _count: { select: { webhooks: true, leads: true } },
-    },
-  })
+  const [campanha, aguardando_count] = await Promise.all([
+    prisma.campanha.findFirst({
+      where: { id, deleted_at: null },
+      select: {
+        id: true,
+        nome: true,
+        descricao: true,
+        status: true,
+        pausado_at: true,
+        data_inicio: true,
+        data_fim: true,
+        created_at: true,
+        updated_at: true,
+        usuario: { select: { nome: true } },
+        cliente: { select: { id: true, nome: true } },
+        _count: { select: { webhooks: true, leads: true } },
+      },
+    }),
+    prisma.lead.count({ where: { campanha_id: id, status: "aguardando" } }),
+  ])
 
   if (!campanha) throw new ServiceError("not_found", "Campanha não encontrada.")
 
@@ -84,6 +91,7 @@ export async function buscarCampanha(id: string) {
       ...campanha,
       webhooks_count: campanha._count.webhooks,
       leads_count: campanha._count.leads,
+      aguardando_count,
       _count: undefined,
     },
   }
@@ -220,4 +228,115 @@ export async function toggleCampanha(id: string) {
     data: campanha,
     message: `Campanha ${novoStatus === "ativo" ? "ativada" : "desativada"} com sucesso.`,
   }
+}
+
+// ── Pause / Resume ─────────────────────────────────────────────────────────────
+
+export async function pausarCampanha(id: string) {
+  const existing = await prisma.campanha.findFirst({ where: { id, deleted_at: null } })
+  if (!existing) throw new ServiceError("not_found", "Campanha não encontrada.")
+  if (existing.pausado_at) throw new ServiceError("bad_request", "Campanha já está pausada.")
+
+  await prisma.campanha.update({ where: { id }, data: { pausado_at: new Date() } })
+  return { message: "Campanha pausada. Novos leads entrarão na fila de espera." }
+}
+
+export async function retomarCampanha(id: string) {
+  const existing = await prisma.campanha.findFirst({ where: { id, deleted_at: null } })
+  if (!existing) throw new ServiceError("not_found", "Campanha não encontrada.")
+  if (!existing.pausado_at) throw new ServiceError("bad_request", "Campanha não está pausada.")
+
+  const count = await _enfileirarAguardando(id)
+
+  await prisma.$transaction([
+    prisma.lead.updateMany({ where: { campanha_id: id, status: "aguardando" }, data: { status: "pendente" } }),
+    prisma.campanha.update({ where: { id }, data: { pausado_at: null } }),
+  ])
+
+  return { message: `Campanha retomada. ${count} lead(s) reenfileirado(s).` }
+}
+
+export async function soltarTodosDaFila(id: string) {
+  const existing = await prisma.campanha.findFirst({ where: { id, deleted_at: null } })
+  if (!existing) throw new ServiceError("not_found", "Campanha não encontrada.")
+
+  const count = await _enfileirarAguardando(id)
+  await prisma.lead.updateMany({ where: { campanha_id: id, status: "aguardando" }, data: { status: "pendente" } })
+
+  return { message: `${count} lead(s) liberado(s) da fila. Campanha continua pausada.` }
+}
+
+export async function soltarUmDaFila(id: string) {
+  const lead = await prisma.lead.findFirst({
+    where: { campanha_id: id, status: "aguardando" },
+    orderBy: { created_at: "asc" },
+    select: {
+      id: true,
+      webhook_id: true,
+      nome: true,
+      telefone: true,
+      email: true,
+      webhook_flow: {
+        select: {
+          conta_id: true,
+          flow_ns: true,
+          conta: { select: { limite_diario: true } },
+        },
+      },
+    },
+  })
+
+  if (!lead) throw new ServiceError("not_found", "Nenhum lead aguardando na fila.")
+  if (!lead.webhook_flow) throw new ServiceError("bad_request", "Lead sem flow atribuído.")
+
+  const { conta_id, flow_ns, conta } = lead.webhook_flow
+  const usageMap = await getTodayUsageMap([conta_id])
+  const atLimit = conta.limite_diario !== null && (usageMap.get(conta_id) ?? 0) >= conta.limite_diario
+  const delay = atLimit ? msUntilMidnightBRT() : undefined
+
+  await prisma.lead.update({ where: { id: lead.id }, data: { status: "pendente" } })
+
+  addWebhookJob(
+    { leadId: lead.id, webhookId: lead.webhook_id, contaId: conta_id, flowNs: flow_ns, nome: lead.nome, telefone: lead.telefone, email: lead.email ?? undefined },
+    { forceNew: true, delay }
+  ).catch((err) => console.error("[soltarUmDaFila] addWebhookJob:", err))
+
+  return { message: "Lead liberado da fila.", lead_id: lead.id }
+}
+
+async function _enfileirarAguardando(campanhaId: string): Promise<number> {
+  const leads = await prisma.lead.findMany({
+    where: { campanha_id: campanhaId, status: "aguardando" },
+    select: {
+      id: true,
+      webhook_id: true,
+      nome: true,
+      telefone: true,
+      email: true,
+      webhook_flow: {
+        select: {
+          conta_id: true,
+          flow_ns: true,
+          conta: { select: { limite_diario: true } },
+        },
+      },
+    },
+  })
+
+  const contaIds = [...new Set(leads.filter((l) => l.webhook_flow).map((l) => l.webhook_flow!.conta_id))]
+  const usageMap = await getTodayUsageMap(contaIds)
+
+  for (const lead of leads) {
+    if (!lead.webhook_flow) continue
+    const { conta_id, flow_ns, conta } = lead.webhook_flow
+    const atLimit = conta.limite_diario !== null && (usageMap.get(conta_id) ?? 0) >= conta.limite_diario
+    const delay = atLimit ? msUntilMidnightBRT() : undefined
+
+    addWebhookJob(
+      { leadId: lead.id, webhookId: lead.webhook_id, contaId: conta_id, flowNs: flow_ns, nome: lead.nome, telefone: lead.telefone, email: lead.email ?? undefined },
+      { forceNew: true, delay }
+    ).catch((err) => console.error("[_enfileirarAguardando] addWebhookJob:", err))
+  }
+
+  return leads.length
 }

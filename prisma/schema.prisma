@@ -54,6 +54,7 @@ enum LeadStatus {
   sucesso
   falha
   sem_optin
+  aguardando
 }
 
 enum AgentSessaoStatus {
@@ -194,6 +195,7 @@ model Campanha {
   nome        String
   descricao   String?
   status      Status    @default(ativo)
+  pausado_at  DateTime?
   data_inicio DateTime?
   data_fim    DateTime?
   created_by  String

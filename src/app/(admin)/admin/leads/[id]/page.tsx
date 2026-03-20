@@ -32,7 +32,7 @@ interface LeadDetail {
   nome: string
   telefone: string
   email: string | null
-  status: "pendente" | "processando" | "sucesso" | "falha" | "sem_optin"
+  status: "pendente" | "processando" | "sucesso" | "falha" | "sem_optin" | "aguardando"
   erro_msg: string | null
   tentativas: number
   subscriber_id: string | null
@@ -54,6 +54,14 @@ interface LeadDetail {
 }
 
 const STATUS_CONFIG = {
+  aguardando: {
+    label: "Aguardando",
+    icon: Clock,
+    color: "text-[#F59E0B]",
+    bg: "bg-[#1A1500]",
+    border: "border-[#F59E0B]/40",
+    description: "Campanha pausada — lead na fila de espera",
+  },
   pendente: {
     label: "Pendente",
     icon: Clock,

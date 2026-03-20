@@ -26,6 +26,7 @@ export async function POST(
         id: true,
         status: true,
         campanha_id: true,
+        campanha: { select: { pausado_at: true } },
         webhook_flows: {
           where: { status: "ativo", deleted_at: null },
           select: {
@@ -58,19 +59,23 @@ export async function POST(
 
     const { nome, telefone, email } = parsed.data
 
+    const campanhaPausada = !!(webhook.campanha && webhook.campanha.pausado_at)
+
     // 3. Round-robin: pick flow with fewest sends, skipping accounts at daily limit
     const allFlows = webhook.webhook_flows
     const contaIds = [...new Set(allFlows.map((f) => f.conta_id))]
-    const usageMap = await getTodayUsageMap(contaIds)
+    const usageMap = campanhaPausada ? new Map<string, number>() : await getTodayUsageMap(contaIds)
 
-    const availableFlows = allFlows.filter((f) => {
-      const limite = f.conta.limite_diario
-      if (!limite) return true // unlimited
-      return (usageMap.get(f.conta_id) ?? 0) < limite
-    })
+    const availableFlows = campanhaPausada
+      ? allFlows // when paused, assign round-robin without daily limit check
+      : allFlows.filter((f) => {
+          const limite = f.conta.limite_diario
+          if (!limite) return true
+          return (usageMap.get(f.conta_id) ?? 0) < limite
+        })
 
     const flow = availableFlows[0] ?? null
-    const allAtLimit = allFlows.length > 0 && availableFlows.length === 0
+    const allAtLimit = !campanhaPausada && allFlows.length > 0 && availableFlows.length === 0
 
     // 4. Upsert Contato by telefone (pessoa = número de celular)
     const contato = await prisma.contato.upsert({
@@ -82,7 +87,8 @@ export async function POST(
 
     // 5. Upsert Lead by (webhook_id, contato_id)
     //    - processando → skip (already in flight)
-    //    - falha/sem_optin/pendente → reuse, reset to pendente
+    //    - aguardando + campanha ainda pausada → update data, stay aguardando
+    //    - falha/sem_optin/pendente → reuse, reset to pendente (or aguardando if paused)
     //    - sucesso → create new (legitimate re-send after success)
     const existing = await prisma.lead.findUnique({
       where: { webhook_id_contato_id: { webhook_id: webhook.id, contato_id: contato.id } },
@@ -90,6 +96,7 @@ export async function POST(
     })
 
     let leadId: string
+    const targetStatus = campanhaPausada ? "aguardando" : "pendente"
 
     if (existing?.status === "processando") {
       return ok({ ok: true, lead_id: existing.id, deduped: true })
@@ -104,7 +111,7 @@ export async function POST(
           webhook_flow_id: flow?.id ?? null,
           flow_executado: flow?.flow_ns ?? null,
           conta_nome: flow?.conta.nome ?? null,
-          status: "pendente",
+          status: targetStatus,
           erro_msg: null,
         },
       })
@@ -121,13 +128,13 @@ export async function POST(
           nome,
           telefone,
           email: email || null,
-          status: "pendente",
+          status: targetStatus,
         },
       })
       leadId = lead.id
     }
 
-    // 6. Increment flow counter
+    // 6. Increment flow counter (always — so round-robin stays accurate when paused)
     if (flow) {
       await prisma.webhookFlow.update({
         where: { id: flow.id },
@@ -135,31 +142,33 @@ export async function POST(
       })
     }
 
-    // 7. Queue job
-    if (flow) {
-      addWebhookJob({
-        leadId,
-        webhookId: webhook.id,
-        contaId: flow.conta_id,
-        flowNs: flow.flow_ns,
-        nome,
-        telefone,
-        email: email || undefined,
-      }).catch((err) => console.error("[addWebhookJob] Redis unavailable:", err))
-    } else if (allAtLimit) {
-      // All accounts at daily limit — schedule for next midnight BRT
-      const delay = msUntilMidnightBRT()
-      const firstFlow = allFlows[0]
-      if (firstFlow) {
-        addWebhookJob(
-          { leadId, webhookId: webhook.id, contaId: firstFlow.conta_id, flowNs: firstFlow.flow_ns, nome, telefone, email: email || undefined },
-          { delay }
-        ).catch((err) => console.error("[addWebhookJob] Redis unavailable:", err))
-        console.log(`[Webhook] All accounts at daily limit — job delayed ${Math.round(delay / 60000)}min`)
+    // 7. Queue job — skip when paused (leads sit as aguardando until released)
+    if (!campanhaPausada) {
+      if (flow) {
+        addWebhookJob({
+          leadId,
+          webhookId: webhook.id,
+          contaId: flow.conta_id,
+          flowNs: flow.flow_ns,
+          nome,
+          telefone,
+          email: email || undefined,
+        }).catch((err) => console.error("[addWebhookJob] Redis unavailable:", err))
+      } else if (allAtLimit) {
+        // All accounts at daily limit — schedule for next midnight BRT
+        const delay = msUntilMidnightBRT()
+        const firstFlow = allFlows[0]
+        if (firstFlow) {
+          addWebhookJob(
+            { leadId, webhookId: webhook.id, contaId: firstFlow.conta_id, flowNs: firstFlow.flow_ns, nome, telefone, email: email || undefined },
+            { delay }
+          ).catch((err) => console.error("[addWebhookJob] Redis unavailable:", err))
+          console.log(`[Webhook] All accounts at daily limit — job delayed ${Math.round(delay / 60000)}min`)
+        }
       }
     }
 
-    return ok({ ok: true, lead_id: leadId })
+    return ok({ ok: true, lead_id: leadId, queued: campanhaPausada })
   } catch (error) {
     console.error("[POST /api/webhook/[token]]", error)
     return serverError()

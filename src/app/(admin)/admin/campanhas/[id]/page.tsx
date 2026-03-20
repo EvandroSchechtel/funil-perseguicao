@@ -6,7 +6,8 @@ import Link from "next/link"
 import {
   Pencil, Webhook, Users2, Copy, CheckCircle2, XCircle, Loader2,
   Plus, Trash2, ToggleLeft, ToggleRight, Info, GripVertical, FlaskConical,
-  Building2, Calendar, ChevronDown, ChevronRight,
+  Building2, Calendar, ChevronDown, ChevronRight, PauseCircle, PlayCircle,
+  ListOrdered, ChevronsRight,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
@@ -24,12 +25,14 @@ interface CampanhaData {
   nome: string
   descricao: string | null
   status: "ativo" | "inativo"
+  pausado_at: string | null
   data_inicio: string | null
   data_fim: string | null
   created_at: string
   updated_at: string
   webhooks_count: number
   leads_count: number
+  aguardando_count: number
   usuario: { nome: string }
   cliente: { id: string; nome: string } | null
 }
@@ -129,6 +132,9 @@ export default function CampanhaDetailPage() {
   const [leads, setLeads] = useState<LeadItem[]>([])
   const [loadingLeads, setLoadingLeads] = useState(false)
   const [leadsTotal, setLeadsTotal] = useState(0)
+
+  // Pause actions
+  const [pauseLoading, setPauseLoading] = useState<string | null>(null)
 
   const canWrite = user ? hasPermission(user.role, "webhooks:write") : false
 
@@ -359,6 +365,30 @@ export default function CampanhaDetailPage() {
     }
   }
 
+  // ── Pause actions ───────────────────────────────────────────────────────────
+
+  async function callPauseAction(action: "pausar" | "retomar" | "soltar-um" | "soltar-todos") {
+    if (!accessToken || !id) return
+    setPauseLoading(action)
+    try {
+      const res = await fetch(`/api/admin/campanhas/${id}/${action}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast.success(data.message)
+        fetchCampanha()
+      } else {
+        toast.error(data.message || "Erro ao executar ação.")
+      }
+    } catch {
+      toast.error("Erro de conexão.")
+    } finally {
+      setPauseLoading(null)
+    }
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -399,12 +429,25 @@ export default function CampanhaDetailPage() {
         ]}
         actions={
           canWrite ? (
-            <Link href={`/admin/campanhas/${id}/editar`}>
-              <Button variant="outline" size="sm">
-                <Pencil className="w-4 h-4 mr-1.5" />
-                Editar
-              </Button>
-            </Link>
+            <div className="flex items-center gap-2">
+              {campanha && !campanha.pausado_at && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => callPauseAction("pausar")}
+                  loading={pauseLoading === "pausar"}
+                >
+                  <PauseCircle className="w-4 h-4 mr-1.5" />
+                  Pausar
+                </Button>
+              )}
+              <Link href={`/admin/campanhas/${id}/editar`}>
+                <Button variant="outline" size="sm">
+                  <Pencil className="w-4 h-4 mr-1.5" />
+                  Editar
+                </Button>
+              </Link>
+            </div>
           ) : undefined
         }
       />
@@ -416,9 +459,15 @@ export default function CampanhaDetailPage() {
             <div>
               <div className="flex items-center gap-3 mb-1">
                 <h1 className="text-[#F1F1F3] text-2xl font-bold">{campanha.nome}</h1>
-                <Badge variant={campanha.status === "ativo" ? "ativo" : "inativo"}>
-                  {campanha.status === "ativo" ? "Ativa" : "Inativa"}
-                </Badge>
+                {campanha.pausado_at ? (
+                  <Badge variant="inativo" className="border-[#F59E0B]/40 bg-[#1A1500] text-[#F59E0B]">
+                    Pausada
+                  </Badge>
+                ) : (
+                  <Badge variant={campanha.status === "ativo" ? "ativo" : "inativo"}>
+                    {campanha.status === "ativo" ? "Ativa" : "Inativa"}
+                  </Badge>
+                )}
               </div>
               <div className="flex items-center gap-4 text-sm text-[#8B8B9E]">
                 {campanha.cliente && (
@@ -458,6 +507,64 @@ export default function CampanhaDetailPage() {
         {/* ── Tab: Visão Geral ─────────────────────────────────────────────── */}
         {tab === "visao-geral" && (
           <div className="p-6 max-w-2xl space-y-5">
+
+            {/* Pause banner */}
+            {campanha.pausado_at && (
+              <div className="bg-[#1A1500] border border-[#F59E0B]/30 rounded-xl px-5 py-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <PauseCircle className="w-5 h-5 text-[#F59E0B] shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-[#F59E0B] font-semibold text-sm">Campanha pausada</p>
+                      <p className="text-[#A08030] text-xs mt-0.5">
+                        {campanha.aguardando_count > 0
+                          ? `${campanha.aguardando_count} lead(s) na fila de espera`
+                          : "Nenhum lead na fila ainda"}
+                        {" · "}Pausada em {formatDate(campanha.pausado_at)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                {canWrite && (
+                  <div className="flex flex-wrap gap-2 mt-4">
+                    <Button
+                      size="sm"
+                      onClick={() => callPauseAction("retomar")}
+                      loading={pauseLoading === "retomar"}
+                      disabled={!!pauseLoading}
+                    >
+                      <PlayCircle className="w-4 h-4 mr-1.5" />
+                      Retomar campanha
+                    </Button>
+                    {campanha.aguardando_count > 0 && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => callPauseAction("soltar-todos")}
+                          loading={pauseLoading === "soltar-todos"}
+                          disabled={!!pauseLoading}
+                        >
+                          <ChevronsRight className="w-4 h-4 mr-1.5" />
+                          Soltar todos ({campanha.aguardando_count})
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => callPauseAction("soltar-um")}
+                          loading={pauseLoading === "soltar-um"}
+                          disabled={!!pauseLoading}
+                        >
+                          <ListOrdered className="w-4 h-4 mr-1.5" />
+                          Soltar um
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Stats */}
             <div className="grid grid-cols-2 gap-3">
               {[

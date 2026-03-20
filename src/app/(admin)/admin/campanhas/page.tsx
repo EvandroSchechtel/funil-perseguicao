@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Plus, Search, Megaphone, MoreHorizontal, Users2, Webhook, Building2, ChevronRight } from "lucide-react"
+import { Plus, Search, Megaphone, MoreHorizontal, Users2, Webhook, Building2, ChevronRight, PauseCircle, PlayCircle } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
 import { Button } from "@/components/ui/button"
@@ -25,6 +25,7 @@ interface CampanhaItem {
   nome: string
   descricao: string | null
   status: "ativo" | "inativo"
+  pausado_at: string | null
   data_inicio: string | null
   data_fim: string | null
   webhooks_count: number
@@ -102,6 +103,29 @@ export default function CampanhasPage() {
       }
     } catch {
       toast.error("Erro ao alterar status.")
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  async function handlePauseToggle(campanha: CampanhaItem, e: React.MouseEvent) {
+    e.stopPropagation()
+    const action = campanha.pausado_at ? "retomar" : "pausar"
+    setActionLoading(campanha.id + "-pause")
+    try {
+      const res = await fetch(`/api/admin/campanhas/${campanha.id}/${action}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast.success(data.message)
+        fetchCampanhas()
+      } else {
+        toast.error(data.message || "Erro ao alterar estado de pausa.")
+      }
+    } catch {
+      toast.error("Erro ao alterar estado de pausa.")
     } finally {
       setActionLoading(null)
     }
@@ -251,7 +275,7 @@ export default function CampanhasPage() {
                       className={`flex items-center gap-4 px-5 py-4 hover:bg-[#1C1C28] transition-colors cursor-pointer ${idx !== items.length - 1 ? "border-b border-[#1E1E2A]" : ""}`}
                     >
                       {/* Status indicator */}
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${c.status === "ativo" ? "bg-[#25D366]" : "bg-[#3F3F58]"}`} />
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${c.pausado_at ? "bg-[#F59E0B]" : c.status === "ativo" ? "bg-[#25D366]" : "bg-[#3F3F58]"}`} />
 
                       {/* Main info */}
                       <div className="flex-1 min-w-0">
@@ -262,9 +286,15 @@ export default function CampanhasPage() {
                       </div>
 
                       {/* Status badge */}
-                      <Badge variant={c.status === "ativo" ? "ativo" : "inativo"} className="shrink-0">
-                        {c.status === "ativo" ? "Ativa" : "Inativa"}
-                      </Badge>
+                      {c.pausado_at ? (
+                        <Badge variant="inativo" className="shrink-0 border-[#F59E0B]/40 bg-[#1A1500] text-[#F59E0B]">
+                          Pausada
+                        </Badge>
+                      ) : (
+                        <Badge variant={c.status === "ativo" ? "ativo" : "inativo"} className="shrink-0">
+                          {c.status === "ativo" ? "Ativa" : "Inativa"}
+                        </Badge>
+                      )}
 
                       {/* Período */}
                       <div className="hidden md:block shrink-0 text-right">
@@ -310,6 +340,18 @@ export default function CampanhasPage() {
                             >
                               {c.status === "ativo" ? "Desativar" : "Ativar"}
                             </DropdownMenuItem>
+                            {canWrite && (
+                              <DropdownMenuItem
+                                onClick={(e) => handlePauseToggle(c, e as unknown as React.MouseEvent)}
+                                disabled={actionLoading === c.id + "-pause"}
+                              >
+                                {c.pausado_at ? (
+                                  <><PlayCircle className="w-4 h-4 mr-2 text-[#25D366]" />Retomar</>
+                                ) : (
+                                  <><PauseCircle className="w-4 h-4 mr-2 text-[#F59E0B]" />Pausar</>
+                                )}
+                              </DropdownMenuItem>
+                            )}
                             {canDelete && (
                               <>
                                 <DropdownMenuSeparator />
