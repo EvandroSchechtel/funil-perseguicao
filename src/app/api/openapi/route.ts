@@ -253,6 +253,38 @@ export async function GET() {
           responses: { "200": { description: "Status alternado" } },
         },
       },
+      "/api/admin/campanhas/{id}/pausar": {
+        post: {
+          tags: ["Campanhas"],
+          summary: "Pausar campanha — novos leads entram como aguardando em vez de pendente",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          responses: { "200": { description: "{ pausado_at, message }" } },
+        },
+      },
+      "/api/admin/campanhas/{id}/retomar": {
+        post: {
+          tags: ["Campanhas"],
+          summary: "Retomar campanha pausada e reenfileirar todos os leads aguardando no BullMQ",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          responses: { "200": { description: "{ leads_liberados, message }" } },
+        },
+      },
+      "/api/admin/campanhas/{id}/soltar-todos": {
+        post: {
+          tags: ["Campanhas"],
+          summary: "Liberar todos os leads aguardando sem retomar a campanha (continua pausada)",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          responses: { "200": { description: "{ liberados, message }" } },
+        },
+      },
+      "/api/admin/campanhas/{id}/soltar-um": {
+        post: {
+          tags: ["Campanhas"],
+          summary: "Liberar um único lead aguardando respeitando o limite diário da conta",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          responses: { "200": { description: "{ liberado, message }" } },
+        },
+      },
 
       // ── Webhooks ──────────────────────────────────────────────────────────
       "/api/admin/webhooks": {
@@ -532,6 +564,19 @@ export async function GET() {
             { name: "conta_id", in: "query", schema: { type: "string", format: "uuid" } },
           ],
           responses: { "200": { description: "Lista de tags: [{ id, name }]" } },
+        },
+      },
+      "/api/admin/zapi/instancias/{id}/escanear-grupos": {
+        post: {
+          tags: ["Z-API"],
+          summary: "Escanear todos os grupos Z-API e auto-vincular por similaridade semântica de nome",
+          description: "Compara cada grupo do Z-API com os GrupoMonitoramento existentes usando Jaccard + Levenshtein (threshold 0.65). Cria novos GrupoMonitoramento clonando a config do template mais similar.",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          responses: {
+            "200": {
+              description: "{ total_grupos_zapi, novos_vinculados, ja_configurados, sem_match, detalhes[] }",
+            },
+          },
         },
       },
       "/api/admin/zapi/instancias/{id}/grupos": {
