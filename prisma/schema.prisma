@@ -60,6 +60,7 @@ model Usuario {
   campanhas             Campanha[]
   webhooks              Webhook[]
   agent_sessoes         AgentSessao[]
+  instancias_zapi       InstanciaZApi[]
 
   @@map("usuarios")
 }
@@ -101,8 +102,9 @@ model Cliente {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  contas_manychat ContaManychat[]
-  campanhas       Campanha[]
+  contas_manychat  ContaManychat[]
+  campanhas        Campanha[]
+  instancias_zapi  InstanciaZApi[]
 
   @@map("clientes")
 }
@@ -126,8 +128,9 @@ model ContaManychat {
   updated_at          DateTime  @updatedAt
   deleted_at          DateTime?
 
-  webhook_flows     WebhookFlow[]
-  contatos_vinculados ContatoConta[]
+  webhook_flows        WebhookFlow[]
+  contatos_vinculados  ContatoConta[]
+  grupos_monitoramento GrupoMonitoramento[]
 
   @@map("contas_manychat")
 }
@@ -149,8 +152,9 @@ model Campanha {
   updated_at  DateTime  @updatedAt
   deleted_at  DateTime?
 
-  webhooks Webhook[]
-  leads    Lead[]
+  webhooks             Webhook[]
+  leads                Lead[]
+  grupos_monitoramento GrupoMonitoramento[]
 
   @@map("campanhas")
 }
@@ -253,10 +257,12 @@ model Lead {
   erro_msg        String?
   tentativas      Int          @default(0)
   processado_at   DateTime?
+  grupo_entrou_at DateTime?    // preenchido quando detectado no grupo da campanha
   created_at      DateTime     @default(now())
   updated_at      DateTime     @updatedAt
 
   tentativas_hist LeadTentativa[]
+  entradas_grupo  EntradaGrupo[]
 
   @@unique([webhook_id, contato_id])  // um lead por webhook+contato
   @@map("leads")
@@ -275,6 +281,71 @@ model LeadTentativa {
   executado_at  DateTime  @default(now())
 
   @@map("lead_tentativas")
+}
+
+// ── Z-API ─────────────────────────────────────────────────────────────────────
+
+model InstanciaZApi {
+  id            String    @id @default(uuid())
+  nome          String
+  instance_id   String                           // ID da instância no Z-API
+  token         String                           // Token da instância Z-API
+  client_token  String                           // Header Client-Token para chamadas Z-API
+  webhook_token String    @unique @default(uuid()) // token da URL /api/webhook/zapi/[token]
+  status        Status    @default(ativo)
+  cliente_id    String?
+  cliente       Cliente?  @relation(fields: [cliente_id], references: [id])
+  created_by    String
+  usuario       Usuario   @relation(fields: [created_by], references: [id])
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+  deleted_at    DateTime?
+
+  grupos GrupoMonitoramento[]
+
+  @@map("instancias_zapi")
+}
+
+model GrupoMonitoramento {
+  id                  String        @id @default(uuid())
+  instancia_id        String
+  instancia           InstanciaZApi @relation(fields: [instancia_id], references: [id])
+  campanha_id         String
+  campanha            Campanha      @relation(fields: [campanha_id], references: [id])
+  conta_manychat_id   String
+  conta_manychat      ContaManychat @relation(fields: [conta_manychat_id], references: [id])
+  nome_filtro         String        // match case-insensitive contains no chatName do Z-API
+  grupo_wa_id         String?       // ID do grupo WhatsApp — preenchido no 1º match
+  tag_manychat_id     Int           // ID da tag no Manychat
+  tag_manychat_nome   String        // nome da tag (para exibição)
+  status              Status        @default(ativo)
+  created_at          DateTime      @default(now())
+  updated_at          DateTime      @updatedAt
+
+  entradas EntradaGrupo[]
+
+  @@unique([campanha_id, instancia_id])
+  @@map("grupos_monitoramento")
+}
+
+model EntradaGrupo {
+  id            String             @id @default(uuid())
+  grupo_id      String
+  grupo         GrupoMonitoramento @relation(fields: [grupo_id], references: [id])
+  lead_id       String?
+  lead          Lead?              @relation(fields: [lead_id], references: [id])
+  contato_id    String?
+  telefone      String             // telefone normalizado (sem +, só dígitos)
+  nome_whatsapp String?
+  grupo_wa_id   String             // ID do grupo WhatsApp no evento
+  grupo_wa_nome String             // nome do grupo no evento
+  subscriber_id String?
+  tag_aplicada  Boolean            @default(false)
+  tag_erro      String?
+  entrou_at     DateTime           @default(now())
+
+  @@unique([grupo_id, telefone])   // upsert em caso de re-entrada
+  @@map("entradas_grupo")
 }
 
 // ── Agent ─────────────────────────────────────────────────────────────────────

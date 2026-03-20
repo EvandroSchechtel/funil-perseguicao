@@ -6,7 +6,7 @@ import Link from "next/link"
 import {
   ArrowLeft, RefreshCw, CheckCircle2, XCircle, Clock, Loader2,
   User, Phone, Mail, Webhook, Zap, AlertTriangle, Send,
-  Hash, Building2, Megaphone, ExternalLink, UserCheck,
+  Hash, Building2, Megaphone, ExternalLink, UserCheck, Users,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
@@ -38,6 +38,7 @@ interface LeadDetail {
   subscriber_id: string | null
   flow_executado: string | null
   conta_nome: string | null
+  grupo_entrou_at: string | null
   processado_at: string | null
   created_at: string
   updated_at: string
@@ -359,6 +360,20 @@ export default function LeadDetailPage() {
                   value={<span className="font-mono text-xs text-[#25D366]">{lead.subscriber_id}</span>}
                 />
               )}
+              <InfoRow
+                icon={Users}
+                label="Entrou no Grupo WA"
+                value={
+                  lead.grupo_entrou_at ? (
+                    <span className="inline-flex items-center gap-1.5 text-[#25D366] font-medium">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Sim — {formatDate(lead.grupo_entrou_at)}
+                    </span>
+                  ) : (
+                    <span className="text-[#5A5A72]">Ainda não entrou</span>
+                  )
+                }
+              />
             </div>
 
             {/* ── Origem & Flow ── */}

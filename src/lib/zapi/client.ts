@@ -1,0 +1,173 @@
+const ZAPI_BASE = "https://api.z-api.io"
+
+function zapiUrl(instanceId: string, token: string, path: string): string {
+  return `${ZAPI_BASE}/instances/${instanceId}/token/${token}${path}`
+}
+
+function withTimeout(ms: number): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), ms)
+  return { signal: controller.signal, clear: () => clearTimeout(timer) }
+}
+
+export interface ZApiGroup {
+  phone: string   // group ID (e.g. "120363019502650977-group")
+  name: string    // group display name
+  isGroup: boolean
+}
+
+/**
+ * Returns all WhatsApp groups from the Z-API instance.
+ */
+export async function getGroups(
+  instanceId: string,
+  token: string,
+  clientToken: string
+): Promise<ZApiGroup[]> {
+  const { signal, clear } = withTimeout(12000)
+  try {
+    const res = await fetch(zapiUrl(instanceId, token, "/chats"), {
+      headers: { "Client-Token": clientToken },
+      signal,
+    })
+    clear()
+    if (!res.ok) return []
+    const data: ZApiGroup[] = await res.json().catch(() => [])
+    return Array.isArray(data) ? data.filter((c) => c.isGroup) : []
+  } catch {
+    clear()
+    return []
+  }
+}
+
+export interface ZApiGroupMetadata {
+  phone: string
+  name: string
+  participants: Array<{ phone: string; name?: string; isAdmin: boolean }>
+}
+
+/**
+ * Returns metadata (name + participants) of a specific group.
+ */
+export async function getGroupMetadata(
+  instanceId: string,
+  token: string,
+  clientToken: string,
+  groupId: string
+): Promise<ZApiGroupMetadata | null> {
+  const { signal, clear } = withTimeout(12000)
+  try {
+    const res = await fetch(zapiUrl(instanceId, token, `/group-metadata/${groupId}`), {
+      headers: { "Client-Token": clientToken },
+      signal,
+    })
+    clear()
+    if (!res.ok) return null
+    const data = await res.json().catch(() => null)
+    return data ?? null
+  } catch {
+    clear()
+    return null
+  }
+}
+
+export interface ZApiConnectionResult {
+  ok: boolean
+  connected?: boolean
+  error?: string
+}
+
+/**
+ * Tests the Z-API connection by fetching instance status.
+ */
+export async function testZApiConnection(
+  instanceId: string,
+  token: string,
+  clientToken: string
+): Promise<ZApiConnectionResult> {
+  const { signal, clear } = withTimeout(10000)
+  try {
+    const res = await fetch(zapiUrl(instanceId, token, "/status"), {
+      headers: { "Client-Token": clientToken },
+      signal,
+    })
+    clear()
+    if (!res.ok) {
+      if (res.status === 401) return { ok: false, error: "Token inválido ou sem permissão." }
+      return { ok: false, error: `Erro Z-API: ${res.status}` }
+    }
+    const data = await res.json().catch(() => ({}))
+    const connected = data?.connected === true || data?.status === "connected"
+    return { ok: true, connected }
+  } catch (err) {
+    clear()
+    if ((err as Error).name === "AbortError") return { ok: false, error: "Timeout ao conectar ao Z-API." }
+    return { ok: false, error: "Não foi possível conectar ao Z-API." }
+  }
+}
+
+/**
+ * Configures the webhook URL on the Z-API instance.
+ * Called when admin saves the instance configuration.
+ */
+export async function configureWebhook(
+  instanceId: string,
+  token: string,
+  clientToken: string,
+  webhookUrl: string
+): Promise<{ ok: boolean; error?: string }> {
+  const { signal, clear } = withTimeout(10000)
+  try {
+    const res = await fetch(zapiUrl(instanceId, token, "/update-webhook-received"), {
+      method: "PUT",
+      headers: { "Client-Token": clientToken, "Content-Type": "application/json" },
+      body: JSON.stringify({ value: webhookUrl }),
+      signal,
+    })
+    clear()
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      return { ok: false, error: data?.message || `Erro ${res.status}` }
+    }
+    return { ok: true }
+  } catch (err) {
+    clear()
+    if ((err as Error).name === "AbortError") return { ok: false, error: "Timeout." }
+    return { ok: false, error: "Erro ao configurar webhook." }
+  }
+}
+
+// ── Webhook payload types ──────────────────────────────────────────────────────
+
+export interface ZApiWebhookPayload {
+  type: string
+  isGroup?: boolean
+  notification?: string           // "GROUP_PARTICIPANT_ADD" | "GROUP_PARTICIPANT_REMOVE" | ...
+  phone?: string                  // group ID (e.g. "120363019502650977-group")
+  chatName?: string               // group display name
+  participantPhone?: string       // phone of participant who joined/left
+  senderName?: string             // display name of participant
+  momment?: number                // unix timestamp ms
+  instanceId?: string
+  requestMethod?: string          // "invite_link" | "non_admin_add"
+}
+
+/**
+ * Returns true if the payload represents a participant joining a group.
+ */
+export function isGroupJoinEvent(payload: ZApiWebhookPayload): boolean {
+  return (
+    payload.isGroup === true &&
+    payload.notification === "GROUP_PARTICIPANT_ADD" &&
+    typeof payload.participantPhone === "string" &&
+    payload.participantPhone.length > 0
+  )
+}
+
+/**
+ * Normalizes a phone number to digits only (no +, no spaces, no dashes).
+ * E.g. "+55 42 9982-34664" → "5542998234664"
+ */
+export function normalizePhone(phone: string): string {
+  return phone.replace(/\D/g, "")
+}
