@@ -127,7 +127,16 @@ export async function getMetricasGeral(filters: DashboardFilters) {
     Promise.resolve(0),
   ])
 
-  const queueStats = await safeGetQueueStats()
+  const [queueStats, aguardandoTotal] = await Promise.all([
+    safeGetQueueStats(),
+    // Count ALL leads with status aguardando (paused campaigns) — no date filter
+    prisma.lead.count({
+      where: {
+        status: "aguardando",
+        ...(campanhaId ? { campanha_id: campanhaId } : clienteId ? { campanha: { cliente_id: clienteId } } : {}),
+      },
+    }),
+  ])
 
   const processados = sucesso + falha
   const taxa_sucesso = processados > 0 ? Math.round((sucesso / processados) * 1000) / 10 : 0
@@ -142,6 +151,7 @@ export async function getMetricasGeral(filters: DashboardFilters) {
     taxa_grupos: total > 0 ? Math.round((grupos_entrados / total) * 1000) / 10 : 0,
     em_fila: queueStats.waiting + queueStats.active,
     adiados: queueStats.delayed,
+    pausados: aguardandoTotal,
   }
 
   const comparativo = {
@@ -322,6 +332,7 @@ export async function getMetricasOperacional(filters: DashboardFilters) {
     sucesso: statusMap["sucesso"] ?? 0,
     falha: statusMap["falha"] ?? 0,
     sem_optin: statusMap["sem_optin"] ?? 0,
+    aguardando: statusMap["aguardando"] ?? 0,
   }
 
   const contaIds = contasAtivas.map((c) => c.id)

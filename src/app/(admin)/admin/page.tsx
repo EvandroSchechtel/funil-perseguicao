@@ -35,6 +35,7 @@ interface MetricasGeral {
     taxa_grupos: number
     em_fila: number
     adiados: number
+    pausados: number
   }
   comparativo: {
     total: number | null
@@ -54,6 +55,7 @@ interface MetricasOperacional {
     sucesso: number
     falha: number
     sem_optin: number
+    aguardando: number
   }
   contas: {
     id: string
@@ -554,6 +556,12 @@ function TabGeral({ data }: { data: MetricasGeral }) {
               Adiados: {kpis.adiados}
             </div>
           )}
+          {kpis.pausados > 0 && (
+            <div className="flex items-center gap-2 text-sm text-[#F59E0B] bg-[#1E1E2A] border border-[#F59E0B]/20 rounded-lg px-4 py-2">
+              <span className="w-2 h-2 rounded-full bg-[#F59E0B] inline-block" />
+              Pausados: {kpis.pausados}
+            </div>
+          )}
         </div>
       )}
 
@@ -629,7 +637,7 @@ function TabGeral({ data }: { data: MetricasGeral }) {
 // ---------------------------------------------------------------------------
 
 function TabOperacional({ data }: { data: MetricasOperacional }) {
-  const { queue, contas, leads_com_falha_recente } = data
+  const { queue, leads_por_status, contas, leads_com_falha_recente } = data
 
   const queueCards = [
     { label: "Aguardando", value: queue.waiting, color: "#60A5FA" },
@@ -637,6 +645,16 @@ function TabOperacional({ data }: { data: MetricasOperacional }) {
     { label: "Atrasados", value: queue.delayed, color: "#F59E0B" },
     { label: "Falhas na Fila", value: queue.failed, color: "#F87171" },
   ]
+
+  const statusRows = [
+    { label: "Sucesso", value: leads_por_status.sucesso, color: "#25D366" },
+    { label: "Falha", value: leads_por_status.falha, color: "#F87171" },
+    { label: "Sem Opt-in", value: leads_por_status.sem_optin, color: "#8B8B9E" },
+    { label: "Pausados (fila)", value: leads_por_status.aguardando, color: "#F59E0B" },
+    { label: "Pendente", value: leads_por_status.pendente, color: "#60A5FA" },
+    { label: "Processando", value: leads_por_status.processando, color: "#FBBF24" },
+  ]
+  const totalStatus = Object.values(leads_por_status).reduce((a, b) => a + b, 0)
 
   return (
     <div className="space-y-6">
@@ -654,6 +672,35 @@ function TabOperacional({ data }: { data: MetricasOperacional }) {
           </div>
         ))}
       </div>
+
+      {/* Lead status distribution */}
+      {totalStatus > 0 && (
+        <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-5">
+          <h2 className="text-[#F1F1F3] font-semibold mb-4">Distribuição por Status</h2>
+          <div className="space-y-2.5">
+            {statusRows.filter((r) => r.value > 0).map((r) => (
+              <div key={r.label} className="flex items-center gap-3">
+                <span className="text-[#8B8B9E] text-xs w-28 shrink-0">{r.label}</span>
+                <div className="flex-1 h-2 rounded-full bg-[#111118] overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${Math.round((r.value / totalStatus) * 100)}%`,
+                      backgroundColor: r.color,
+                    }}
+                  />
+                </div>
+                <span className="text-[#C4C4D4] text-xs tabular-nums w-16 text-right">
+                  {r.value.toLocaleString("pt-BR")}
+                  <span className="text-[#5A5A72] ml-1">
+                    ({Math.round((r.value / totalStatus) * 100)}%)
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Contas table */}
       <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-hidden">
