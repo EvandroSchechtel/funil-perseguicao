@@ -24,7 +24,7 @@ export async function listarUsuarios(params: ListUsuariosParams = {}) {
         { email: { contains: search, mode: "insensitive" as const } },
       ],
     }),
-    ...(role && role !== "all" && { role: role as "super_admin" | "admin" | "operador" | "viewer" }),
+    ...(role && role !== "all" && { role: role as "super_admin" | "admin" | "operador" | "viewer" | "cliente" }),
   }
 
   const [total, usuarios] = await Promise.all([
@@ -40,6 +40,8 @@ export async function listarUsuarios(params: ListUsuariosParams = {}) {
         status: true,
         ultimo_login: true,
         created_at: true,
+        cliente_id: true,
+        cliente_vinculado: { select: { id: true, nome: true } },
       },
       orderBy: { created_at: "desc" },
       skip: (page - 1) * perPage,

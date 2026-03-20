@@ -120,15 +120,32 @@ function PrioridadeBadge({ prioridade }: { prioridade: string }) {
 // Demand Card
 // ---------------------------------------------------------------------------
 
+function isRecentlyUpdated(updatedAt: string): boolean {
+  return Date.now() - new Date(updatedAt).getTime() < 2 * 60 * 60 * 1000 // 2h
+}
+
 function DemandaCard({ demanda }: { demanda: Demanda }) {
+  const recent = isRecentlyUpdated(demanda.updated_at)
   return (
     <Link href={`/portal/demandas/${demanda.id}`}>
-      <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-5 hover:border-[#2A2A3A] hover:bg-[#1A1A24] transition-all cursor-pointer group">
+      <div
+        className={`bg-[#16161E] border rounded-xl p-5 hover:bg-[#1A1A24] transition-all cursor-pointer group ${
+          recent
+            ? "border-[#25D366]/30 hover:border-[#25D366]/50"
+            : "border-[#1E1E2A] hover:border-[#2A2A3A]"
+        }`}
+      >
         {/* Top row */}
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-2 flex-wrap">
             <TipoBadge tipo={demanda.tipo} />
             <StatusBadge status={demanda.status} />
+            {recent && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#25D366]/10 text-[#25D366]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#25D366] animate-pulse" />
+                Nova atividade
+              </span>
+            )}
           </div>
           <PrioridadeBadge prioridade={demanda.prioridade} />
         </div>
@@ -149,7 +166,9 @@ function DemandaCard({ demanda }: { demanda: Demanda }) {
             <MessageSquare className="w-3.5 h-3.5" />
             <span>{demanda.comentarios_count ?? 0} comentários</span>
           </div>
-          <span>Atualizado {formatRelative(demanda.updated_at || demanda.created_at)}</span>
+          <span className={recent ? "text-[#25D366]/70" : ""}>
+            Atualizado {formatRelative(demanda.updated_at || demanda.created_at)}
+          </span>
         </div>
       </div>
     </Link>

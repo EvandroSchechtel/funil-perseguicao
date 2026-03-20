@@ -342,6 +342,7 @@ export default function AdminDemandaDetailPage() {
   const [saving, setSaving] = useState<string | null>(null)
   const [comentario, setComentario] = useState("")
   const [interno, setInterno] = useState(false)
+  const [marcarAguardando, setMarcarAguardando] = useState(false)
   const [isLive, setIsLive] = useState(false)
   const commentsEndRef = useRef<HTMLDivElement>(null)
 
@@ -427,19 +428,35 @@ export default function AdminDemandaDetailPage() {
     if (!comentario.trim() || !accessToken || !id) return
     setSending(true)
     try {
-      const res = await fetch(`/api/admin/demandas/${id}/comentarios`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ texto: comentario.trim(), interno }),
-      })
-      if (!res.ok) throw new Error()
+      const requests: Promise<Response>[] = [
+        fetch(`/api/admin/demandas/${id}/comentarios`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ texto: comentario.trim(), interno }),
+        }),
+      ]
+      if (marcarAguardando && demanda?.status !== "aguardando_cliente") {
+        requests.push(
+          fetch(`/api/admin/demandas/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+            body: JSON.stringify({ status: "aguardando_cliente" }),
+          })
+        )
+      }
+      const results = await Promise.all(requests)
+      if (!results[0].ok) throw new Error()
       setComentario("")
       setInterno(false)
+      setMarcarAguardando(false)
       await fetchData(true)
-      toast.success(interno ? "Comentário interno enviado." : "Comentário enviado.")
+      toast.success(
+        marcarAguardando && demanda?.status !== "aguardando_cliente"
+          ? "Comentário enviado e status atualizado para Aguardando Cliente."
+          : interno
+          ? "Comentário interno enviado."
+          : "Comentário enviado."
+      )
     } catch {
       toast.error("Erro ao enviar comentário.")
     } finally {
@@ -572,25 +589,43 @@ export default function AdminDemandaDetailPage() {
 
               {/* Comment input */}
               <div className="border-t border-[#1E1E2A] p-4 space-y-3">
-                {/* Internal toggle */}
-                <label className="flex items-center gap-2.5 cursor-pointer w-fit">
-                  <div
-                    onClick={() => setInterno((v) => !v)}
-                    className={`w-9 h-5 rounded-full transition-colors relative cursor-pointer ${
-                      interno ? "bg-[#FBBF24]" : "bg-[#1E1E2A]"
-                    }`}
-                  >
+                {/* Toggles row */}
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                  {/* Internal toggle */}
+                  <label className="flex items-center gap-2.5 cursor-pointer w-fit">
                     <div
-                      className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-                        interno ? "left-4" : "left-0.5"
+                      onClick={() => setInterno((v) => !v)}
+                      className={`w-9 h-5 rounded-full transition-colors relative cursor-pointer ${
+                        interno ? "bg-[#FBBF24]" : "bg-[#1E1E2A]"
                       }`}
-                    />
-                  </div>
-                  <span className={`text-xs font-medium flex items-center gap-1 ${interno ? "text-[#FBBF24]" : "text-[#5A5A72]"}`}>
-                    <Lock className="w-3 h-3" />
-                    Comentário interno (oculto para o cliente)
-                  </span>
-                </label>
+                    >
+                      <div
+                        className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                          interno ? "left-4" : "left-0.5"
+                        }`}
+                      />
+                    </div>
+                    <span className={`text-xs font-medium flex items-center gap-1 ${interno ? "text-[#FBBF24]" : "text-[#5A5A72]"}`}>
+                      <Lock className="w-3 h-3" />
+                      Interno
+                    </span>
+                  </label>
+
+                  {/* Aguardando cliente shortcut */}
+                  {!interno && demanda.status !== "aguardando_cliente" && (
+                    <label className="flex items-center gap-2 cursor-pointer w-fit">
+                      <input
+                        type="checkbox"
+                        checked={marcarAguardando}
+                        onChange={(e) => setMarcarAguardando(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded border-[#2A2A3A] bg-[#111118] accent-[#F97316] cursor-pointer"
+                      />
+                      <span className={`text-xs font-medium ${marcarAguardando ? "text-[#F97316]" : "text-[#5A5A72]"}`}>
+                        Marcar como Aguardando Cliente
+                      </span>
+                    </label>
+                  )}
+                </div>
 
                 <div className="flex gap-3">
                   <textarea

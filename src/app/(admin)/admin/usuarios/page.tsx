@@ -54,6 +54,8 @@ interface UsuarioListItem {
   status: "ativo" | "inativo"
   ultimo_login: string | null
   created_at: string
+  cliente_id: string | null
+  cliente_vinculado: { id: string; nome: string } | null
 }
 
 function getInitials(nome: string) {
@@ -243,6 +245,7 @@ export default function UsuariosPage() {
               <SelectItem value="admin">Admin</SelectItem>
               <SelectItem value="operador">Operador</SelectItem>
               <SelectItem value="viewer">Viewer</SelectItem>
+              <SelectItem value="cliente">Cliente</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -305,6 +308,17 @@ export default function UsuariosPage() {
                               )}
                             </Link>
                             <p className="text-[#8B8B9E] text-xs">{u.email}</p>
+                            {u.role === "cliente" && u.cliente_vinculado && (
+                              <p className="text-[#5A5A72] text-xs mt-0.5">
+                                <span className="text-[#6B6B82]">Cliente:</span>{" "}
+                                <Link href={`/admin/clientes/${u.cliente_vinculado.id}`} className="hover:text-[#25D366] transition-colors">
+                                  {u.cliente_vinculado.nome}
+                                </Link>
+                              </p>
+                            )}
+                            {u.role === "cliente" && !u.cliente_vinculado && (
+                              <p className="text-amber-500/70 text-xs mt-0.5">Sem cliente vinculado</p>
+                            )}
                           </div>
                         </div>
                       </td>
