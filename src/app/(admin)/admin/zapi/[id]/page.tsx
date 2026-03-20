@@ -43,9 +43,9 @@ interface Instancia {
 }
 
 interface ZApiGroup {
-  id: string
+  phone: string   // group WA ID
   name: string
-  phone: string
+  isGroup: boolean
 }
 
 interface ManychatTag {

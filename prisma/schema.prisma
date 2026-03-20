@@ -92,7 +92,7 @@ model PasswordResetToken {
 // ── Clientes ──────────────────────────────────────────────────────────────────
 
 model Cliente {
-  id         String    @id @default(uuid())
+  id         String    @id @default(uuid()) @db.Uuid
   nome       String
   email      String?
   telefone   String?
@@ -122,7 +122,7 @@ model ContaManychat {
   whatsapp_field_id   Int?      // Manychat field ID for [esc]whatsapp-id
   created_by          String
   usuario             Usuario   @relation(fields: [created_by], references: [id])
-  cliente_id          String?
+  cliente_id          String?   @db.Uuid
   cliente             Cliente?  @relation(fields: [cliente_id], references: [id])
   created_at          DateTime  @default(now())
   updated_at          DateTime  @updatedAt
@@ -146,7 +146,7 @@ model Campanha {
   data_fim    DateTime?
   created_by  String
   usuario     Usuario   @relation(fields: [created_by], references: [id])
-  cliente_id  String?
+  cliente_id  String?   @db.Uuid
   cliente     Cliente?  @relation(fields: [cliente_id], references: [id])
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
@@ -293,7 +293,7 @@ model InstanciaZApi {
   client_token  String                           // Header Client-Token para chamadas Z-API
   webhook_token String    @unique @default(uuid()) // token da URL /api/webhook/zapi/[token]
   status        Status    @default(ativo)
-  cliente_id    String?
+  cliente_id    String?   @db.Uuid
   cliente       Cliente?  @relation(fields: [cliente_id], references: [id])
   created_by    String
   usuario       Usuario   @relation(fields: [created_by], references: [id])
