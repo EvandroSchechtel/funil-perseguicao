@@ -90,6 +90,7 @@ model Usuario {
   instancias_zapi       InstanciaZApi[]
   demandas_criadas      Demanda[]            @relation("DemandaCriador")
   demandas_atribuidas   Demanda[]            @relation("DemandaAtribuido")
+  demanda_eventos       DemandaEvento[]      @relation("DemandaEventoAutor")
 
   @@map("usuarios")
 }
@@ -427,6 +428,7 @@ model Demanda {
   updated_at        DateTime          @updatedAt
 
   comentarios   ComentarioDemanda[]
+  eventos       DemandaEvento[]
   mensagens_wa  MensagemWaDemanda[]
   gatilhos      GatilhoAgente[]
 
@@ -443,6 +445,21 @@ model ComentarioDemanda {
   created_at DateTime @default(now())
 
   @@map("comentarios_demanda")
+}
+
+// Histórico de atividades de uma demanda
+model DemandaEvento {
+  id          String   @id @default(uuid())
+  demanda_id  String
+  demanda     Demanda  @relation(fields: [demanda_id], references: [id], onDelete: Cascade)
+  tipo        String   // criada | status_alterado | prioridade_alterada | atribuido | comentario
+  descricao   String
+  usuario_id  String?
+  usuario     Usuario? @relation("DemandaEventoAutor", fields: [usuario_id], references: [id])
+  meta        Json?    // {de, para} para alterações; {comentario_id, interno} para comentários
+  created_at  DateTime @default(now())
+
+  @@map("demanda_eventos")
 }
 
 // Log de todas as mensagens WA — contexto para o agente IA

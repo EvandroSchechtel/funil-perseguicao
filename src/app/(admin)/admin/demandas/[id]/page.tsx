@@ -5,7 +5,7 @@ import { useParams } from "next/navigation"
 import Link from "next/link"
 import { useAuth } from "@/contexts/AuthContext"
 import { toast } from "sonner"
-import { ArrowLeft, Send, Loader2, AlertCircle, Lock } from "lucide-react"
+import { ArrowLeft, Send, Loader2, AlertCircle, Lock, Radio, CheckCircle2, Clock, User, MessageSquare, AlertTriangle, Tag } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Header } from "@/components/layout/Header"
 
@@ -24,6 +24,16 @@ interface Comentario {
   texto: string
   interno: boolean
   autor: { nome: string; role: string }
+  created_at: string
+}
+
+interface Evento {
+  id: string
+  tipo: string
+  descricao: string
+  meta: Record<string, unknown> | null
+  usuario_id: string | null
+  usuario: { id: string; nome: string } | null
   created_at: string
 }
 
@@ -117,6 +127,38 @@ function getInitials(nome: string): string {
 
 function getTimelineIndex(status: string): number {
   return statusTimeline.findIndex((s) => s.key === status)
+}
+
+function formatRelative(str: string): string {
+  const diff = Math.floor((Date.now() - new Date(str).getTime()) / 1000)
+  if (diff < 60) return "agora"
+  if (diff < 3600) return `há ${Math.floor(diff / 60)}min`
+  if (diff < 86400) return `há ${Math.floor(diff / 3600)}h`
+  return new Date(str).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })
+}
+
+const eventoIcons: Record<string, React.ReactNode> = {
+  criada: <CheckCircle2 className="w-3.5 h-3.5 text-[#25D366]" />,
+  status_alterado: <Clock className="w-3.5 h-3.5 text-[#60A5FA]" />,
+  prioridade_alterada: <AlertTriangle className="w-3.5 h-3.5 text-[#FBBF24]" />,
+  atribuido: <User className="w-3.5 h-3.5 text-[#A78BFA]" />,
+  comentario: <MessageSquare className="w-3.5 h-3.5 text-[#8B8B9E]" />,
+}
+
+function EventoItem({ evento }: { evento: Evento }) {
+  const icon = eventoIcons[evento.tipo] ?? <Tag className="w-3.5 h-3.5 text-[#5A5A72]" />
+  return (
+    <div className="flex items-start gap-3">
+      <div className="w-6 h-6 rounded-full bg-[#111118] border border-[#1E1E2A] flex items-center justify-center shrink-0 mt-0.5">
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[#C4C4D4] text-sm">{evento.descricao}</p>
+        {evento.usuario && <p className="text-[#5A5A72] text-xs">por {evento.usuario.nome}</p>}
+      </div>
+      <span className="text-[#5A5A72] text-xs shrink-0">{formatRelative(evento.created_at)}</span>
+    </div>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -293,28 +335,33 @@ export default function AdminDemandaDetailPage() {
   const { accessToken } = useAuth()
 
   const [demanda, setDemanda] = useState<Demanda | null>(null)
+  const [eventos, setEventos] = useState<Evento[]>([])
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [saving, setSaving] = useState<string | null>(null)
   const [comentario, setComentario] = useState("")
   const [interno, setInterno] = useState(false)
+  const [isLive, setIsLive] = useState(false)
   const commentsEndRef = useRef<HTMLDivElement>(null)
 
-  const fetchDemanda = useCallback(async () => {
+  const fetchData = useCallback(async (silent = false) => {
     if (!accessToken || !id) return
-    setLoading(true)
+    if (!silent) setLoading(true)
     try {
-      const res = await fetch(`/api/admin/demandas/${id}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      })
-      if (!res.ok) throw new Error()
-      const data = await res.json()
-      setDemanda(data)
+      const [demandaRes, eventosRes] = await Promise.all([
+        fetch(`/api/admin/demandas/${id}`, { headers: { Authorization: `Bearer ${accessToken}` } }),
+        fetch(`/api/admin/demandas/${id}/atividade`, { headers: { Authorization: `Bearer ${accessToken}` } }),
+      ])
+      if (!demandaRes.ok) throw new Error()
+      const demandaData = await demandaRes.json()
+      const eventosData = eventosRes.ok ? await eventosRes.json() : { eventos: [] }
+      setDemanda(demandaData.demanda ?? demandaData)
+      setEventos(eventosData.eventos ?? [])
     } catch {
-      toast.error("Erro ao carregar demanda.")
+      if (!silent) toast.error("Erro ao carregar demanda.")
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [accessToken, id])
 
@@ -333,9 +380,18 @@ export default function AdminDemandaDetailPage() {
   }, [accessToken])
 
   useEffect(() => {
-    fetchDemanda()
+    fetchData()
     fetchUsuarios()
-  }, [fetchDemanda, fetchUsuarios])
+  }, [fetchData, fetchUsuarios])
+
+  // Auto-poll every 15s
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIsLive(true)
+      fetchData(true).finally(() => setTimeout(() => setIsLive(false), 500))
+    }, 15000)
+    return () => clearInterval(interval)
+  }, [fetchData])
 
   useEffect(() => {
     if (commentsEndRef.current) {
@@ -358,7 +414,7 @@ export default function AdminDemandaDetailPage() {
         body: JSON.stringify(body),
       })
       if (!res.ok) throw new Error()
-      await fetchDemanda()
+      await fetchData(true)
       toast.success("Demanda atualizada.")
     } catch {
       toast.error("Erro ao atualizar demanda.")
@@ -382,7 +438,7 @@ export default function AdminDemandaDetailPage() {
       if (!res.ok) throw new Error()
       setComentario("")
       setInterno(false)
-      await fetchDemanda()
+      await fetchData(true)
       toast.success(interno ? "Comentário interno enviado." : "Comentário enviado.")
     } catch {
       toast.error("Erro ao enviar comentário.")
@@ -432,6 +488,12 @@ export default function AdminDemandaDetailPage() {
           { label: "Demandas", href: "/admin/demandas" },
           { label: demanda.titulo },
         ]}
+        actions={
+          <div className="flex items-center gap-1.5 text-xs text-[#5A5A72]">
+            <Radio className={`w-3 h-3 transition-colors ${isLive ? "text-[#25D366]" : "text-[#5A5A72]"}`} />
+            Ao vivo
+          </div>
+        }
       />
 
       <div className="p-6">
@@ -647,6 +709,16 @@ export default function AdminDemandaDetailPage() {
                 </div>
               </div>
             </div>
+
+            {/* Activity timeline */}
+            {eventos.length > 0 && (
+              <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-5">
+                <h2 className="text-[#F1F1F3] font-semibold text-sm mb-4">Histórico de Atividade</h2>
+                <div className="space-y-3 max-h-80 overflow-y-auto">
+                  {eventos.map((e) => <EventoItem key={e.id} evento={e} />)}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

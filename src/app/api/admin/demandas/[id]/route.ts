@@ -50,7 +50,7 @@ export async function PUT(request: NextRequest, { params }: Ctx) {
       return badRequest("Dados inválidos", parsed.error.flatten().fieldErrors as Record<string, string[]>)
     }
 
-    const result = await atualizarDemanda(id, parsed.data)
+    const result = await atualizarDemanda(id, { ...parsed.data, usuarioId: user.id })
     return ok(result)
   } catch (error) {
     console.error("[PUT /api/admin/demandas/[id]]", error)
