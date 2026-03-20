@@ -254,7 +254,7 @@ export interface ExportLeadsParams {
 
 export async function exportarLeads(params: ExportLeadsParams = {}) {
   const { search = "", status, webhookId, campanhaId } = params
-  const validStatuses: LeadStatus[] = ["pendente", "processando", "sucesso", "falha", "sem_optin"]
+  const validStatuses: LeadStatus[] = ["pendente", "processando", "sucesso", "falha", "sem_optin", "aguardando"]
   const statusFilter =
     status && status !== "todos" && validStatuses.includes(status as LeadStatus)
       ? (status as LeadStatus)
