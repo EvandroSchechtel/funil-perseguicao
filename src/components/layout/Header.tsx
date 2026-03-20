@@ -40,6 +40,7 @@ const roleLabels: Record<Role, string> = {
   admin: "Admin",
   operador: "Operador",
   viewer: "Viewer",
+  cliente: "Cliente",
 }
 
 export function Header({ breadcrumbs = [], actions }: HeaderProps) {
@@ -84,8 +85,8 @@ export function Header({ breadcrumbs = [], actions }: HeaderProps) {
               </Avatar>
               <div className="text-left hidden sm:block">
                 <p className="text-sm text-[#F1F1F3] font-medium leading-none">{user.nome.split(" ")[0]}</p>
-                <Badge variant={user.role as Role} className="text-[10px] px-1.5 py-0 mt-1">
-                  {roleLabels[user.role]}
+                <Badge variant={user.role as "super_admin" | "admin" | "operador" | "viewer" | "cliente"} className="text-[10px] px-1.5 py-0 mt-1">
+                  {roleLabels[user.role as Role]}
                 </Badge>
               </div>
             </button>

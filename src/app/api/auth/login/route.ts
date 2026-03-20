@@ -80,6 +80,7 @@ export async function POST(request: NextRequest) {
       email: usuario.email,
       role: usuario.role,
       force_password_change: usuario.force_password_change,
+      cliente_id: usuario.cliente_id ?? null,
     })
 
     const refreshToken = await createRefreshToken(usuario.id, rememberMe)
@@ -94,6 +95,7 @@ export async function POST(request: NextRequest) {
         role: usuario.role,
         avatar_url: usuario.avatar_url,
         force_password_change: usuario.force_password_change,
+        cliente_id: usuario.cliente_id ?? null,
       },
     })
 

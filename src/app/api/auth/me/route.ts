@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
         avatar_url: true,
         status: true,
         force_password_change: true,
+        cliente_id: true,
         ultimo_login: true,
         created_at: true,
       },

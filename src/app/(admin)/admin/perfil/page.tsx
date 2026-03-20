@@ -17,6 +17,7 @@ const roleLabels: Record<Role, string> = {
   admin: "Admin",
   operador: "Operador",
   viewer: "Viewer",
+  cliente: "Cliente",
 }
 
 function getInitials(nome: string) {
@@ -148,8 +149,8 @@ export default function PerfilPage() {
               <div>
                 <p className="text-[#F1F1F3] font-semibold">{user.nome}</p>
                 <p className="text-[#8B8B9E] text-sm">{user.email}</p>
-                <Badge variant={user.role as Role} className="mt-1">
-                  {roleLabels[user.role]}
+                <Badge variant={user.role as "super_admin" | "admin" | "operador" | "viewer" | "cliente"} className="mt-1">
+                  {roleLabels[user.role as Role]}
                 </Badge>
               </div>
             </div>

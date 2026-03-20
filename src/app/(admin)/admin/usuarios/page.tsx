@@ -309,7 +309,7 @@ export default function UsuariosPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <Badge variant={u.role}>{getRoleLabel(u.role)}</Badge>
+                        <Badge variant={u.role as "super_admin" | "admin" | "operador" | "viewer" | "cliente"}>{getRoleLabel(u.role as import("@/lib/auth/rbac").Role)}</Badge>
                       </td>
                       <td className="px-4 py-3 text-[#8B8B9E] text-sm">
                         {formatRelativeTime(u.ultimo_login)}

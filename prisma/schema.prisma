@@ -16,6 +16,31 @@ enum Role {
   admin
   operador
   viewer
+  cliente
+}
+
+enum TipoDemanda {
+  nova_campanha
+  ajuste_funil
+  relatorio_customizado
+  suporte_tecnico
+  outro
+}
+
+enum StatusDemanda {
+  aberta
+  em_analise
+  em_execucao
+  aguardando_cliente
+  concluida
+  cancelada
+}
+
+enum PrioridadeDemanda {
+  baixa
+  normal
+  alta
+  urgente
 }
 
 enum Status {
@@ -49,18 +74,22 @@ model Usuario {
   status                Status    @default(ativo)
   ultimo_login          DateTime?
   force_password_change Boolean   @default(false)
+  cliente_id            String?   @db.Uuid  // preenchido quando role=cliente
   created_at            DateTime  @default(now())
   updated_at            DateTime  @updatedAt
   deleted_at            DateTime?
 
   refresh_tokens        RefreshToken[]
   password_reset_tokens PasswordResetToken[]
-  clientes              Cliente[]
+  clientes              Cliente[]            @relation("ClienteCriador")
+  cliente_vinculado     Cliente?             @relation("ClientePortalUsuarios", fields: [cliente_id], references: [id])
   contas_manychat       ContaManychat[]
   campanhas             Campanha[]
   webhooks              Webhook[]
   agent_sessoes         AgentSessao[]
   instancias_zapi       InstanciaZApi[]
+  demandas_criadas      Demanda[]            @relation("DemandaCriador")
+  demandas_atribuidas   Demanda[]            @relation("DemandaAtribuido")
 
   @@map("usuarios")
 }
@@ -92,19 +121,26 @@ model PasswordResetToken {
 // ── Clientes ──────────────────────────────────────────────────────────────────
 
 model Cliente {
-  id         String    @id @default(uuid()) @db.Uuid
-  nome       String
-  email      String?
-  telefone   String?
-  created_by String
-  usuario    Usuario   @relation(fields: [created_by], references: [id])
-  created_at DateTime  @default(now())
-  updated_at DateTime  @updatedAt
-  deleted_at DateTime?
+  id                      String         @id @default(uuid()) @db.Uuid
+  nome                    String
+  email                   String?
+  telefone                String?
+  created_by              String
+  usuario                 Usuario        @relation("ClienteCriador", fields: [created_by], references: [id])
+  // WhatsApp para notificações
+  grupo_wa_id             String?        // ID do grupo WA do cliente
+  grupo_wa_nome           String?        // nome do grupo (cache)
+  instancia_zapi_notif_id String?        // instância Z-API usada para notificar
+  instancia_zapi_notif    InstanciaZApi? @relation("ClienteInstanciaNotif", fields: [instancia_zapi_notif_id], references: [id])
+  created_at              DateTime       @default(now())
+  updated_at              DateTime       @updatedAt
+  deleted_at              DateTime?
 
   contas_manychat  ContaManychat[]
   campanhas        Campanha[]
-  instancias_zapi  InstanciaZApi[]
+  instancias_zapi  InstanciaZApi[]  @relation("InstanciaZApiCliente")
+  usuarios_portal  Usuario[]        @relation("ClientePortalUsuarios")
+  demandas         Demanda[]
 
   @@map("clientes")
 }
@@ -309,14 +345,15 @@ model InstanciaZApi {
   webhook_token String    @unique @default(uuid()) // token da URL /api/webhook/zapi/[token]
   status        Status    @default(ativo)
   cliente_id    String?   @db.Uuid
-  cliente       Cliente?  @relation(fields: [cliente_id], references: [id])
+  cliente       Cliente?  @relation("InstanciaZApiCliente", fields: [cliente_id], references: [id])
   created_by    String
   usuario       Usuario   @relation(fields: [created_by], references: [id])
   created_at    DateTime  @default(now())
   updated_at    DateTime  @updatedAt
   deleted_at    DateTime?
 
-  grupos GrupoMonitoramento[]
+  grupos          GrupoMonitoramento[]
+  clientes_notif  Cliente[]            @relation("ClienteInstanciaNotif")
 
   @@map("instancias_zapi")
 }
@@ -363,6 +400,85 @@ model EntradaGrupo {
   @@map("entradas_grupo")
 }
 
+// ── Portal do Cliente — Demandas ──────────────────────────────────────────────
+
+model Demanda {
+  id                String            @id @default(uuid())
+  titulo            String
+  descricao         String
+  tipo              TipoDemanda
+  status            StatusDemanda     @default(aberta)
+  prioridade        PrioridadeDemanda @default(normal)
+  cliente_id        String            @db.Uuid
+  cliente           Cliente           @relation(fields: [cliente_id], references: [id])
+  criado_por        String
+  criador           Usuario           @relation("DemandaCriador", fields: [criado_por], references: [id])
+  atribuido_a       String?
+  responsavel       Usuario?          @relation("DemandaAtribuido", fields: [atribuido_a], references: [id])
+  // WhatsApp
+  grupo_wa_id       String?           // grupo WA onde a demanda foi anunciada
+  wa_msg_id_inicio  String?           // ID da 1ª mensagem WA (threading)
+  // Agente IA
+  agente_ativo      Boolean           @default(false)
+  agente_sessao_id  String?
+  agente_sessao     AgentSessao?      @relation(fields: [agente_sessao_id], references: [id])
+  resolvido_at      DateTime?
+  created_at        DateTime          @default(now())
+  updated_at        DateTime          @updatedAt
+
+  comentarios   ComentarioDemanda[]
+  mensagens_wa  MensagemWaDemanda[]
+  gatilhos      GatilhoAgente[]
+
+  @@map("demandas")
+}
+
+model ComentarioDemanda {
+  id         String   @id @default(uuid())
+  demanda_id String
+  demanda    Demanda  @relation(fields: [demanda_id], references: [id])
+  autor_id   String   // usuario.id (admin ou cliente)
+  texto      String
+  interno    Boolean  @default(false) // true = só equipe interna vê
+  created_at DateTime @default(now())
+
+  @@map("comentarios_demanda")
+}
+
+// Log de todas as mensagens WA — contexto para o agente IA
+model MensagemWaDemanda {
+  id                    String   @id @default(uuid())
+  demanda_id            String
+  demanda               Demanda  @relation(fields: [demanda_id], references: [id])
+  direcao               String   // "saida" | "entrada"
+  texto                 String
+  autor_nome            String?
+  autor_wa_id           String?
+  wa_msg_id             String?  // ID no Z-API (para threading)
+  processado_por_agente Boolean  @default(false)
+  created_at            DateTime @default(now())
+
+  @@map("mensagens_wa_demanda")
+}
+
+// Gatilho para o agente IA — criado quando @agente é mencionado no grupo
+model GatilhoAgente {
+  id          String       @id @default(uuid())
+  demanda_id  String?
+  demanda     Demanda?     @relation(fields: [demanda_id], references: [id])
+  grupo_wa_id String
+  mensagem    String
+  autor_wa_id String
+  wa_msg_id   String
+  status      String       @default("pendente") // pendente | processando | concluido | erro
+  erro        String?
+  sessao_id   String?
+  sessao      AgentSessao? @relation(fields: [sessao_id], references: [id])
+  created_at  DateTime     @default(now())
+
+  @@map("gatilhos_agente")
+}
+
 // ── Agent ─────────────────────────────────────────────────────────────────────
 
 model AgentSessao {
@@ -375,7 +491,9 @@ model AgentSessao {
   created_at DateTime          @default(now())
   updated_at DateTime          @updatedAt
 
-  acoes AgentAcao[]
+  acoes           AgentAcao[]
+  demandas        Demanda[]
+  gatilhos_agente GatilhoAgente[]
 
   @@map("agent_sessoes")
 }

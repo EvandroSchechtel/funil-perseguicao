@@ -99,6 +99,7 @@ const roleLabels: Record<Role, string> = {
   admin: "Admin",
   operador: "Operador",
   viewer: "Viewer",
+  cliente: "Cliente",
 }
 
 export function Sidebar() {
@@ -190,8 +191,8 @@ export function Sidebar() {
           </Avatar>
           <div className="min-w-0">
             <p className="text-[#F1F1F3] text-sm font-medium truncate">{user.nome}</p>
-            <Badge variant={user.role as Role} className="text-[10px] px-1.5 py-0 mt-0.5">
-              {roleLabels[user.role]}
+            <Badge variant={user.role as "super_admin" | "admin" | "operador" | "viewer" | "cliente"} className="text-[10px] px-1.5 py-0 mt-0.5">
+              {roleLabels[user.role as Role]}
             </Badge>
           </div>
         </div>

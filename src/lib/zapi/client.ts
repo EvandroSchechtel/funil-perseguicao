@@ -137,19 +137,68 @@ export async function configureWebhook(
   }
 }
 
+export interface ZApiSendTextResult {
+  zaapId?: string
+  messageId?: string
+  id?: string
+  [key: string]: unknown
+}
+
+/**
+ * Sends a text message to a WhatsApp phone/group via Z-API.
+ * Returns the raw Z-API response (contains messageId / zaapId).
+ */
+export async function sendTextMessage(
+  instanceId: string,
+  token: string,
+  clientToken: string,
+  phone: string,
+  message: string,
+  replyToMsgId?: string
+): Promise<ZApiSendTextResult | null> {
+  const { signal, clear } = withTimeout(15000)
+  try {
+    const body: Record<string, unknown> = { phone, message }
+    if (replyToMsgId) body.messageId = replyToMsgId
+    const res = await fetch(zapiUrl(instanceId, token, "/send-text"), {
+      method: "POST",
+      headers: { "Client-Token": clientToken, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    })
+    clear()
+    if (!res.ok) {
+      console.warn(`[ZApi] sendTextMessage failed: ${res.status}`)
+      return null
+    }
+    return await res.json().catch(() => null)
+  } catch (err) {
+    clear()
+    console.warn("[ZApi] sendTextMessage error:", err)
+    return null
+  }
+}
+
 // ── Webhook payload types ──────────────────────────────────────────────────────
 
 export interface ZApiWebhookPayload {
   type: string
   isGroup?: boolean
   notification?: string           // "GROUP_PARTICIPANT_ADD" | "GROUP_PARTICIPANT_REMOVE" | ...
-  phone?: string                  // group ID (e.g. "120363019502650977-group")
+  phone?: string                  // group ID (e.g. "120363019502650977-group") or sender phone
+  chatId?: string                 // group/chat ID (e.g. "120363019502650977@g.us")
   chatName?: string               // group display name
   participantPhone?: string       // phone of participant who joined/left
-  senderName?: string             // display name of participant
+  senderName?: string             // display name of participant / message sender
+  senderPhone?: string            // phone of message sender (in group messages)
+  text?: {                        // present on text message events
+    message?: string
+  }
   momment?: number                // unix timestamp ms
   instanceId?: string
   requestMethod?: string          // "invite_link" | "non_admin_add"
+  messageId?: string              // WA message ID (for threading)
+  zaapId?: string                 // Z-API internal message ID
 }
 
 /**

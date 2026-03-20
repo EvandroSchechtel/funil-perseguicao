@@ -5,6 +5,7 @@ export interface JwtPayload extends JWTPayload {
   email: string
   role: string
   force_password_change: boolean
+  cliente_id?: string | null
 }
 
 function getSecret(): Uint8Array {

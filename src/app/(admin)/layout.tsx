@@ -18,6 +18,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       return
     }
 
+    // Cliente role não acessa /admin — redireciona ao portal
+    if (user.role === "cliente") {
+      router.push("/portal")
+      return
+    }
+
     // Force password change redirect
     if (user.force_password_change && pathname !== "/admin/trocar-senha") {
       router.push("/admin/trocar-senha")

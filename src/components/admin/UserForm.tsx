@@ -42,6 +42,7 @@ const roleLabels: Record<Role, string> = {
   admin: "Admin",
   operador: "Operador",
   viewer: "Viewer",
+  cliente: "Cliente",
 }
 
 export function UserForm({

@@ -7,9 +7,10 @@ export interface AuthUser {
   id: string
   nome: string
   email: string
-  role: "super_admin" | "admin" | "operador" | "viewer"
+  role: "super_admin" | "admin" | "operador" | "viewer" | "cliente"
   avatar_url: string | null
   force_password_change: boolean
+  cliente_id?: string | null
 }
 
 interface AuthContextType {

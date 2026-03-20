@@ -17,6 +17,7 @@ const badgeVariants = cva(
         admin: "bg-[rgba(59,130,246,0.15)] text-[#60A5FA]",
         operador: "bg-[rgba(37,211,102,0.15)] text-[#34D67A]",
         viewer: "bg-[rgba(107,114,128,0.15)] text-[#6B7280]",
+        cliente: "bg-[rgba(16,185,129,0.15)] text-[#10B981]",
         default: "bg-[rgba(107,114,128,0.15)] text-[#8B8B9E]",
       },
     },
