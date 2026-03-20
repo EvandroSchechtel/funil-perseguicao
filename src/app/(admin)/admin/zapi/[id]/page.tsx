@@ -903,9 +903,9 @@ export default function InstanciaDetailPage() {
 
               {/* Detail list */}
               <div className="max-h-64 overflow-y-auto space-y-1.5">
-                {scanResult.detalhes.map((d, i) => (
+                {scanResult.detalhes.map((d) => (
                   <div
-                    key={i}
+                    key={`${d.grupoWaId}-${d.acao}`}
                     className="flex items-start gap-3 bg-[#0A0A12] border border-[#1C1C2C] rounded-lg px-3 py-2.5"
                   >
                     <div className="shrink-0 mt-0.5">

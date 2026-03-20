@@ -246,14 +246,50 @@ export async function retomarCampanha(id: string) {
   if (!existing) throw new ServiceError("not_found", "Campanha não encontrada.")
   if (!existing.pausado_at) throw new ServiceError("bad_request", "Campanha não está pausada.")
 
-  const count = await _enfileirarAguardando(id)
+  // 1. Snapshot leads aguardando BEFORE the transaction
+  const leads = await prisma.lead.findMany({
+    where: { campanha_id: id, status: "aguardando" },
+    select: {
+      id: true,
+      webhook_id: true,
+      nome: true,
+      telefone: true,
+      email: true,
+      webhook_flow: {
+        select: {
+          conta_id: true,
+          flow_ns: true,
+          conta: { select: { limite_diario: true } },
+        },
+      },
+    },
+  })
 
+  // 2. Transaction first: clear pausado_at and promote leads to pendente
   await prisma.$transaction([
-    prisma.lead.updateMany({ where: { campanha_id: id, status: "aguardando" }, data: { status: "pendente" } }),
     prisma.campanha.update({ where: { id }, data: { pausado_at: null } }),
+    prisma.lead.updateMany({ where: { campanha_id: id, status: "aguardando" }, data: { status: "pendente" } }),
   ])
 
-  return { message: `Campanha retomada. ${count} lead(s) reenfileirado(s).` }
+  // 3. Enqueue snapshot leads (DB already committed — worker sees pendente status)
+  const contaIds = [...new Set(leads.filter((l) => l.webhook_flow).map((l) => l.webhook_flow!.conta_id))]
+  const usageMap = await getTodayUsageMap(contaIds)
+
+  let enqueued = 0
+  for (const lead of leads) {
+    if (!lead.webhook_flow) continue
+    const { conta_id, flow_ns, conta } = lead.webhook_flow
+    const atLimit = conta.limite_diario !== null && (usageMap.get(conta_id) ?? 0) >= conta.limite_diario
+    const delay = atLimit ? msUntilMidnightBRT() : undefined
+
+    addWebhookJob(
+      { leadId: lead.id, webhookId: lead.webhook_id, contaId: conta_id, flowNs: flow_ns, nome: lead.nome, telefone: lead.telefone, email: lead.email ?? undefined },
+      { forceNew: true, delay }
+    ).catch((err) => console.error("[retomarCampanha] addWebhookJob:", err))
+    enqueued++
+  }
+
+  return { message: `Campanha retomada. ${enqueued} lead(s) reenfileirado(s).` }
 }
 
 export async function soltarTodosDaFila(id: string) {
@@ -326,6 +362,7 @@ async function _enfileirarAguardando(campanhaId: string): Promise<number> {
   const contaIds = [...new Set(leads.filter((l) => l.webhook_flow).map((l) => l.webhook_flow!.conta_id))]
   const usageMap = await getTodayUsageMap(contaIds)
 
+  let enqueued = 0
   for (const lead of leads) {
     if (!lead.webhook_flow) continue
     const { conta_id, flow_ns, conta } = lead.webhook_flow
@@ -336,7 +373,8 @@ async function _enfileirarAguardando(campanhaId: string): Promise<number> {
       { leadId: lead.id, webhookId: lead.webhook_id, contaId: conta_id, flowNs: flow_ns, nome: lead.nome, telefone: lead.telefone, email: lead.email ?? undefined },
       { forceNew: true, delay }
     ).catch((err) => console.error("[_enfileirarAguardando] addWebhookJob:", err))
+    enqueued++
   }
 
-  return leads.length
+  return enqueued
 }

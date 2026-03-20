@@ -153,7 +153,7 @@ export async function reprocessarSelecionados(leadIds: string[]) {
   const leads = await prisma.lead.findMany({
     where: {
       id: { in: leadIds },
-      status: { not: "processando" },
+      status: { notIn: ["processando", "aguardando"] },
       webhook: { deleted_at: null },
       webhook_flow_id: { not: null },
     },
