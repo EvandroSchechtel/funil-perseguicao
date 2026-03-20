@@ -18,6 +18,7 @@ interface Lead {
   status: "pendente" | "processando" | "sucesso" | "falha" | "sem_optin"
   erro_msg: string | null
   tentativas: number
+  grupo_entrou_at: string | null
   processado_at: string | null
   created_at: string
   webhook: { id: string; nome: string }
@@ -348,6 +349,7 @@ export default function LeadsPage() {
                     <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Webhook</th>
                     <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Status</th>
                     <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Tentativas</th>
+                    <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Grupo WA</th>
                     <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Recebido</th>
                     <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Processado</th>
                     <th className="px-5 py-3" />
@@ -382,6 +384,16 @@ export default function LeadsPage() {
                           <span className="text-[#8B8B9E] text-sm">{lead.tentativas}</span>
                         </td>
                         <td className="px-5 py-3">
+                          {lead.grupo_entrou_at ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-[#25D366]">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#25D366] shrink-0" />
+                              {formatDate(lead.grupo_entrou_at)}
+                            </span>
+                          ) : (
+                            <span className="text-[#5A5A72] text-xs">—</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3">
                           <span className="text-[#8B8B9E] text-sm">{formatDate(lead.created_at)}</span>
                         </td>
                         <td className="px-5 py-3">
@@ -411,7 +423,7 @@ export default function LeadsPage() {
                       </tr>
                       {expandedId === lead.id && lead.erro_msg && (
                         <tr className="border-b border-[#1E1E2A] bg-[#1C1C28]">
-                          <td colSpan={canReprocess ? 8 : 7} className="px-5 py-3">
+                          <td colSpan={canReprocess ? 9 : 8} className="px-5 py-3">
                             <div className="bg-[#2A1616] border border-[#F87171]/20 rounded-lg px-4 py-3">
                               <p className="text-xs font-semibold text-[#F87171] mb-1">Erro</p>
                               <p className="text-xs text-[#F1A1A1] font-mono break-all">{lead.erro_msg}</p>

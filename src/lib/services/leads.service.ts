@@ -43,6 +43,7 @@ export async function listarLeads(params: ListLeadsParams = {}) {
         subscriber_id: true,
         flow_executado: true,
         conta_nome: true,
+        grupo_entrou_at: true,
         processado_at: true,
         created_at: true,
         webhook: { select: { id: true, nome: true } },
