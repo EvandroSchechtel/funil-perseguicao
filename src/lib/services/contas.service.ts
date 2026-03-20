@@ -66,6 +66,7 @@ export async function buscarConta(id: string) {
       page_id: true,
       page_name: true,
       status: true,
+      whatsapp_field_id: true,
       ultimo_sync: true,
       created_at: true,
       updated_at: true,

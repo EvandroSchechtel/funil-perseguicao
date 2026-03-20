@@ -12,6 +12,7 @@ interface ContaData {
   api_key_hint: string
   page_name: string | null
   status: "ativo" | "inativo"
+  whatsapp_field_id: number | null
 }
 
 export default function EditarContaPage() {

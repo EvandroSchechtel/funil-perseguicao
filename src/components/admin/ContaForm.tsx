@@ -2,7 +2,7 @@
 
 import React, { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Eye, EyeOff, Zap } from "lucide-react"
+import { Eye, EyeOff, Zap, Hash } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,6 +17,7 @@ interface ContaFormProps {
     api_key_hint: string
     page_name?: string | null
     status: "ativo" | "inativo"
+    whatsapp_field_id?: number | null
   }
 }
 
@@ -32,6 +33,14 @@ export function ContaForm({ mode, initialData }: ContaFormProps) {
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
+  // Custom field state
+  const [hasCustomField, setHasCustomField] = useState<boolean | null>(
+    initialData?.whatsapp_field_id != null ? true : mode === "edit" ? null : null
+  )
+  const [whatsappFieldId, setWhatsappFieldId] = useState(
+    initialData?.whatsapp_field_id ? String(initialData.whatsapp_field_id) : ""
+  )
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setErrors({})
@@ -40,6 +49,12 @@ export function ContaForm({ mode, initialData }: ContaFormProps) {
     if (!nome.trim()) newErrors.nome = "Nome é obrigatório"
     if (mode === "create" && !apiKey.trim()) newErrors.api_key = "API Key é obrigatória"
     if (mode === "edit" && changeApiKey && !apiKey.trim()) newErrors.api_key = "Insira a nova API Key"
+    if (hasCustomField === true && !whatsappFieldId.trim()) {
+      newErrors.whatsapp_field_id = "Informe o ID do custom field"
+    }
+    if (whatsappFieldId.trim() && isNaN(Number(whatsappFieldId))) {
+      newErrors.whatsapp_field_id = "O ID deve ser um número"
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
@@ -51,6 +66,14 @@ export function ContaForm({ mode, initialData }: ContaFormProps) {
     try {
       const body: Record<string, unknown> = { nome, status }
       if (apiKey.trim()) body.api_key = apiKey.trim()
+
+      // Include whatsapp_field_id if user answered the question
+      if (hasCustomField === true && whatsappFieldId.trim()) {
+        body.whatsapp_field_id = Number(whatsappFieldId.trim())
+      } else if (hasCustomField === false) {
+        // Will be created automatically by the API
+        body.whatsapp_field_id = null
+      }
 
       const url =
         mode === "create"
@@ -143,6 +166,88 @@ export function ContaForm({ mode, initialData }: ContaFormProps) {
         </div>
       )}
 
+      {/* Custom Field [esc]whatsapp-id */}
+      <div className="space-y-3 p-4 bg-[#111118] border border-[#1E1E2A] rounded-lg">
+        <div>
+          <p className="text-sm font-medium text-[#C4C4D4]">Custom Field <span className="font-mono text-[#25D366]">[esc]whatsapp-id</span></p>
+          <p className="text-xs text-[#5A5A72] mt-0.5">
+            Usado para localizar subscribers no Manychat pelo número de telefone
+          </p>
+        </div>
+
+        {initialData?.whatsapp_field_id && hasCustomField !== false ? (
+          // Already configured — show current ID with option to change
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 flex-1 h-10 px-3 rounded-lg border border-[#1E1E2A] bg-[#0B0B0F] text-sm">
+              <Hash className="w-3.5 h-3.5 text-[#25D366]" />
+              <span className="text-[#25D366] font-mono">{whatsappFieldId || initialData.whatsapp_field_id}</span>
+              <span className="text-[#5A5A72] text-xs ml-1">field_id configurado</span>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => { setHasCustomField(true); setWhatsappFieldId(String(initialData.whatsapp_field_id)) }}
+              className="text-xs"
+            >
+              Alterar
+            </Button>
+          </div>
+        ) : hasCustomField === null ? (
+          // Question: already have the field?
+          <div className="space-y-2">
+            <p className="text-xs text-[#8B8B9E]">Já tem o custom field <span className="font-mono">[esc]whatsapp-id</span> criado no Manychat?</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setHasCustomField(true)}
+                className="flex-1 py-2 rounded-lg border border-[#1E1E2A] text-sm text-[#C4C4D4] hover:border-[#25D366] hover:text-[#25D366] transition-colors"
+              >
+                Sim, tenho o ID
+              </button>
+              <button
+                type="button"
+                onClick={() => setHasCustomField(false)}
+                className="flex-1 py-2 rounded-lg border border-[#1E1E2A] text-sm text-[#C4C4D4] hover:border-[#25D366] hover:text-[#25D366] transition-colors"
+              >
+                Não, criar automaticamente
+              </button>
+            </div>
+          </div>
+        ) : hasCustomField === true ? (
+          // Input for field ID
+          <div className="space-y-2">
+            <Input
+              placeholder="Ex: 11947822"
+              value={whatsappFieldId}
+              onChange={(e) => setWhatsappFieldId(e.target.value)}
+              error={errors.whatsapp_field_id}
+              helperText="Encontre em Manychat → Settings → Custom Fields → [esc]whatsapp-id → ID"
+              leftIcon={<Hash className="w-4 h-4" />}
+            />
+            <button
+              type="button"
+              onClick={() => setHasCustomField(null)}
+              className="text-xs text-[#5A5A72] hover:text-[#8B8B9E] transition-colors"
+            >
+              ← Voltar
+            </button>
+          </div>
+        ) : (
+          // hasCustomField === false
+          <div className="flex items-center gap-2 text-xs text-[#8B8B9E] bg-[#1C1C28] rounded-lg px-3 py-2">
+            <Zap className="w-3.5 h-3.5 text-[#25D366] shrink-0" />
+            O campo será criado automaticamente ao conectar a conta
+            <button
+              type="button"
+              onClick={() => setHasCustomField(null)}
+              className="ml-auto text-[#5A5A72] hover:text-[#8B8B9E]"
+            >
+              Alterar
+            </button>
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center justify-between p-4 bg-[#111118] border border-[#1E1E2A] rounded-lg">
         <div>
           <p className="text-sm font-medium text-[#C4C4D4]">Status</p>
@@ -162,12 +267,8 @@ export function ContaForm({ mode, initialData }: ContaFormProps) {
         </Button>
         <Button type="submit" loading={loading} className="flex-1">
           {loading
-            ? mode === "create"
-              ? "Conectando..."
-              : "Salvando..."
-            : mode === "create"
-              ? "Conectar Conta"
-              : "Salvar Alterações"}
+            ? mode === "create" ? "Conectando..." : "Salvando..."
+            : mode === "create" ? "Conectar Conta" : "Salvar Alterações"}
         </Button>
       </div>
     </form>
