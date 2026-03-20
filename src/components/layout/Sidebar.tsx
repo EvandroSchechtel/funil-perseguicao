@@ -66,6 +66,12 @@ const navItems: NavItem[] = [
     requiredRoles: ["super_admin", "admin"],
   },
   {
+    label: "Z-API",
+    href: "/admin/zapi",
+    icon: <Zap className="w-5 h-5" />,
+    requiredRoles: ["super_admin", "admin"],
+  },
+  {
     label: "Usuários",
     href: "/admin/usuarios",
     icon: <Shield className="w-5 h-5" />,
