@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     if (!hasPermission(user.role as Role, "leads:read")) return forbidden("Sem permissão.")
 
     // Lead counts from DB — always works, independent of Redis
-    const statusList = ["pendente", "processando", "sucesso", "falha", "sem_optin"] as const
+    const statusList = ["pendente", "processando", "sucesso", "falha", "sem_optin", "aguardando"] as const
     const leadCountResults = await Promise.all(
       statusList.map((s) => prisma.lead.count({ where: { status: s } }))
     )

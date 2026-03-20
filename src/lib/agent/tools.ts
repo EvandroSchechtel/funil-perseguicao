@@ -48,7 +48,7 @@ export const agentTools: AgentTool[] = [
         status: {
           type: "string",
           description: "Filtrar por status",
-          enum: ["pendente", "processando", "sucesso", "falha", "todos"],
+          enum: ["pendente", "processando", "sucesso", "falha", "sem_optin", "aguardando", "todos"],
         },
         webhook_id: { type: "string", description: "Filtrar por ID do webhook" },
       },
