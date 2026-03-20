@@ -127,9 +127,9 @@ export async function findSubscriberByCustomField(
 ): Promise<{ id: string } | null> {
   const { signal, clear } = withTimeout(10000)
   try {
-    // Swagger: param is "field_value" (not "value")
-    const url = `${MANYCHAT_API_BASE}/fb/subscriber/findByCustomField?field_id=${fieldId}&field_value=${encodeURIComponent(value)}`
-    console.log(`[Manychat] findByCustomField field_id=${fieldId} field_value="${value}"`)
+    // Swagger: returns array of subscribers — filter by field_value client-side
+    const url = `${MANYCHAT_API_BASE}/fb/subscriber/findByCustomField?field_id=${fieldId}`
+    console.log(`[Manychat] findByCustomField field_id=${fieldId} (searching for field_value="${value}")`)
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       signal,
@@ -137,13 +137,30 @@ export async function findSubscriberByCustomField(
     clear()
 
     const body = await res.text()
-    console.log(`[Manychat] findByCustomField HTTP ${res.status} → ${body.slice(0, 300)}`)
+    console.log(`[Manychat] findByCustomField HTTP ${res.status} → ${body.slice(0, 500)}`)
 
     if (!res.ok) return null
     let data: Record<string, unknown>
     try { data = JSON.parse(body) } catch { return null }
-    if (data.status !== "success" || !(data.data as Record<string, unknown>)?.id) return null
-    return { id: String((data.data as Record<string, unknown>).id) }
+    if (data.status !== "success") return null
+
+    // Response is an array of subscribers
+    const list = Array.isArray(data.data) ? data.data as Array<Record<string, unknown>> : []
+    console.log(`[Manychat] findByCustomField returned ${list.length} subscribers`)
+
+    // Find subscriber whose field value matches
+    const match = list.find((sub) => {
+      const fields = sub.custom_fields as Array<{ field_id: number; value: string }> | undefined
+      if (!fields) return false
+      return fields.some((f) => f.field_id === fieldId && String(f.value) === value)
+    })
+
+    if (match?.id) return { id: String(match.id) }
+
+    // Fallback: if only one subscriber in list, return it
+    if (list.length === 1 && list[0].id) return { id: String(list[0].id) }
+
+    return null
   } catch (err) {
     clear()
     console.error(`[Manychat] findByCustomField error:`, err)
