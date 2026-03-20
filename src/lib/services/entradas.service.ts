@@ -38,6 +38,7 @@ export async function processarEntradaGrupo(
     where: {
       instancia_id: instanciaId,
       status: "ativo",
+      campanha: { pausado_at: null },
     },
     include: {
       conta_manychat: { select: { id: true, api_key: true } },

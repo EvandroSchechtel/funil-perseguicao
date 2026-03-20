@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Plus, Search, Megaphone, MoreHorizontal, Users2, Webhook, Building2, ChevronRight, PauseCircle, PlayCircle } from "lucide-react"
+import { Plus, Search, Megaphone, MoreHorizontal, Users2, Webhook, Building2, ChevronRight, PauseCircle, PlayCircle, Loader2 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
 import { Button } from "@/components/ui/button"
@@ -319,6 +319,23 @@ export default function CampanhasPage() {
 
                       {/* Actions */}
                       <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        {/* Pause/resume toggle — direct button on the row */}
+                        {canWrite && (
+                          <button
+                            onClick={(e) => handlePauseToggle(c, e)}
+                            disabled={actionLoading === c.id + "-pause"}
+                            title={c.pausado_at ? "Retomar campanha" : "Pausar campanha"}
+                            className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-[#1E1E2A] transition-colors text-[#5A5A72] hover:text-[#F59E0B] disabled:opacity-40"
+                          >
+                            {actionLoading === c.id + "-pause" ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : c.pausado_at ? (
+                              <PlayCircle className="w-4 h-4 text-[#F59E0B]" />
+                            ) : (
+                              <PauseCircle className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" className="h-8 w-8 p-0">
