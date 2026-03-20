@@ -236,7 +236,7 @@ export default function InstanciaDetailPage() {
     if (!accessToken) return
     fetch("/api/admin/campanhas?per_page=200", { headers: { Authorization: `Bearer ${accessToken}` } })
       .then((r) => r.json())
-      .then((d) => setCampanhas(d.campanhas || []))
+      .then((d) => setCampanhas(d.data || []))
       .catch(() => {})
     fetch("/api/admin/contas?per_page=200", { headers: { Authorization: `Bearer ${accessToken}` } })
       .then((r) => r.json())
