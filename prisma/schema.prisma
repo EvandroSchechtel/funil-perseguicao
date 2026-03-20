@@ -379,7 +379,6 @@ model GrupoMonitoramento {
 
   entradas EntradaGrupo[]
 
-  @@unique([campanha_id, instancia_id])
   @@map("grupos_monitoramento")
 }
 

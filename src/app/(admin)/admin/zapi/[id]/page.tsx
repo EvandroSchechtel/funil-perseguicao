@@ -6,7 +6,7 @@ import Link from "next/link"
 import {
   ArrowLeft, Plus, Trash2, Search, Tag, Users, CheckCircle2,
   XCircle, RefreshCw, Copy, ChevronDown, X, Wifi, Building2,
-  Megaphone, MessageSquare, Lock,
+  Megaphone, MessageSquare, Lock, ScanSearch,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
@@ -45,6 +45,22 @@ interface ZApiGroup { phone: string; name: string; isGroup: boolean }
 interface ManychatTag { id: number; name: string }
 interface Campanha { id: string; nome: string }
 interface ContaManychat { id: string; nome: string }
+
+interface EscanearDetalhe {
+  nome: string
+  grupoWaId: string
+  acao: "criado" | "existente" | "sem_match"
+  score: number
+  templateNomeFiltro: string | null
+}
+
+interface EscanearResult {
+  total_grupos_zapi: number
+  novos_vinculados: number
+  ja_configurados: number
+  sem_match: number
+  detalhes: EscanearDetalhe[]
+}
 
 interface EntradaGrupo {
   id: string
@@ -177,6 +193,8 @@ export default function InstanciaDetailPage() {
   const [savingGrupo, setSavingGrupo] = useState(false)
   const [deleteGrupoDialog, setDeleteGrupoDialog] = useState<GrupoMonitoramento | null>(null)
   const [deletingGrupo, setDeletingGrupo] = useState(false)
+  const [scanning, setScanning] = useState(false)
+  const [scanResult, setScanResult] = useState<EscanearResult | null>(null)
 
   // Entradas
   const [entradas, setEntradas] = useState<EntradaGrupo[]>([])
@@ -307,6 +325,27 @@ export default function InstanciaDetailPage() {
       toast.error("Erro de conexão.")
     } finally {
       setDeletingGrupo(false)
+    }
+  }
+
+  async function handleScanGrupos() {
+    setScanning(true)
+    try {
+      const res = await fetch(`/api/admin/zapi/instancias/${id}/escanear-grupos`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setScanResult(data)
+        if (data.novos_vinculados > 0) fetchInst()
+      } else {
+        toast.error(data.message || "Erro ao escanear grupos.")
+      }
+    } catch {
+      toast.error("Erro de conexão.")
+    } finally {
+      setScanning(false)
     }
   }
 
@@ -518,12 +557,26 @@ export default function InstanciaDetailPage() {
               <p className="text-[#7F7F9E] text-sm">
                 Cada grupo monitora entradas e aplica uma tag no Manychat automaticamente.
               </p>
-              {canWrite && !showGrupoForm && (
-                <Button size="sm" onClick={openGrupoForm} className="shadow-md shadow-[#25D366]/10">
-                  <Plus className="w-4 h-4" />
-                  Adicionar Grupo
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                {canWrite && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleScanGrupos}
+                    loading={scanning}
+                    title="Busca todos os grupos do Z-API e auto-vincula os similares"
+                  >
+                    <ScanSearch className="w-4 h-4" />
+                    Escanear Grupos
+                  </Button>
+                )}
+                {canWrite && !showGrupoForm && (
+                  <Button size="sm" onClick={openGrupoForm} className="shadow-md shadow-[#25D366]/10">
+                    <Plus className="w-4 h-4" />
+                    Adicionar Grupo
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* Add group form */}
@@ -819,6 +872,73 @@ export default function InstanciaDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Scan result modal */}
+      <Dialog open={!!scanResult} onOpenChange={() => setScanResult(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Resultado do Escaneamento</DialogTitle>
+            <DialogDescription>
+              {scanResult?.total_grupos_zapi} grupos encontrados no Z-API
+            </DialogDescription>
+          </DialogHeader>
+
+          {scanResult && (
+            <div className="space-y-4">
+              {/* Summary */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-[#0A0A12] border border-[#1C1C2C] rounded-xl p-3 text-center">
+                  <p className="text-[#25D366] text-xl font-bold">{scanResult.novos_vinculados}</p>
+                  <p className="text-[#3F3F58] text-xs mt-0.5">Novos vinculados</p>
+                </div>
+                <div className="bg-[#0A0A12] border border-[#1C1C2C] rounded-xl p-3 text-center">
+                  <p className="text-[#7F7F9E] text-xl font-bold">{scanResult.ja_configurados}</p>
+                  <p className="text-[#3F3F58] text-xs mt-0.5">Já configurados</p>
+                </div>
+                <div className="bg-[#0A0A12] border border-[#1C1C2C] rounded-xl p-3 text-center">
+                  <p className="text-[#3F3F58] text-xl font-bold">{scanResult.sem_match}</p>
+                  <p className="text-[#3F3F58] text-xs mt-0.5">Sem match</p>
+                </div>
+              </div>
+
+              {/* Detail list */}
+              <div className="max-h-64 overflow-y-auto space-y-1.5">
+                {scanResult.detalhes.map((d, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-3 bg-[#0A0A12] border border-[#1C1C2C] rounded-lg px-3 py-2.5"
+                  >
+                    <div className="shrink-0 mt-0.5">
+                      {d.acao === "criado" ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#25D366]" />
+                      ) : d.acao === "existente" ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#7F7F9E]" />
+                      ) : (
+                        <XCircle className="w-3.5 h-3.5 text-[#3F3F58]" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[#EEEEF5] text-xs font-medium truncate">{d.nome}</p>
+                      {d.templateNomeFiltro && (
+                        <p className="text-[#3F3F58] text-[10px] mt-0.5 truncate">
+                          Template: {d.templateNomeFiltro}
+                        </p>
+                      )}
+                    </div>
+                    <span className="shrink-0 text-[10px] font-mono text-[#3F3F58]">
+                      {(d.score * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setScanResult(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete grupo dialog */}
       <Dialog open={!!deleteGrupoDialog} onOpenChange={() => setDeleteGrupoDialog(null)}>

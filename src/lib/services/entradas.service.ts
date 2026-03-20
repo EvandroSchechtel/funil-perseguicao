@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { addTag } from "@/lib/manychat/tags"
 import { normalizePhone, type ZApiWebhookPayload } from "@/lib/zapi/client"
+import { tentarAutoVincularGrupo } from "@/lib/services/grupo-auto-vincular.service"
 
 /**
  * Core logic: processes a Z-API GROUP_PARTICIPANT_ADD event.
@@ -48,7 +49,21 @@ export async function processarEntradaGrupo(
   )
 
   if (matched.length === 0) {
-    console.log(`[Entradas] Nenhum grupo monitorado corresponde a "${chatName}"`)
+    // Try to auto-link the group by semantic name similarity
+    const auto = await tentarAutoVincularGrupo(instanciaId, groupWaId, chatName)
+    if (auto.criado && auto.grupoId) {
+      console.log(`[Entradas] Grupo auto-vinculado "${chatName}" (score=${auto.score.toFixed(2)}) — reprocessando entrada`)
+      // Reload the newly created group and process
+      const novoGrupo = await prisma.grupoMonitoramento.findUnique({
+        where: { id: auto.grupoId },
+        include: { conta_manychat: { select: { id: true, api_key: true } } },
+      })
+      if (novoGrupo) {
+        await processarEntradaParaGrupo({ grupo: novoGrupo, groupWaId, groupWaName: chatName, telefoneNorm, senderName })
+      }
+    } else {
+      console.log(`[Entradas] Nenhum grupo monitorado corresponde a "${chatName}"`)
+    }
     return
   }
 
