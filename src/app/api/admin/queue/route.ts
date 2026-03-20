@@ -14,16 +14,18 @@ export async function GET(request: NextRequest) {
 
     if (!hasPermission(user.role as Role, "leads:read")) return forbidden("Sem permissão.")
 
-    const [stats, leadCounts] = await Promise.all([
-      getQueueStats(),
-      prisma.lead.groupBy({
-        by: ["status"],
-        _count: { _all: true },
-      }),
-    ])
+    // Lead counts from DB — always works, independent of Redis
+    const statusList = ["pendente", "processando", "sucesso", "falha", "sem_optin"] as const
+    const leadCountResults = await Promise.all(
+      statusList.map((s) => prisma.lead.count({ where: { status: s } }))
+    )
+    const byStatus = Object.fromEntries(statusList.map((s, i) => [s, leadCountResults[i]]))
 
+    // BullMQ stats — best-effort, Redis may not be reachable from Next.js
+    let stats = { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0, paused: 0, total: 0 }
     let recentFailed: object[] = []
     try {
+      stats = await getQueueStats()
       const failedJobs = await getWebhookQueue().getFailed(0, 9)
       recentFailed = failedJobs.map((j) => ({
         jobId: j.id,
@@ -36,10 +38,8 @@ export async function GET(request: NextRequest) {
         timestamp: j.timestamp,
       }))
     } catch (redisErr) {
-      console.warn("[GET /api/admin/queue] Redis unavailable for getFailed:", redisErr)
+      console.warn("[GET /api/admin/queue] Redis stats unavailable:", (redisErr as Error).message)
     }
-
-    const byStatus = Object.fromEntries(leadCounts.map((r) => [r.status, r._count._all]))
 
     return ok({ queue: stats, leads: byStatus, recentFailed })
   } catch (error) {
