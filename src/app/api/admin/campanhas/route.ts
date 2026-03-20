@@ -10,6 +10,7 @@ const createCampanhaSchema = z.object({
   descricao: z.string().max(1000).optional().nullable(),
   data_inicio: z.coerce.date().optional().nullable(),
   data_fim: z.coerce.date().optional().nullable(),
+  status: z.enum(["ativo", "inativo"]).optional().default("ativo"),
   cliente_id: z.string().uuid("Cliente inválido").optional().nullable(),
 })
 

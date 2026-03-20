@@ -89,24 +89,26 @@ export async function buscarCampanha(id: string) {
 
 export interface CriarCampanhaParams {
   nome: string
-  descricao?: string
-  data_inicio?: Date
-  data_fim?: Date
-  cliente_id?: string
+  descricao?: string | null
+  data_inicio?: Date | null
+  data_fim?: Date | null
+  status?: "ativo" | "inativo"
+  cliente_id?: string | null
   userId: string
 }
 
-export async function criarCampanha({ nome, descricao, data_inicio, data_fim, cliente_id, userId }: CriarCampanhaParams) {
+export async function criarCampanha({ nome, descricao, data_inicio, data_fim, status, cliente_id, userId }: CriarCampanhaParams) {
   const appUrl = process.env.NEXT_PUBLIC_WEBHOOK_URL || process.env.NEXT_PUBLIC_APP_URL || ""
 
   const result = await prisma.$transaction(async (tx) => {
     const campanha = await tx.campanha.create({
       data: {
         nome,
-        descricao: descricao || null,
-        data_inicio: data_inicio || null,
-        data_fim: data_fim || null,
-        cliente_id: cliente_id || null,
+        descricao: descricao ?? null,
+        data_inicio: data_inicio ?? null,
+        data_fim: data_fim ?? null,
+        status: status ?? "ativo",
+        cliente_id: cliente_id ?? null,
         created_by: userId,
       },
       select: {
