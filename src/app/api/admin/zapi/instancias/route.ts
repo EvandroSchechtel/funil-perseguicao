@@ -30,6 +30,12 @@ export async function POST(request: NextRequest) {
       return (await import("@/lib/api/response")).badRequest("nome, instance_id, token e client_token são obrigatórios.")
     }
 
+    // Segurança: cliente_id obrigatório e deve ser UUID válido
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!cliente_id || !uuidRegex.test(cliente_id)) {
+      return (await import("@/lib/api/response")).badRequest("Cliente é obrigatório para criar uma instância Z-API.")
+    }
+
     const appBaseUrl = request.headers.get("x-forwarded-proto") && request.headers.get("host")
       ? `${request.headers.get("x-forwarded-proto")}://${request.headers.get("host")}`
       : process.env.NEXT_PUBLIC_ZAPI_URL || process.env.NEXT_PUBLIC_APP_URL || "https://localhost:3000"

@@ -35,7 +35,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const setAccessToken = useCallback((token: string) => {
     setAccessTokenState(token)
     if (typeof window !== "undefined") {
-      sessionStorage.setItem("at", token)
+      localStorage.setItem("at", token)
       // Set cookie for proxy page route protection (matches JWT 15min = 900s)
       document.cookie = `access_token=${token}; Path=/; SameSite=Strict; Max-Age=900`
     }
@@ -69,10 +69,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [setAccessToken, fetchMe])
 
-  // Initialize: try to restore session from sessionStorage or refresh cookie
+  // Initialize: try to restore session from localStorage or refresh cookie
+  // Uses retry logic to survive brief downtime during Railway deployments
   useEffect(() => {
     const init = async () => {
-      const storedToken = typeof window !== "undefined" ? sessionStorage.getItem("at") : null
+      const storedToken = typeof window !== "undefined" ? localStorage.getItem("at") : null
 
       if (storedToken) {
         const userData = await fetchMe(storedToken)
@@ -84,12 +85,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Try refresh
-      const refreshed = await refreshToken()
-      if (!refreshed) {
-        if (typeof window !== "undefined") {
-          sessionStorage.removeItem("at")
-        }
+      // Token expired or missing — try refresh with retries (handles deploy restarts)
+      let refreshed = false
+      for (let attempt = 0; attempt < 3 && !refreshed; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 1500))
+        refreshed = await refreshToken()
+      }
+
+      if (!refreshed && typeof window !== "undefined") {
+        localStorage.removeItem("at")
       }
 
       setLoading(false)
@@ -146,7 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null)
     setAccessTokenState(null)
     if (typeof window !== "undefined") {
-      sessionStorage.removeItem("at")
+      localStorage.removeItem("at")
       document.cookie = "access_token=; Path=/; SameSite=Strict; Max-Age=0"
     }
     router.push("/login")

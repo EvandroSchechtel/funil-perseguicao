@@ -6,7 +6,7 @@ import Link from "next/link"
 import {
   ArrowLeft, Plus, Trash2, Search, Tag, Users, CheckCircle2,
   XCircle, RefreshCw, Copy, ChevronDown, X, Wifi, Building2,
-  Megaphone, MessageSquare,
+  Megaphone, MessageSquare, Lock,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
@@ -427,7 +427,7 @@ export default function InstanciaDetailPage() {
 
               {/* Client + stats row */}
               <div className="flex items-center gap-4 mt-3 flex-wrap">
-                {inst.cliente && (
+                {inst.cliente ? (
                   <div className="flex items-center gap-1.5">
                     <Building2 className="w-3.5 h-3.5 text-[#7F7F9E]" />
                     <Link
@@ -436,6 +436,14 @@ export default function InstanciaDetailPage() {
                     >
                       {inst.cliente.nome}
                     </Link>
+                    <span title="Cliente imutável após criação">
+                      <Lock className="w-2.5 h-2.5 text-[#3F3F58]" />
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-[#3F3F58]" />
+                    <span className="text-xs text-[#3F3F58] italic">Sem cliente vinculado</span>
                   </div>
                 )}
                 <div className="flex items-center gap-1.5">

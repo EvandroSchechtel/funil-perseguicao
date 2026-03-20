@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server"
 import { getAuthContext } from "@/lib/api/auth-guard"
-import { ok, forbidden, serverError, handleServiceError } from "@/lib/api/response"
+import { ok, forbidden, serverError, handleServiceError, badRequest } from "@/lib/api/response"
 import { buscarInstancia, atualizarInstancia, deletarInstancia } from "@/lib/services/zapi.service"
 
 type Ctx = { params: Promise<{ id: string }> }
@@ -32,6 +32,12 @@ export async function PUT(request: NextRequest, { params }: Ctx) {
     if (!["super_admin", "admin"].includes(user.role)) return forbidden()
     const { id } = await params
     const body = await request.json()
+
+    // Protocolo de segurança: cliente_id é imutável após criação
+    if ("cliente_id" in body) {
+      return badRequest("O cliente vinculado não pode ser alterado após a criação da instância.")
+    }
+
     const result = await atualizarInstancia(id, body)
     return ok(result)
   } catch (error) {

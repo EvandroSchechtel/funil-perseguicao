@@ -39,7 +39,7 @@ export interface CriarInstanciaParams {
   instance_id: string
   token: string
   client_token: string
-  cliente_id?: string
+  cliente_id: string  // obrigatório — imutável após criação
   userId: string
   appBaseUrl: string  // for constructing the webhook URL
 }
@@ -76,7 +76,7 @@ export interface AtualizarInstanciaParams {
   instance_id?: string
   token?: string
   client_token?: string
-  cliente_id?: string
+  // cliente_id é IMUTÁVEL após criação — não aceito aqui
   status?: "ativo" | "inativo"
 }
 
@@ -101,8 +101,8 @@ export async function atualizarInstancia(id: string, data: AtualizarInstanciaPar
       ...(data.instance_id && { instance_id: data.instance_id }),
       ...(data.token && { token: data.token }),
       ...(data.client_token && { client_token: data.client_token }),
-      ...(data.cliente_id !== undefined && { cliente_id: data.cliente_id }),
       ...(data.status && { status: data.status }),
+      // cliente_id nunca atualizado aqui — imutável
     },
     select: { id: true, nome: true, webhook_token: true, status: true },
   })
