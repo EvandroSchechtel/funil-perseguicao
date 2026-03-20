@@ -3,7 +3,7 @@
 import React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Webhook, Users2, Zap, Shield, User, LogOut, Bot, Megaphone, Building2, Contact, Activity, MessageSquare } from "lucide-react"
+import { LayoutDashboard, Webhook, Users2, Zap, Shield, User, LogOut, Bot, Megaphone, Building2, Contact, Activity, MessageSquare, FileText } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -33,6 +33,12 @@ const navItems: NavItem[] = [
     label: "Campanhas",
     href: "/admin/campanhas",
     icon: <Megaphone className="w-5 h-5" />,
+    requiredRoles: ["super_admin", "admin", "operador"],
+  },
+  {
+    label: "Demandas",
+    href: "/admin/demandas",
+    icon: <FileText className="w-5 h-5" />,
     requiredRoles: ["super_admin", "admin", "operador"],
   },
   {

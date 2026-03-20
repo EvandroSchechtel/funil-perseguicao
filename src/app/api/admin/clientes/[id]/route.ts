@@ -9,6 +9,9 @@ const updateClienteSchema = z.object({
   nome: z.string().min(1).max(200).optional(),
   email: z.string().email().nullable().optional().or(z.literal("")),
   telefone: z.string().max(30).nullable().optional(),
+  grupo_wa_id: z.string().nullable().optional(),
+  grupo_wa_nome: z.string().nullable().optional(),
+  instancia_zapi_notif_id: z.string().uuid().nullable().optional(),
 })
 
 // GET /api/admin/clientes/[id]
@@ -56,6 +59,9 @@ export async function PATCH(
       nome: data.nome,
       email: data.email === "" ? null : data.email,
       telefone: data.telefone,
+      grupo_wa_id: data.grupo_wa_id,
+      grupo_wa_nome: data.grupo_wa_nome,
+      instancia_zapi_notif_id: data.instancia_zapi_notif_id,
     })
     return ok(result)
   } catch (error) {

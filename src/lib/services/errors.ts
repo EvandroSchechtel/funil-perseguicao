@@ -1,4 +1,4 @@
-export type ServiceErrorCode = "not_found" | "bad_request" | "conflict" | "forbidden"
+export type ServiceErrorCode = "not_found" | "bad_request" | "conflict" | "forbidden" | "validation"
 
 export class ServiceError extends Error {
   constructor(

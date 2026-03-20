@@ -60,6 +60,9 @@ export async function buscarCliente(id: string) {
       nome: true,
       email: true,
       telefone: true,
+      grupo_wa_id: true,
+      grupo_wa_nome: true,
+      instancia_zapi_notif_id: true,
       created_at: true,
       updated_at: true,
       contas_manychat: {
@@ -181,6 +184,9 @@ export interface AtualizarClienteParams {
   nome?: string
   email?: string | null
   telefone?: string | null
+  grupo_wa_id?: string | null
+  grupo_wa_nome?: string | null
+  instancia_zapi_notif_id?: string | null
 }
 
 export async function atualizarCliente(id: string, params: AtualizarClienteParams) {
@@ -193,8 +199,11 @@ export async function atualizarCliente(id: string, params: AtualizarClienteParam
       ...(params.nome !== undefined && { nome: params.nome }),
       ...(params.email !== undefined && { email: params.email }),
       ...(params.telefone !== undefined && { telefone: params.telefone }),
+      ...(params.grupo_wa_id !== undefined && { grupo_wa_id: params.grupo_wa_id }),
+      ...(params.grupo_wa_nome !== undefined && { grupo_wa_nome: params.grupo_wa_nome }),
+      ...(params.instancia_zapi_notif_id !== undefined && { instancia_zapi_notif_id: params.instancia_zapi_notif_id }),
     },
-    select: { id: true, nome: true, email: true, telefone: true, updated_at: true },
+    select: { id: true, nome: true, email: true, telefone: true, grupo_wa_id: true, grupo_wa_nome: true, instancia_zapi_notif_id: true, updated_at: true },
   })
 
   return { data: cliente, message: "Cliente atualizado com sucesso." }

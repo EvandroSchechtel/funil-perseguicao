@@ -29,7 +29,8 @@ const createSchema = z.object({
   nome: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
   email: z.string().email("Email inválido"),
   senha: z.string().min(8, "Senha deve ter no mínimo 8 caracteres"),
-  role: z.enum(["super_admin", "admin", "operador", "viewer"]),
+  role: z.enum(["super_admin", "admin", "operador", "viewer", "cliente"]),
+  cliente_id: z.string().uuid().nullish(),
   status: z.enum(["ativo", "inativo"]).optional().default("ativo"),
   force_password_change: z.boolean().optional().default(true),
 })

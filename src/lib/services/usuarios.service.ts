@@ -61,6 +61,7 @@ export async function buscarUsuario(id: string) {
       nome: true,
       email: true,
       role: true,
+      cliente_id: true,
       avatar_url: true,
       status: true,
       force_password_change: true,
@@ -78,18 +79,23 @@ export interface CriarUsuarioParams {
   nome: string
   email: string
   senha: string
-  role: "super_admin" | "admin" | "operador" | "viewer"
+  role: "super_admin" | "admin" | "operador" | "viewer" | "cliente"
+  cliente_id?: string | null
   status?: "ativo" | "inativo"
   force_password_change?: boolean
 }
 
 export async function criarUsuario(params: CriarUsuarioParams) {
-  const { nome, email, senha, role, status = "ativo", force_password_change = true } = params
+  const { nome, email, senha, role, cliente_id, status = "ativo", force_password_change = true } = params
 
   const exists = await prisma.usuario.findFirst({
     where: { email: email.toLowerCase(), deleted_at: null },
   })
   if (exists) throw new ServiceError("conflict", "Já existe um usuário com este email.")
+
+  if (role === "cliente" && !cliente_id) {
+    throw new ServiceError("validation", "Usuários com perfil Cliente devem estar vinculados a um cliente.")
+  }
 
   const hashedPassword = await bcrypt.hash(senha, 12)
 
@@ -101,6 +107,7 @@ export async function criarUsuario(params: CriarUsuarioParams) {
       role,
       status,
       force_password_change,
+      ...(cliente_id ? { cliente_id } : {}),
     },
     select: {
       id: true,
@@ -125,7 +132,8 @@ export async function criarUsuario(params: CriarUsuarioParams) {
 
 export interface AtualizarUsuarioParams {
   nome?: string
-  role?: "super_admin" | "admin" | "operador" | "viewer"
+  role?: "super_admin" | "admin" | "operador" | "viewer" | "cliente"
+  cliente_id?: string | null
   status?: "ativo" | "inativo"
   senha?: string
   force_password_change?: boolean
@@ -135,7 +143,11 @@ export async function atualizarUsuario(id: string, data: AtualizarUsuarioParams,
   const usuario = await prisma.usuario.findFirst({ where: { id, deleted_at: null } })
   if (!usuario) throw new ServiceError("not_found", "Usuário não encontrado")
 
-  const { nome, role, status, senha, force_password_change } = data
+  const { nome, role, cliente_id, status, senha, force_password_change } = data
+
+  if (role === "cliente" && cliente_id === undefined && !usuario.cliente_id) {
+    throw new ServiceError("validation", "Usuários com perfil Cliente devem estar vinculados a um cliente.")
+  }
 
   if (role && role !== "super_admin" && usuario.role === "super_admin") {
     const superAdminCount = await prisma.usuario.count({
@@ -149,6 +161,7 @@ export async function atualizarUsuario(id: string, data: AtualizarUsuarioParams,
   const updateData: Record<string, unknown> = {}
   if (nome !== undefined) updateData.nome = nome
   if (role !== undefined) updateData.role = role
+  if (cliente_id !== undefined) updateData.cliente_id = cliente_id
   if (status !== undefined) updateData.status = status
   if (force_password_change !== undefined) updateData.force_password_change = force_password_change
   if (senha) updateData.senha = await bcrypt.hash(senha, 12)

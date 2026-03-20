@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/db/prisma"
 import { ServiceError } from "./errors"
 import { TipoDemanda, StatusDemanda, PrioridadeDemanda } from "@/generated/prisma/client"
+import {
+  notificarNovaDemanda,
+  notificarStatusDemanda,
+  notificarComentarioDemanda,
+} from "./notificacao-wa.service"
 
 export interface ListarDemandasParams {
   clienteId?: string
@@ -124,6 +129,9 @@ export async function criarDemanda(params: CriarDemandaParams) {
     select: demandaSelect,
   })
 
+  // Fire-and-forget WA notification
+  notificarNovaDemanda(demanda.id).catch(() => {})
+
   return { demanda, message: "Demanda criada com sucesso." }
 }
 
@@ -138,7 +146,7 @@ export interface AtualizarDemandaParams {
 export async function atualizarDemanda(id: string, data: AtualizarDemandaParams) {
   const existing = await prisma.demanda.findFirst({
     where: { id },
-    select: { id: true },
+    select: { id: true, status: true },
   })
   if (!existing) throw new ServiceError("not_found", "Demanda não encontrada.")
 
@@ -157,6 +165,11 @@ export async function atualizarDemanda(id: string, data: AtualizarDemandaParams)
     },
     select: demandaSelect,
   })
+
+  // Fire-and-forget WA notification when status changes
+  if (data.status && data.status !== existing.status) {
+    notificarStatusDemanda(demanda.id, data.status).catch(() => {})
+  }
 
   return { demanda, message: "Demanda atualizada com sucesso." }
 }
@@ -193,6 +206,11 @@ export async function adicionarComentario(params: AdicionarComentarioParams) {
       created_at: true,
     },
   })
+
+  // Fire-and-forget WA notification (skip internal comments)
+  if (!interno) {
+    notificarComentarioDemanda(demandaId, comentario.id).catch(() => {})
+  }
 
   return { comentario }
 }

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from "react"
 import { useParams } from "next/navigation"
-import { Plus, Zap, Eye, EyeOff, CheckCircle2, XCircle, Loader2, ToggleRight, ToggleLeft, Hash, AlertCircle, Pencil } from "lucide-react"
+import { Plus, Zap, Eye, EyeOff, CheckCircle2, XCircle, Loader2, ToggleRight, ToggleLeft, Hash, AlertCircle, Pencil, MessageSquare, Save } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Header } from "@/components/layout/Header"
 import { ClienteForm } from "@/components/admin/ClienteForm"
@@ -20,11 +20,19 @@ interface Conta {
   whatsapp_field_id: number | null
 }
 
+interface InstanciaZApi {
+  id: string
+  nome: string
+}
+
 interface ClienteData {
   id: string
   nome: string
   email: string | null
   telefone: string | null
+  grupo_wa_id: string | null
+  grupo_wa_nome: string | null
+  instancia_zapi_notif_id: string | null
   contas_manychat: Conta[]
 }
 
@@ -53,6 +61,13 @@ export default function EditarClientePage() {
   const [fieldIdInput, setFieldIdInput] = useState("")
   const [fieldIdLoading, setFieldIdLoading] = useState(false)
 
+  // WA config
+  const [instancias, setInstancias] = useState<InstanciaZApi[]>([])
+  const [grupoWaId, setGrupoWaId] = useState("")
+  const [grupoWaNome, setGrupoWaNome] = useState("")
+  const [instanciaNotifId, setInstanciaNotifId] = useState("")
+  const [savingWa, setSavingWa] = useState(false)
+
   const fetchCliente = useCallback(async () => {
     if (!accessToken || !id) return
     setLoading(true)
@@ -71,6 +86,51 @@ export default function EditarClientePage() {
   useEffect(() => {
     fetchCliente()
   }, [fetchCliente])
+
+  // Load instancias Z-API for notification dropdown
+  useEffect(() => {
+    if (!accessToken) return
+    fetch("/api/admin/zapi/instancias?per_page=100", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+      .then((r) => r.json())
+      .then((d) => setInstancias(d.data ?? []))
+      .catch(() => {})
+  }, [accessToken])
+
+  // Populate WA state when cliente loads
+  useEffect(() => {
+    if (!cliente) return
+    setGrupoWaId(cliente.grupo_wa_id || "")
+    setGrupoWaNome(cliente.grupo_wa_nome || "")
+    setInstanciaNotifId(cliente.instancia_zapi_notif_id || "")
+  }, [cliente])
+
+  async function handleSaveWa(e: React.FormEvent) {
+    e.preventDefault()
+    setSavingWa(true)
+    try {
+      const res = await fetch(`/api/admin/clientes/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({
+          grupo_wa_id: grupoWaId || null,
+          grupo_wa_nome: grupoWaNome || null,
+          instancia_zapi_notif_id: instanciaNotifId || null,
+        }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast.success("Configuração WhatsApp salva.")
+      } else {
+        toast.error(data.message || "Erro ao salvar.")
+      }
+    } catch {
+      toast.error("Erro de conexão.")
+    } finally {
+      setSavingWa(false)
+    }
+  }
 
   async function handleTestarConexao() {
     if (!apiKey.trim()) {
@@ -310,6 +370,82 @@ export default function EditarClientePage() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* WhatsApp / Z-API Config */}
+        {!loading && !error && cliente && (
+          <div>
+            <div className="mb-4">
+              <h2 className="text-[#F1F1F3] text-lg font-semibold flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-[#25D366]" />
+                Notificações WhatsApp
+              </h2>
+              <p className="text-[#8B8B9E] text-sm mt-0.5">
+                Configure o grupo e a instância Z-API para envio de notificações de demandas.
+              </p>
+            </div>
+
+            <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-6">
+              <form onSubmit={handleSaveWa} className="space-y-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-semibold text-[#F1F1F3]">
+                    ID do Grupo WhatsApp
+                  </label>
+                  <input
+                    type="text"
+                    value={grupoWaId}
+                    onChange={(e) => setGrupoWaId(e.target.value)}
+                    placeholder="Ex: 120363xxxxxxxxxx@g.us"
+                    className="h-10 px-3 rounded-lg border border-[#1E1E2A] bg-[#111118] text-sm text-[#F1F1F3] placeholder-[#5A5A72] focus:outline-none focus:border-[#25D366]/50 font-mono"
+                  />
+                  <p className="text-xs text-[#5A5A72]">
+                    Encontrado em Z-API → Instâncias → Grupos. Geralmente termina em @g.us.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-semibold text-[#F1F1F3]">
+                    Nome do Grupo (exibição)
+                  </label>
+                  <input
+                    type="text"
+                    value={grupoWaNome}
+                    onChange={(e) => setGrupoWaNome(e.target.value)}
+                    placeholder="Ex: Suporte DR Marquezine"
+                    className="h-10 px-3 rounded-lg border border-[#1E1E2A] bg-[#111118] text-sm text-[#F1F1F3] placeholder-[#5A5A72] focus:outline-none focus:border-[#25D366]/50"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-semibold text-[#F1F1F3]">
+                    Instância Z-API para notificações
+                  </label>
+                  <select
+                    value={instanciaNotifId}
+                    onChange={(e) => setInstanciaNotifId(e.target.value)}
+                    className="h-10 px-3 rounded-lg border border-[#1E1E2A] bg-[#111118] text-sm text-[#C4C4D4] focus:outline-none focus:border-[#25D366]/50"
+                  >
+                    <option value="">Nenhuma (sem notificações WA)</option>
+                    {instancias.map((inst) => (
+                      <option key={inst.id} value={inst.id} className="bg-[#111118]">
+                        {inst.nome}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-[#5A5A72]">
+                    A instância usada para enviar mensagens ao grupo do cliente.
+                  </p>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button type="submit" loading={savingWa} size="sm">
+                    <Save className="w-4 h-4" />
+                    Salvar Configuração WA
+                  </Button>
+                </div>
+              </form>
             </div>
           </div>
         )}

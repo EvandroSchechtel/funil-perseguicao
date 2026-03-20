@@ -23,7 +23,8 @@ export async function GET(request: NextRequest, { params }: Params) {
 
 const updateSchema = z.object({
   nome: z.string().min(2).optional(),
-  role: z.enum(["super_admin", "admin", "operador", "viewer"]).optional(),
+  role: z.enum(["super_admin", "admin", "operador", "viewer", "cliente"]).optional(),
+  cliente_id: z.string().uuid().nullish(),
   status: z.enum(["ativo", "inativo"]).optional(),
   senha: z.string().min(8).optional(),
   force_password_change: z.boolean().optional(),

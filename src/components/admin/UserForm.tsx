@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import Link from "next/link"
 import { ArrowLeft, Eye, EyeOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { getRoleDescription, ROLES, type Role } from "@/lib/auth/rbac"
+import { useAuth } from "@/contexts/AuthContext"
+
+interface ClienteOption {
+  id: string
+  nome: string
+}
 
 export interface UserFormData {
   nome: string
@@ -21,6 +27,7 @@ export interface UserFormData {
   senha: string
   confirmarSenha: string
   role: Role
+  cliente_id?: string | null
   status: "ativo" | "inativo"
   force_password_change: boolean
 }
@@ -56,17 +63,30 @@ export function UserForm({
   title,
   subtitle,
 }: UserFormProps) {
+  const { accessToken } = useAuth()
   const [nome, setNome] = useState(initialData?.nome || "")
   const [email, setEmail] = useState(initialData?.email || "")
   const [senha, setSenha] = useState("")
   const [confirmarSenha, setConfirmarSenha] = useState("")
   const [role, setRole] = useState<Role>(initialData?.role || "viewer")
+  const [clienteId, setClienteId] = useState<string>(initialData?.cliente_id || "")
+  const [clientes, setClientes] = useState<ClienteOption[]>([])
   const [status, setStatus] = useState<"ativo" | "inativo">(initialData?.status || "ativo")
   const [forcePasswordChange, setForcePasswordChange] = useState(
     initialData?.force_password_change ?? true
   )
   const [showSenha, setShowSenha] = useState(false)
   const [showConfirmar, setShowConfirmar] = useState(false)
+
+  useEffect(() => {
+    if (!accessToken) return
+    fetch("/api/admin/clientes?per_page=200", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+      .then((r) => r.json())
+      .then((d) => setClientes(d.data ?? []))
+      .catch(() => {})
+  }, [accessToken])
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -76,6 +96,7 @@ export function UserForm({
       senha,
       confirmarSenha,
       role,
+      cliente_id: role === "cliente" ? clienteId || null : null,
       status,
       force_password_change: forcePasswordChange,
     })
@@ -187,6 +208,33 @@ export function UserForm({
               <p className="text-xs text-[#F87171]">{fieldErrors.role}</p>
             )}
           </div>
+
+          {/* Cliente link — only when role === cliente */}
+          {role === "cliente" && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-semibold text-[#F1F1F3]">
+                Cliente vinculado <span className="text-[#F87171]">*</span>
+              </label>
+              <Select value={clienteId} onValueChange={setClienteId}>
+                <SelectTrigger error={fieldErrors.cliente_id}>
+                  <SelectValue placeholder="Selecione um cliente" />
+                </SelectTrigger>
+                <SelectContent>
+                  {clientes.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {fieldErrors.cliente_id && (
+                <p className="text-xs text-[#F87171]">{fieldErrors.cliente_id}</p>
+              )}
+              <p className="text-xs text-[#5A5A72]">
+                Este usuário terá acesso ao portal do cliente vinculado.
+              </p>
+            </div>
+          )}
 
           {/* Status toggle */}
           <div className="flex items-start justify-between gap-4 py-2">
