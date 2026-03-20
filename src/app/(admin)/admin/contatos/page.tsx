@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
-import { Search, Users, Download, ExternalLink, CheckCircle2, XCircle, Clock, AlertTriangle, Loader2 } from "lucide-react"
+import { Search, Users, Download, ExternalLink, CheckCircle2, XCircle, Clock, AlertTriangle, Loader2, PauseCircle } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
 import { Button } from "@/components/ui/button"
@@ -32,6 +32,7 @@ function statusIcon(status: string) {
   if (status === "falha") return <XCircle className="w-3.5 h-3.5 text-[#F87171]" />
   if (status === "sem_optin") return <AlertTriangle className="w-3.5 h-3.5 text-[#F59E0B]" />
   if (status === "processando") return <Loader2 className="w-3.5 h-3.5 text-[#60A5FA] animate-spin" />
+  if (status === "aguardando") return <PauseCircle className="w-3.5 h-3.5 text-[#F59E0B]" />
   return <Clock className="w-3.5 h-3.5 text-[#5A5A72]" />
 }
 
