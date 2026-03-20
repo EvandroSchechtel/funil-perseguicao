@@ -7,7 +7,7 @@ import {
   Pencil, Webhook, Users2, Copy, CheckCircle2, XCircle, Loader2,
   Plus, Trash2, ToggleLeft, ToggleRight, Info, GripVertical, FlaskConical,
   Building2, Calendar, ChevronDown, ChevronRight, PauseCircle, PlayCircle,
-  ListOrdered, ChevronsRight,
+  ListOrdered, ChevronsRight, DoorOpen,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
@@ -33,6 +33,7 @@ interface CampanhaData {
   webhooks_count: number
   leads_count: number
   aguardando_count: number
+  grupos_entrados_count: number
   usuario: { nome: string }
   cliente: { id: string; nome: string } | null
 }
@@ -586,6 +587,32 @@ export default function CampanhaDetailPage() {
                 </button>
               ))}
             </div>
+
+            {/* Group entry KPI */}
+            {campanha.grupos_entrados_count > 0 || campanha.leads_count > 0 ? (
+              <div className="bg-[#0F0F1A] border border-[#1C1C2C] rounded-xl px-5 py-4 flex items-center gap-3.5">
+                <div className="w-9 h-9 rounded-lg bg-[#13131F] flex items-center justify-center shrink-0">
+                  <DoorOpen className="w-4 h-4 text-[#25D366]" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-2xl font-bold text-[#EEEEF5] leading-none">{campanha.grupos_entrados_count}</p>
+                    {campanha.leads_count > 0 && (
+                      <p className="text-sm font-semibold" style={{
+                        color: campanha.grupos_entrados_count / campanha.leads_count >= 0.6
+                          ? "#25D366"
+                          : campanha.grupos_entrados_count / campanha.leads_count >= 0.3
+                          ? "#F59E0B"
+                          : "#F87171",
+                      }}>
+                        {((campanha.grupos_entrados_count / campanha.leads_count) * 100).toFixed(1)}%
+                      </p>
+                    )}
+                  </div>
+                  <p className="text-[#7F7F9E] text-[11px] mt-1">Leads que entraram no grupo</p>
+                </div>
+              </div>
+            ) : null}
 
             {/* Details card */}
             <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-5 space-y-4">

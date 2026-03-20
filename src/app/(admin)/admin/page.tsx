@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback, useRef } from "react"
+import Link from "next/link"
 import {
   BarChart,
   Bar,
@@ -89,6 +90,14 @@ interface MetricasGrupos {
     total: number
     rastreadas: number
     tag_aplicada: number
+  }[]
+  por_campanha: {
+    campanha_id: string
+    campanha_nome: string
+    cliente_nome: string | null
+    total_leads: number
+    grupos_entrados: number
+    taxa_entrada: number
   }[]
   diario: { dia: string; total: number; rastreadas: number; tag_aplicada: number }[]
 }
@@ -835,7 +844,7 @@ function TabOperacional({ data }: { data: MetricasOperacional }) {
 // ---------------------------------------------------------------------------
 
 function TabGrupos({ data }: { data: MetricasGrupos }) {
-  const { kpis, por_grupo, diario } = data
+  const { kpis, por_grupo, por_campanha, diario } = data
 
   return (
     <div className="space-y-6">
@@ -904,6 +913,57 @@ function TabGrupos({ data }: { data: MetricasGrupos }) {
                   <td className="px-5 py-3 text-[#FBBF24] text-sm tabular-nums">{g.tag_aplicada}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Por campanha table */}
+      <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-[#1E1E2A]">
+          <h2 className="text-[#F1F1F3] font-semibold">Taxa de Entrada por Campanha</h2>
+          <p className="text-[#5A5A72] text-xs mt-0.5">Total histórico de leads vs. entradas detectadas no grupo</p>
+        </div>
+        {por_campanha.length === 0 ? (
+          <p className="text-[#5A5A72] text-sm text-center py-8">Nenhuma campanha com dados de grupo.</p>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-[#1E1E2A]">
+                {["Campanha", "Cliente", "Leads", "Entrou no Grupo", "Taxa"].map((h) => (
+                  <th key={h} className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {por_campanha.map((c) => {
+                const taxa = c.taxa_entrada
+                const barColor = taxa >= 60 ? "#25D366" : taxa >= 30 ? "#F59E0B" : "#F87171"
+                return (
+                  <tr key={c.campanha_id} className="border-b border-[#1E1E2A] last:border-0 hover:bg-[#1C1C28] transition-colors">
+                    <td className="px-5 py-3">
+                      <Link href={`/admin/campanhas/${c.campanha_id}`} className="text-[#F1F1F3] text-sm font-medium hover:text-[#25D366] transition-colors">
+                        {c.campanha_nome}
+                      </Link>
+                    </td>
+                    <td className="px-5 py-3 text-[#8B8B9E] text-sm">{c.cliente_nome ?? "—"}</td>
+                    <td className="px-5 py-3 text-[#C4C4D4] text-sm tabular-nums">{c.total_leads}</td>
+                    <td className="px-5 py-3 text-[#25D366] text-sm tabular-nums">{c.grupos_entrados}</td>
+                    <td className="px-5 py-3 min-w-[140px]">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-[#1C1C28] rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${Math.min(taxa, 100)}%`, backgroundColor: barColor }} />
+                        </div>
+                        <span className="text-sm tabular-nums font-semibold" style={{ color: barColor }}>
+                          {taxa.toFixed(1)}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}

@@ -63,7 +63,7 @@ export async function listarCampanhas(params: ListCampanhasParams = {}) {
 }
 
 export async function buscarCampanha(id: string) {
-  const [campanha, aguardando_count] = await Promise.all([
+  const [campanha, aguardando_count, grupos_entrados_count] = await Promise.all([
     prisma.campanha.findFirst({
       where: { id, deleted_at: null },
       select: {
@@ -82,6 +82,7 @@ export async function buscarCampanha(id: string) {
       },
     }),
     prisma.lead.count({ where: { campanha_id: id, status: "aguardando" } }),
+    prisma.lead.count({ where: { campanha_id: id, grupo_entrou_at: { not: null } } }),
   ])
 
   if (!campanha) throw new ServiceError("not_found", "Campanha não encontrada.")
@@ -92,6 +93,7 @@ export async function buscarCampanha(id: string) {
       webhooks_count: campanha._count.webhooks,
       leads_count: campanha._count.leads,
       aguardando_count,
+      grupos_entrados_count,
       _count: undefined,
     },
   }

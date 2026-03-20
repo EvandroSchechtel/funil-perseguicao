@@ -485,7 +485,48 @@ export async function getMetricasGrupos(filters: DashboardFilters) {
     .map(([dia, v]) => ({ dia, ...v }))
     .sort((a, b) => a.dia.localeCompare(b.dia))
 
-  return { kpis, por_grupo, diario }
+  // Aggregate por campanha (sem filtro de data — taxa sobre total histórico da campanha)
+  const leadBaseWhere: Prisma.LeadWhereInput = {
+    ...(campanhaId ? { campanha_id: campanhaId } : {}),
+    ...(clienteId ? { campanha: { cliente_id: clienteId } } : {}),
+  }
+
+  const [totalPorCampanha, entradosPorCampanha] = await Promise.all([
+    prisma.lead.groupBy({ by: ["campanha_id"], where: leadBaseWhere, _count: { id: true } }),
+    prisma.lead.groupBy({
+      by: ["campanha_id"],
+      where: { ...leadBaseWhere, grupo_entrou_at: { not: null } },
+      _count: { id: true },
+    }),
+  ])
+
+  const campanhaIds = totalPorCampanha.map((r) => r.campanha_id).filter((id): id is string => id !== null)
+  const campanhasInfo = await prisma.campanha.findMany({
+    where: { id: { in: campanhaIds } },
+    select: { id: true, nome: true, cliente: { select: { nome: true } } },
+  })
+
+  const campanhaMap = new Map(campanhasInfo.map((c) => [c.id, c]))
+  const entradosMap = new Map(entradosPorCampanha.map((r) => [r.campanha_id, r._count.id]))
+
+  const por_campanha = totalPorCampanha
+    .filter((r) => r.campanha_id !== null)
+    .map((r) => {
+      const c = campanhaMap.get(r.campanha_id!)
+      const grupos_entrados = entradosMap.get(r.campanha_id!) ?? 0
+      const total = r._count.id
+      return {
+        campanha_id: r.campanha_id!,
+        campanha_nome: c?.nome ?? r.campanha_id!,
+        cliente_nome: c?.cliente?.nome ?? null,
+        total_leads: total,
+        grupos_entrados,
+        taxa_entrada: total > 0 ? Math.round((grupos_entrados / total) * 1000) / 10 : 0,
+      }
+    })
+    .sort((a, b) => b.taxa_entrada - a.taxa_entrada)
+
+  return { kpis, por_grupo, por_campanha, diario }
 }
 
 // ---------------------------------------------------------------------------
