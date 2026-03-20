@@ -32,14 +32,14 @@ export function getWebhookQueue(): Queue {
   return _webhookQueue
 }
 
-export async function addWebhookJob(data: WebhookJobData, opts?: { forceNew?: boolean }) {
+export async function addWebhookJob(data: WebhookJobData, opts?: { forceNew?: boolean; delay?: number }) {
   const queue = getWebhookQueue()
   if (opts?.forceNew) {
     // Remove existing job (any state) so we can re-enqueue without dedup blocking it
     try { await queue.remove(data.leadId) } catch { /* ignore if not found */ }
-    return queue.add("process-lead", data, { jobId: `${data.leadId}-${Date.now()}` })
+    return queue.add("process-lead", data, { jobId: `${data.leadId}-${Date.now()}`, delay: opts.delay })
   }
-  return queue.add("process-lead", data, { jobId: data.leadId })
+  return queue.add("process-lead", data, { jobId: data.leadId, delay: opts?.delay })
 }
 
 export async function getQueueStats() {

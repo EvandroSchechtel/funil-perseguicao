@@ -13,6 +13,8 @@ interface ContaData {
   page_name: string | null
   status: "ativo" | "inativo"
   whatsapp_field_id: number | null
+  limite_diario: number | null
+  uso_hoje: number
 }
 
 export default function EditarContaPage() {

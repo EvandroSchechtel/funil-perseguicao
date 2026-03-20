@@ -120,6 +120,7 @@ model ContaManychat {
   status              Status    @default(ativo)
   ultimo_sync         DateTime?
   whatsapp_field_id   Int?      // Manychat field ID for [esc]whatsapp-id
+  limite_diario       Int?      // max sends per day (null = unlimited)
   created_by          String
   usuario             Usuario   @relation(fields: [created_by], references: [id])
   cliente_id          String?   @db.Uuid
@@ -131,8 +132,22 @@ model ContaManychat {
   webhook_flows        WebhookFlow[]
   contatos_vinculados  ContatoConta[]
   grupos_monitoramento GrupoMonitoramento[]
+  uso_diario           ContaUsoDiario[]
 
   @@map("contas_manychat")
+}
+
+model ContaUsoDiario {
+  id         String        @id @default(uuid())
+  conta_id   String
+  conta      ContaManychat @relation(fields: [conta_id], references: [id])
+  data       DateTime      @db.Date   // day in BRT (UTC-3)
+  total      Int           @default(0)
+  created_at DateTime      @default(now())
+  updated_at DateTime      @updatedAt
+
+  @@unique([conta_id, data])
+  @@map("conta_uso_diario")
 }
 
 // ── Campanhas ─────────────────────────────────────────────────────────────────

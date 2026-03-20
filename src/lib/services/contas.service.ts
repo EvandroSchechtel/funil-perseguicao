@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { testManychatConnection, maskApiKey } from "@/lib/manychat/client"
 import { ServiceError } from "./errors"
+import { getTodayUsageMap, todayBRT } from "./uso-diario.service"
 
 export interface ListContasParams {
   page?: number
@@ -34,6 +35,7 @@ export async function listarContas(params: ListContasParams = {}) {
         page_id: true,
         page_name: true,
         status: true,
+        limite_diario: true,
         ultimo_sync: true,
         created_at: true,
         usuario: { select: { nome: true } },
@@ -44,10 +46,14 @@ export async function listarContas(params: ListContasParams = {}) {
     }),
   ])
 
+  // Fetch today's usage for all contas in one query
+  const usageMap = await getTodayUsageMap(contas.map((c) => c.id))
+
   const contasSafe = contas.map((c) => ({
     ...c,
     api_key: undefined,
     api_key_hint: maskApiKey(c.api_key),
+    uso_hoje: usageMap.get(c.id) ?? 0,
   }))
 
   return {
@@ -57,22 +63,29 @@ export async function listarContas(params: ListContasParams = {}) {
 }
 
 export async function buscarConta(id: string) {
-  const conta = await prisma.contaManychat.findFirst({
-    where: { id, deleted_at: null },
-    select: {
-      id: true,
-      nome: true,
-      api_key: true,
-      page_id: true,
-      page_name: true,
-      status: true,
-      whatsapp_field_id: true,
-      ultimo_sync: true,
-      created_at: true,
-      updated_at: true,
-      usuario: { select: { id: true, nome: true } },
-    },
-  })
+  const [conta, uso_hoje] = await Promise.all([
+    prisma.contaManychat.findFirst({
+      where: { id, deleted_at: null },
+      select: {
+        id: true,
+        nome: true,
+        api_key: true,
+        page_id: true,
+        page_name: true,
+        status: true,
+        whatsapp_field_id: true,
+        limite_diario: true,
+        ultimo_sync: true,
+        created_at: true,
+        updated_at: true,
+        usuario: { select: { id: true, nome: true } },
+      },
+    }),
+    prisma.contaUsoDiario.findUnique({
+      where: { conta_id_data: { conta_id: id, data: todayBRT() } },
+      select: { total: true },
+    }),
+  ])
 
   if (!conta) throw new ServiceError("not_found", "Conta não encontrada.")
 
@@ -81,6 +94,7 @@ export async function buscarConta(id: string) {
       ...conta,
       api_key: undefined,
       api_key_hint: maskApiKey(conta.api_key),
+      uso_hoje: uso_hoje?.total ?? 0,
     },
   }
 }
@@ -130,13 +144,14 @@ export interface AtualizarContaParams {
   api_key?: string
   status?: "ativo" | "inativo"
   whatsapp_field_id?: number | null
+  limite_diario?: number | null
 }
 
 export async function atualizarConta(id: string, data: AtualizarContaParams) {
   const existing = await prisma.contaManychat.findFirst({ where: { id, deleted_at: null } })
   if (!existing) throw new ServiceError("not_found", "Conta não encontrada.")
 
-  const { nome, api_key, status, whatsapp_field_id } = data
+  const { nome, api_key, status, whatsapp_field_id, limite_diario } = data
   let page_id = existing.page_id
   let page_name = existing.page_name
   let ultimo_sync = existing.ultimo_sync
@@ -158,6 +173,7 @@ export async function atualizarConta(id: string, data: AtualizarContaParams) {
       ...(api_key && { api_key }),
       ...(status && { status }),
       ...(whatsapp_field_id !== undefined && { whatsapp_field_id }),
+      ...(limite_diario !== undefined && { limite_diario }),
       page_id,
       page_name,
       ultimo_sync,

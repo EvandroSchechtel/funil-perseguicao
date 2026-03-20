@@ -26,6 +26,8 @@ interface Conta {
   page_id: string | null
   page_name: string | null
   status: "ativo" | "inativo"
+  limite_diario: number | null
+  uso_hoje: number
   ultimo_sync: string | null
   created_at: string
   usuario: { nome: string }
@@ -210,6 +212,7 @@ export default function ManychatPage() {
                   <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Conta</th>
                   <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Página Manychat</th>
                   <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">API Key</th>
+                  <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Envios hoje</th>
                   <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Status</th>
                   <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Último sync</th>
                   <th className="px-5 py-3" />
@@ -239,6 +242,35 @@ export default function ManychatPage() {
                     </td>
                     <td className="px-5 py-4">
                       <span className="text-[#5A5A72] text-sm font-mono">{conta.api_key_hint}</span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="min-w-[100px]">
+                        {conta.limite_diario ? (
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className={conta.uso_hoje >= conta.limite_diario ? "text-[#F87171]" : "text-[#C4C4D4]"}>
+                                {conta.uso_hoje} / {conta.limite_diario}
+                              </span>
+                            </div>
+                            <div className="h-1.5 bg-[#1E1E2A] rounded-full overflow-hidden w-24">
+                              <div
+                                className="h-full rounded-full"
+                                style={{
+                                  width: `${Math.min(100, Math.round((conta.uso_hoje / conta.limite_diario) * 100))}%`,
+                                  backgroundColor:
+                                    conta.uso_hoje >= conta.limite_diario
+                                      ? "#F87171"
+                                      : conta.uso_hoje / conta.limite_diario > 0.8
+                                      ? "#FBBF24"
+                                      : "#25D366",
+                                }}
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-[#5A5A72] text-sm">{conta.uso_hoje > 0 ? conta.uso_hoje : "—"}</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-5 py-4">
                       <Badge variant={conta.status === "ativo" ? "ativo" : "inativo"}>

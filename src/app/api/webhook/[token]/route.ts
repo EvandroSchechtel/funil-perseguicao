@@ -3,6 +3,7 @@ import { z } from "zod"
 import { prisma } from "@/lib/db/prisma"
 import { addWebhookJob } from "@/lib/queue/queues"
 import { ok, badRequest, forbidden, notFound, serverError } from "@/lib/api/response"
+import { getTodayUsageMap, msUntilMidnightBRT } from "@/lib/services/uso-diario.service"
 
 const leadSchema = z.object({
   nome: z.string().min(1, "Nome é obrigatório").max(200),
@@ -34,7 +35,7 @@ export async function POST(
             ordem: true,
             total_enviados: true,
             conta_id: true,
-            conta: { select: { nome: true } },
+            conta: { select: { nome: true, limite_diario: true } },
           },
           orderBy: [{ total_enviados: "asc" }, { ordem: "asc" }],
         },
@@ -57,8 +58,19 @@ export async function POST(
 
     const { nome, telefone, email } = parsed.data
 
-    // 3. Round-robin: pick flow with fewest sends
-    const flow = webhook.webhook_flows[0] ?? null
+    // 3. Round-robin: pick flow with fewest sends, skipping accounts at daily limit
+    const allFlows = webhook.webhook_flows
+    const contaIds = [...new Set(allFlows.map((f) => f.conta_id))]
+    const usageMap = await getTodayUsageMap(contaIds)
+
+    const availableFlows = allFlows.filter((f) => {
+      const limite = f.conta.limite_diario
+      if (!limite) return true // unlimited
+      return (usageMap.get(f.conta_id) ?? 0) < limite
+    })
+
+    const flow = availableFlows[0] ?? null
+    const allAtLimit = allFlows.length > 0 && availableFlows.length === 0
 
     // 4. Upsert Contato by telefone (pessoa = número de celular)
     const contato = await prisma.contato.upsert({
@@ -134,6 +146,17 @@ export async function POST(
         telefone,
         email: email || undefined,
       }).catch((err) => console.error("[addWebhookJob] Redis unavailable:", err))
+    } else if (allAtLimit) {
+      // All accounts at daily limit — schedule for next midnight BRT
+      const delay = msUntilMidnightBRT()
+      const firstFlow = allFlows[0]
+      if (firstFlow) {
+        addWebhookJob(
+          { leadId, webhookId: webhook.id, contaId: firstFlow.conta_id, flowNs: firstFlow.flow_ns, nome, telefone, email: email || undefined },
+          { delay }
+        ).catch((err) => console.error("[addWebhookJob] Redis unavailable:", err))
+        console.log(`[Webhook] All accounts at daily limit — job delayed ${Math.round(delay / 60000)}min`)
+      }
     }
 
     return ok({ ok: true, lead_id: leadId })

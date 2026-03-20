@@ -18,6 +18,8 @@ interface ContaFormProps {
     page_name?: string | null
     status: "ativo" | "inativo"
     whatsapp_field_id?: number | null
+    limite_diario?: number | null
+    uso_hoje?: number
   }
 }
 
@@ -32,6 +34,11 @@ export function ContaForm({ mode, initialData }: ContaFormProps) {
   const [status, setStatus] = useState<"ativo" | "inativo">(initialData?.status || "ativo")
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Limite diário state
+  const [limiteDiario, setLimiteDiario] = useState(
+    initialData?.limite_diario ? String(initialData.limite_diario) : ""
+  )
 
   // Custom field state
   const [hasCustomField, setHasCustomField] = useState<boolean | null>(
@@ -55,6 +62,9 @@ export function ContaForm({ mode, initialData }: ContaFormProps) {
     if (whatsappFieldId.trim() && isNaN(Number(whatsappFieldId))) {
       newErrors.whatsapp_field_id = "O ID deve ser um número"
     }
+    if (limiteDiario.trim() && (isNaN(Number(limiteDiario)) || Number(limiteDiario) <= 0)) {
+      newErrors.limite_diario = "Deve ser um número maior que zero"
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
@@ -73,6 +83,11 @@ export function ContaForm({ mode, initialData }: ContaFormProps) {
       } else if (hasCustomField === false) {
         // Will be created automatically by the API
         body.whatsapp_field_id = null
+      }
+
+      // Include limite_diario (null = unlimited)
+      if (mode === "edit") {
+        body.limite_diario = limiteDiario.trim() ? Number(limiteDiario.trim()) : null
       }
 
       const url =
@@ -247,6 +262,51 @@ export function ContaForm({ mode, initialData }: ContaFormProps) {
           </div>
         )}
       </div>
+
+      {/* Limite diário — only in edit mode */}
+      {mode === "edit" && (
+        <div className="space-y-2 p-4 bg-[#111118] border border-[#1E1E2A] rounded-lg">
+          <div>
+            <p className="text-sm font-medium text-[#C4C4D4]">Limite diário de envios</p>
+            <p className="text-xs text-[#5A5A72] mt-0.5">Deixe em branco para envios ilimitados</p>
+          </div>
+          <Input
+            type="number"
+            min="1"
+            placeholder="Ex: 500"
+            value={limiteDiario}
+            onChange={(e) => setLimiteDiario(e.target.value)}
+            error={errors.limite_diario}
+          />
+          {initialData?.uso_hoje !== undefined && (
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs">
+                <span className="text-[#5A5A72]">Enviados hoje</span>
+                <span className="text-[#C4C4D4] font-medium">
+                  {initialData.uso_hoje}
+                  {initialData.limite_diario ? ` / ${initialData.limite_diario}` : ""}
+                </span>
+              </div>
+              {initialData.limite_diario && (
+                <div className="h-1.5 bg-[#1E1E2A] rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${Math.min(100, Math.round((initialData.uso_hoje / initialData.limite_diario) * 100))}%`,
+                      backgroundColor:
+                        initialData.uso_hoje >= initialData.limite_diario
+                          ? "#F87171"
+                          : initialData.uso_hoje / initialData.limite_diario > 0.8
+                          ? "#FBBF24"
+                          : "#25D366",
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex items-center justify-between p-4 bg-[#111118] border border-[#1E1E2A] rounded-lg">
         <div>

@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
 
     const appBaseUrl = request.headers.get("x-forwarded-proto") && request.headers.get("host")
       ? `${request.headers.get("x-forwarded-proto")}://${request.headers.get("host")}`
-      : process.env.NEXT_PUBLIC_APP_URL ?? "https://localhost:3000"
+      : process.env.NEXT_PUBLIC_ZAPI_URL || process.env.NEXT_PUBLIC_APP_URL || "https://localhost:3000"
 
     const result = await criarInstancia({ nome, instance_id, token, client_token, cliente_id, userId: user.id, appBaseUrl })
     return created(result)

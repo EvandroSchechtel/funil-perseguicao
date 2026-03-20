@@ -39,7 +39,7 @@ export async function listarWebhooks(params: ListWebhooksParams = {}) {
     }),
   ])
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || ""
+  const appUrl = process.env.NEXT_PUBLIC_WEBHOOK_URL || process.env.NEXT_PUBLIC_APP_URL || ""
   const webhooksSafe = webhooks.map((w) => ({
     ...w,
     url_publica: `${appUrl}/api/webhook/${w.token}`,
@@ -86,7 +86,7 @@ export async function buscarWebhook(id: string) {
 
   if (!webhook) throw new ServiceError("not_found", "Webhook não encontrado.")
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || ""
+  const appUrl = process.env.NEXT_PUBLIC_WEBHOOK_URL || process.env.NEXT_PUBLIC_APP_URL || ""
   return {
     webhook: {
       ...webhook,
@@ -122,7 +122,7 @@ export async function criarWebhook({ nome, campanha_id, status = "ativo", userId
     },
   })
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || ""
+  const appUrl = process.env.NEXT_PUBLIC_WEBHOOK_URL || process.env.NEXT_PUBLIC_APP_URL || ""
   return {
     webhook: { ...webhook, url_publica: `${appUrl}/api/webhook/${webhook.token}` },
     message: "Webhook criado com sucesso.",
@@ -149,7 +149,7 @@ export async function atualizarWebhook(id: string, data: AtualizarWebhookParams)
     select: { id: true, nome: true, token: true, status: true, updated_at: true },
   })
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || ""
+  const appUrl = process.env.NEXT_PUBLIC_WEBHOOK_URL || process.env.NEXT_PUBLIC_APP_URL || ""
   return {
     webhook: { ...webhook, url_publica: `${appUrl}/api/webhook/${webhook.token}` },
     message: "Webhook atualizado com sucesso.",

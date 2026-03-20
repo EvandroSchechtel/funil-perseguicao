@@ -14,7 +14,7 @@ export async function GET(request: NextRequest, { params }: Ctx) {
     const { id } = await params
     const inst = await buscarInstancia(id)
     const webhookToken = (inst as { webhook_token: string }).webhook_token
-    const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL ?? ""
+    const appBaseUrl = process.env.NEXT_PUBLIC_ZAPI_URL || process.env.NEXT_PUBLIC_APP_URL || ""
     return ok({
       instancia: inst,
       webhook_url: `${appBaseUrl}/api/webhook/zapi/${webhookToken}`,

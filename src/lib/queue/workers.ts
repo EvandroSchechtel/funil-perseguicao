@@ -2,6 +2,7 @@ import { Worker, Job } from "bullmq"
 import { getRedisConfig } from "./redis"
 import { prisma } from "@/lib/db/prisma"
 import { processLeadInManychat, setWhatsappIdField } from "@/lib/manychat/client"
+import { isLimitReached, incrementUsage, msUntilMidnightBRT } from "@/lib/services/uso-diario.service"
 import type { WebhookJobData } from "./queues"
 
 export function startWebhookWorker(): Worker {
@@ -23,7 +24,7 @@ export function startWebhookWorker(): Worker {
       // 2. Get API key from conta
       const conta = await prisma.contaManychat.findFirst({
         where: { id: contaId, deleted_at: null },
-        select: { api_key: true, whatsapp_field_id: true, nome: true },
+        select: { api_key: true, whatsapp_field_id: true, nome: true, limite_diario: true },
       })
 
       if (!conta) {
@@ -36,6 +37,17 @@ export function startWebhookWorker(): Worker {
           data: { lead_id: leadId, numero: numeroTentativa, status: "falha", erro_msg: errMsg, flow_ns: flowNs },
         })
         throw new Error(errMsg)
+      }
+
+      // 2b. Safety check — if daily limit was reached between enqueue and now, delay until midnight
+      const limitReached = await isLimitReached(contaId, conta.limite_diario)
+      if (limitReached) {
+        const delay = msUntilMidnightBRT()
+        await job.moveToDelayed(Date.now() + delay)
+        console.log(`[Worker] Lead ${leadId} — conta ${contaId} at daily limit, delayed ${Math.round(delay / 60000)}min`)
+        // Revert status back to pendente
+        await prisma.lead.update({ where: { id: leadId }, data: { status: "pendente", tentativas: { decrement: 1 } } })
+        return { leadId, delayed: true }
       }
 
       // 3. Process in Manychat — if subscriber_id already known, skip lookup
@@ -88,6 +100,9 @@ export function startWebhookWorker(): Worker {
             })
           } catch (e) { console.warn("[Worker] contatoConta.upsert failed (table may not exist yet):", e) }
         }
+
+        // Increment daily usage counter
+        incrementUsage(contaId).catch((e) => console.warn("[Worker] incrementUsage failed:", e))
 
         // Best-effort: write phone to [esc]whatsapp-id custom field in Manychat
         if (result.subscriber_id) {

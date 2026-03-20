@@ -97,7 +97,7 @@ export interface CriarCampanhaParams {
 }
 
 export async function criarCampanha({ nome, descricao, data_inicio, data_fim, cliente_id, userId }: CriarCampanhaParams) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || ""
+  const appUrl = process.env.NEXT_PUBLIC_WEBHOOK_URL || process.env.NEXT_PUBLIC_APP_URL || ""
 
   const result = await prisma.$transaction(async (tx) => {
     const campanha = await tx.campanha.create({
