@@ -127,9 +127,9 @@ export async function findSubscriberByCustomField(
 ): Promise<{ id: string } | null> {
   const { signal, clear } = withTimeout(10000)
   try {
-    // Swagger: returns array of subscribers — filter by field_value client-side
-    const url = `${MANYCHAT_API_BASE}/fb/subscriber/findByCustomField?field_id=${fieldId}`
-    console.log(`[Manychat] findByCustomField field_id=${fieldId} (searching for field_value="${value}")`)
+    // field_value is required — must be URL-encoded with %2B for + prefix
+    const url = `${MANYCHAT_API_BASE}/fb/subscriber/findByCustomField?field_id=${fieldId}&field_value=${encodeURIComponent(value)}`
+    console.log(`[Manychat] findByCustomField field_id=${fieldId} field_value="${value}"`)
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       signal,
@@ -144,22 +144,11 @@ export async function findSubscriberByCustomField(
     try { data = JSON.parse(body) } catch { return null }
     if (data.status !== "success") return null
 
-    // Response is an array of subscribers
+    // API returns array of subscribers
     const list = Array.isArray(data.data) ? data.data as Array<Record<string, unknown>> : []
-    console.log(`[Manychat] findByCustomField returned ${list.length} subscribers`)
-
-    // Find subscriber whose field value matches
-    const match = list.find((sub) => {
-      const fields = sub.custom_fields as Array<{ field_id: number; value: string }> | undefined
-      if (!fields) return false
-      return fields.some((f) => f.field_id === fieldId && String(f.value) === value)
-    })
-
-    if (match?.id) return { id: String(match.id) }
-
-    // Fallback: if only one subscriber in list, return it
-    if (list.length === 1 && list[0].id) return { id: String(list[0].id) }
-
+    console.log(`[Manychat] findByCustomField returned ${list.length} result(s)`)
+    if (list.length === 0) return null
+    if (list[0]?.id) return { id: String(list[0].id) }
     return null
   } catch (err) {
     clear()
@@ -188,10 +177,8 @@ export async function createManychatSubscriber(
       body: JSON.stringify({
         first_name: firstName,
         last_name: lastName,
-        phone: normalizePhone(lead.telefone),
         whatsapp_phone: normalizePhone(lead.telefone),
-        whatsapp_phone_optin: true,
-        ...(lead.email && { email: lead.email }),
+        ...(lead.email && { email: lead.email, has_opt_in_email: false }),
       }),
       signal,
     })
