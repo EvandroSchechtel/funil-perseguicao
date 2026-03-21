@@ -102,6 +102,10 @@ export default function ClienteDetailPage() {
   const [editFieldConta, setEditFieldConta] = useState<Conta | null>(null)
   const [fieldIdInput, setFieldIdInput] = useState("")
   const [fieldIdLoading, setFieldIdLoading] = useState(false)
+  // Field ID for new conta dialog
+  const [newFieldId, setNewFieldId] = useState("")
+  const [ensureFieldStatus, setEnsureFieldStatus] = useState<"idle" | "loading" | "ok" | "error">("idle")
+  const [ensureFieldMsg, setEnsureFieldMsg] = useState("")
 
   // ── Notif WA state ───────────────────────────────────────────────────────────
   const [instanciasNotif, setInstanciasNotif] = useState<InstanciaZApi[]>([])
@@ -250,6 +254,30 @@ export default function ClienteDetailPage() {
   function handleOpenAddConta() {
     setShowAddConta(true); setContaNome(""); setApiKey(""); setShowKey(false)
     setTesteStatus("idle"); setTesteMsg(""); setAddErrors({})
+    setNewFieldId(""); setEnsureFieldStatus("idle"); setEnsureFieldMsg("")
+  }
+
+  async function handleEnsureField() {
+    if (!apiKey.trim()) return
+    setEnsureFieldStatus("loading"); setEnsureFieldMsg("")
+    try {
+      const res = await fetch("/api/admin/contas/ensure-field", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ api_key: apiKey.trim() }),
+      })
+      const data = await res.json()
+      if (res.ok && data.data?.ok) {
+        setEnsureFieldStatus("ok")
+        setEnsureFieldMsg(data.data.message)
+        if (data.data.field_id) setNewFieldId(String(data.data.field_id))
+      } else {
+        setEnsureFieldStatus("error")
+        setEnsureFieldMsg(data.data?.message || "Erro ao criar o campo.")
+      }
+    } catch {
+      setEnsureFieldStatus("error"); setEnsureFieldMsg("Erro de rede.")
+    }
   }
 
   async function handleAddConta() {
@@ -259,10 +287,15 @@ export default function ClienteDetailPage() {
     if (Object.keys(errs).length > 0) { setAddErrors(errs); return }
     setAddLoading(true)
     try {
+      const fieldIdNum = newFieldId.trim() ? parseInt(newFieldId.trim(), 10) : null
       const res = await fetch(`/api/admin/clientes/${id}/contas`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ nome: contaNome.trim(), api_key: apiKey.trim() }),
+        body: JSON.stringify({
+          nome: contaNome.trim(),
+          api_key: apiKey.trim(),
+          ...(fieldIdNum && !isNaN(fieldIdNum) && { whatsapp_field_id: fieldIdNum }),
+        }),
       })
       const data = await res.json()
       if (res.ok) { toast.success(data.message); setShowAddConta(false); fetchCliente() }
@@ -826,6 +859,43 @@ export default function ClienteDetailPage() {
                 </div>
               )}
               <p className="text-xs text-[#5A5A72]">Manychat → Configurações → API</p>
+            </div>
+            {/* Custom Field ID */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[#C4C4D4]">
+                ID do Custom Field <span className="text-[#5A5A72] font-normal text-xs">(whatsapp-id)</span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  value={newFieldId}
+                  onChange={(e) => setNewFieldId(e.target.value)}
+                  placeholder="Ex: 11947822"
+                  className="flex-1 h-10 px-3 rounded-lg border border-[#1E1E2A] bg-[#111118] text-sm text-[#F1F1F3] placeholder-[#5A5A72] focus:outline-none focus:border-[#25D366] transition-colors font-mono"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="shrink-0 h-10 px-4"
+                  onClick={handleEnsureField}
+                  disabled={ensureFieldStatus === "loading" || !apiKey.trim()}
+                >
+                  {ensureFieldStatus === "loading" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Criar campo"}
+                </Button>
+              </div>
+              {ensureFieldStatus === "ok" && (
+                <div className="flex items-center gap-1.5 text-[#25D366]">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span className="text-xs">{ensureFieldMsg}</span>
+                </div>
+              )}
+              {ensureFieldStatus === "error" && (
+                <div className="flex items-center gap-1.5 text-[#F87171]">
+                  <XCircle className="w-3.5 h-3.5" />
+                  <span className="text-xs">{ensureFieldMsg}</span>
+                </div>
+              )}
+              <p className="text-xs text-[#5A5A72]">Deixe em branco para criar automaticamente ao adicionar a conta.</p>
             </div>
           </div>
           <DialogFooter>

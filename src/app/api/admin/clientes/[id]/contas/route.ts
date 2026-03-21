@@ -8,6 +8,7 @@ import { adicionarContaAoCliente } from "@/lib/services/clientes.service"
 const addContaSchema = z.object({
   nome: z.string().min(1, "Nome da conta é obrigatório").max(200),
   api_key: z.string().min(1, "API Key é obrigatória"),
+  whatsapp_field_id: z.number().int().positive().nullable().optional(),
 })
 
 // POST /api/admin/clientes/[id]/contas
@@ -32,6 +33,7 @@ export async function POST(
     const result = await adicionarContaAoCliente(id, {
       nome: parsed.data.nome,
       api_key: parsed.data.api_key,
+      whatsapp_field_id: parsed.data.whatsapp_field_id ?? null,
       userId: user.id,
     })
     return ok(result)
