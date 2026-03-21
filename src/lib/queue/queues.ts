@@ -80,10 +80,11 @@ export async function addGrupoEventoJob(data: GrupoEventoJobData): Promise<void>
 
   // Entries: same phone+group → safe to dedup (DB upsert is idempotent)
   // Exits: include minute-epoch to allow multiple exits but dedup Z-API retries
+  // BullMQ v5 forbids ":" in custom jobIds (reserved for Redis key prefix)
   const jobId =
     tipo === "entrada"
-      ? `entrada:${instanciaId}:${telefone}:${grupoRef}`
-      : `saida:${instanciaId}:${telefone}:${grupoRef}:${Math.floor(Date.now() / 60000)}`
+      ? `entrada_${instanciaId}_${telefone}_${grupoRef}`
+      : `saida_${instanciaId}_${telefone}_${grupoRef}_${Math.floor(Date.now() / 60000)}`
 
   await getGrupoEventosQueue()
     .add("grupo-evento", data, { jobId })
