@@ -273,13 +273,15 @@ export async function processLeadInManychat(
     if (whatsappFieldId) {
       setWhatsappIdField(apiKey, knownSubscriberId, phone, whatsappFieldId).catch(() => {})
     }
-    // Ensure WhatsApp opt-in even for known subscribers (best-effort)
+    // Ensure WhatsApp opt-in — fire-and-forget with 8s timeout, never blocks sendFlow
     const [fn, ...rn] = lead.nome.trim().split(" ")
+    const { signal: optinS0, clear: optinC0 } = withTimeout(8000)
     fetch(`${MANYCHAT_API_BASE}/fb/subscriber/createSubscriber`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ first_name: fn, last_name: rn.join(" ") || "", whatsapp_phone: phone, has_opt_in_whatsapp: true }),
-    }).catch(() => {})
+      signal: optinS0,
+    }).then(() => optinC0()).catch(() => optinC0())
     const result = await sendFlowToSubscriber(apiKey, knownSubscriberId, flowNs)
     console.log(`[Manychat] sendFlow result →`, JSON.stringify(result))
     return { ok: result.ok, subscriber_id: knownSubscriberId, error: result.error }
@@ -328,22 +330,18 @@ export async function processLeadInManychat(
     }
   }
 
-  // 4. Ensure WhatsApp opt-in on existing subscriber (best-effort).
-  //    Manychat requires has_opt_in_whatsapp=true to send WhatsApp flows programmatically.
-  //    Calling createSubscriber again with the flag updates the opt-in even if they already exist.
+  // 4. Ensure WhatsApp opt-in — fire-and-forget with 8s timeout, never blocks sendFlow
   const [firstName, ...rest] = lead.nome.trim().split(" ")
-  await fetch(`${MANYCHAT_API_BASE}/fb/subscriber/createSubscriber`, {
+  const { signal: optinSignal, clear: optinClear } = withTimeout(8000)
+  fetch(`${MANYCHAT_API_BASE}/fb/subscriber/createSubscriber`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      first_name: firstName,
-      last_name: rest.join(" ") || "",
-      whatsapp_phone: phone,
-      has_opt_in_whatsapp: true,
-    }),
+    body: JSON.stringify({ first_name: firstName, last_name: rest.join(" ") || "", whatsapp_phone: phone, has_opt_in_whatsapp: true }),
+    signal: optinSignal,
   }).then((r) => r.text()).then((body) => {
-    console.log(`[Manychat] ensureWhatsappOptIn HTTP → ${body.slice(0, 200)}`)
-  }).catch(() => {})
+    optinClear()
+    console.log(`[Manychat] ensureWhatsappOptIn → ${body.slice(0, 200)}`)
+  }).catch(() => optinClear())
 
   // 5. Ensure custom field is set with "+phone" format (best-effort, so future lookups work)
   if (whatsappFieldId && subscriber) {
