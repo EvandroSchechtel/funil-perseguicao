@@ -65,12 +65,50 @@ export async function testManychatConnection(apiKey: string): Promise<ManychatCo
 }
 
 /**
- * Normalizes a phone number to E.164 format with + prefix.
- * Strips formatting chars and ensures leading +.
+ * Brazilian DDDs (area codes) — used to detect BR numbers without country code.
+ * Source: ANATEL official DDD list.
  */
-function normalizePhone(phone: string): string {
-  // Remove everything except digits and leading +
-  const digits = phone.replace(/[^\d]/g, "")
+const VALID_BR_DDDS = new Set([
+  "11","12","13","14","15","16","17","18","19",
+  "21","22","24","27","28",
+  "31","32","33","34","35","37","38",
+  "41","42","43","44","45","46","47","48","49",
+  "51","53","54","55",
+  "61","62","63","64","65","66","67","68","69",
+  "71","73","74","75","77","79",
+  "81","82","83","84","85","86","87","88","89",
+  "91","92","93","94","95","96","97","98","99",
+])
+
+/**
+ * Normalizes a phone number to E.164 format (+countrycode+digits).
+ *
+ * Rules (WhatsApp-only system, spec-aligned):
+ * 1. Strip all non-digit chars.
+ * 2. 12-13 digits starting with "55" → Brazilian number with DDI → E.164 directly.
+ * 3. 10-11 digits with a valid Brazilian DDD → Brazilian number without DDI → prepend 55.
+ * 4. Anything else → use as-is with + prefix (do not assume Brazil).
+ *
+ * Examples:
+ *   "+55 (42) 9 9823-4664" → "+5542998234664"
+ *   "42998234664"          → "+5542998234664"  (11 digits, DDD 42)
+ *   "5542998234664"        → "+5542998234664"  (13 digits, starts with 55)
+ *   "351912345678"         → "+351912345678"   (Portugal, not forced to BR)
+ */
+function normalizePhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "")
+
+  // 12-13 digits starting with 55 → Brazil with DDI → E.164
+  if ((digits.length === 12 || digits.length === 13) && digits.startsWith("55")) {
+    return `+${digits}`
+  }
+
+  // 10-11 digits with valid Brazilian DDD → Brazil without DDI → prepend 55
+  if ((digits.length === 10 || digits.length === 11) && VALID_BR_DDDS.has(digits.slice(0, 2))) {
+    return `+55${digits}`
+  }
+
+  // General case: use as-is (E.164 requires + prefix)
   return `+${digits}`
 }
 
@@ -83,12 +121,15 @@ export async function findSubscriberByPhone(
   apiKey: string,
   phone: string
 ): Promise<{ id: string } | null> {
-  const normalized = normalizePhone(phone) // +55...
-  const digits = phone.replace(/\D/g, "")  // 55... (no +)
+  const normalized = normalizePhone(phone)    // e.g. "+5542998234664"
+  const withoutPlus = normalized.slice(1)     // e.g. "5542998234664"
+  const rawDigits = phone.replace(/\D/g, "")  // e.g. "42998234664" (original digits)
 
-  // Swagger: params are "phone" or "email" directly (not system_field=X&value=Y)
-  // Try both +55... and 55... formats
-  for (const value of [normalized, digits]) {
+  // Try 3 candidates (deduplicated): E.164, digits-only-normalized, raw-digits
+  // This covers: Manychat storing "+55...", "55...", or the number as received
+  const candidates = [...new Set([normalized, withoutPlus, rawDigits])]
+
+  for (const value of candidates) {
     const { signal, clear } = withTimeout(10000)
     try {
       const url = `${MANYCHAT_API_BASE}/fb/subscriber/findBySystemField?phone=${encodeURIComponent(value)}`
@@ -250,6 +291,37 @@ export async function sendFlowToSubscriber(
   }
 }
 
+/**
+ * Updates an existing Manychat subscriber to ensure has_opt_in_whatsapp: true.
+ * Fire-and-forget — must be called (not awaited) whenever an existing subscriber is found,
+ * so that future sendFlow calls succeed even if the subscriber was created without opt-in.
+ * Uses updateSubscriber (not createSubscriber) because createSubscriber returns
+ * "alreadyExists" for existing subscribers and does NOT update the opt-in flag.
+ */
+async function updateManychatSubscriberOptIn(
+  apiKey: string,
+  subscriberId: string,
+  phone: string
+): Promise<void> {
+  const { signal, clear } = withTimeout(8000)
+  try {
+    await fetch(`${MANYCHAT_API_BASE}/fb/subscriber/updateSubscriber`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subscriber_id: subscriberId,
+        whatsapp_phone: normalizePhone(phone),
+        has_opt_in_whatsapp: true,
+      }),
+      signal,
+    })
+    clear()
+  } catch {
+    clear()
+    // best-effort — swallow errors
+  }
+}
+
 /** Returns true when a sendFlow error indicates a missing WhatsApp opt-in (Validation error). */
 function isOptInError(error?: string): boolean {
   const e = error?.toLowerCase() ?? ""
@@ -283,15 +355,8 @@ export async function processLeadInManychat(
     if (whatsappFieldId) {
       setWhatsappIdField(apiKey, knownSubscriberId, phone, whatsappFieldId).catch(() => {})
     }
-    // Ensure WhatsApp opt-in — fire-and-forget with 8s timeout, never blocks sendFlow
-    const [fn, ...rn] = lead.nome.trim().split(" ")
-    const { signal: optinS0, clear: optinC0 } = withTimeout(8000)
-    fetch(`${MANYCHAT_API_BASE}/fb/subscriber/createSubscriber`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ first_name: fn, last_name: rn.join(" ") || "", whatsapp_phone: phone, has_opt_in_whatsapp: true }),
-      signal: optinS0,
-    }).then(() => optinC0()).catch(() => optinC0())
+    // Ensure WhatsApp opt-in on existing subscriber — fire-and-forget, never blocks sendFlow
+    updateManychatSubscriberOptIn(apiKey, knownSubscriberId, lead.telefone).catch(() => {})
     const result = await sendFlowToSubscriber(apiKey, knownSubscriberId, flowNs)
     console.log(`[Manychat] sendFlow result →`, JSON.stringify(result))
     if (!result.ok && isOptInError(result.error)) {
@@ -343,18 +408,10 @@ export async function processLeadInManychat(
     }
   }
 
-  // 4. Ensure WhatsApp opt-in — fire-and-forget with 8s timeout, never blocks sendFlow
-  const [firstName, ...rest] = lead.nome.trim().split(" ")
-  const { signal: optinSignal, clear: optinClear } = withTimeout(8000)
-  fetch(`${MANYCHAT_API_BASE}/fb/subscriber/createSubscriber`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ first_name: firstName, last_name: rest.join(" ") || "", whatsapp_phone: phone, has_opt_in_whatsapp: true }),
-    signal: optinSignal,
-  }).then((r) => r.text()).then((body) => {
-    optinClear()
-    console.log(`[Manychat] ensureWhatsappOptIn → ${body.slice(0, 200)}`)
-  }).catch(() => optinClear())
+  // 4. Ensure WhatsApp opt-in on existing subscriber — fire-and-forget, never blocks sendFlow
+  // Uses updateSubscriber (not createSubscriber) — createSubscriber returns "alreadyExists"
+  // for existing subscribers without updating the opt-in flag.
+  updateManychatSubscriberOptIn(apiKey, subscriber.id, lead.telefone).catch(() => {})
 
   // 5. Ensure custom field is set with "+phone" format (best-effort, so future lookups work)
   if (whatsappFieldId && subscriber) {

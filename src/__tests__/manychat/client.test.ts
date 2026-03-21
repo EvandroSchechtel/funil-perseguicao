@@ -103,11 +103,17 @@ function indexOfFirst(calls: FetchCall[], endpoint: string): number {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// INVARIANT 1 — has_opt_in_whatsapp: true MUST be present in every
-// createSubscriber call, always. This is the fix for Manychat "Validation error".
+// INVARIANT 1 — has_opt_in_whatsapp: true MUST be ensured for every subscriber.
+//
+// Strategy:
+//   NEW subscriber  → createSubscriber with has_opt_in_whatsapp: true
+//   EXISTING subscriber → updateSubscriber with has_opt_in_whatsapp: true
+//
+// Rationale: createSubscriber returns "alreadyExists" for existing subscribers
+// WITHOUT updating opt-in. updateSubscriber actually sets the flag.
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe("INVARIANT: has_opt_in_whatsapp=true in all createSubscriber calls", () => {
+describe("INVARIANT: has_opt_in_whatsapp=true ensured for all subscribers", () => {
   it("createManychatSubscriber includes has_opt_in_whatsapp: true in request body", async () => {
     const { calls } = setupFetch()
     await createManychatSubscriber(API_KEY, LEAD)
@@ -124,13 +130,12 @@ describe("INVARIANT: has_opt_in_whatsapp=true in all createSubscriber calls", ()
 
     const createCalls = callsTo(calls, "/fb/subscriber/createSubscriber")
     expect(createCalls.length, "createSubscriber must be called at least once").toBeGreaterThan(0)
-    // EVERY createSubscriber call must have the flag
     for (const c of createCalls) {
       expect(c.body?.has_opt_in_whatsapp, `createSubscriber call missing has_opt_in_whatsapp: ${JSON.stringify(c.body)}`).toBe(true)
     }
   })
 
-  it("processLeadInManychat — found via custom field: opt-in upsert has has_opt_in_whatsapp=true", async () => {
+  it("processLeadInManychat — found via custom field: updateSubscriber called with has_opt_in_whatsapp=true", async () => {
     const { calls } = setupFetch({
       "/fb/subscriber/findByCustomField": {
         body: { status: "success", data: [{ id: SUB_ID }] },
@@ -138,15 +143,15 @@ describe("INVARIANT: has_opt_in_whatsapp=true in all createSubscriber calls", ()
     })
     await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
 
-    const createCalls = callsTo(calls, "/fb/subscriber/createSubscriber")
-    // Opt-in upsert must have been called
-    expect(createCalls.length, "opt-in upsert must be called before sendFlow").toBeGreaterThan(0)
-    for (const c of createCalls) {
+    const updateCalls = callsTo(calls, "/fb/subscriber/updateSubscriber")
+    expect(updateCalls.length, "updateSubscriber must be called to set opt-in on existing subscriber").toBeGreaterThan(0)
+    for (const c of updateCalls) {
       expect(c.body?.has_opt_in_whatsapp).toBe(true)
+      expect(c.body?.subscriber_id).toBe(SUB_ID)
     }
   })
 
-  it("processLeadInManychat — found via system field: opt-in upsert has has_opt_in_whatsapp=true", async () => {
+  it("processLeadInManychat — found via system field: updateSubscriber called with has_opt_in_whatsapp=true", async () => {
     const { calls } = setupFetch({
       "/fb/subscriber/findBySystemField": {
         body: { status: "success", data: { id: SUB_ID } },
@@ -154,22 +159,23 @@ describe("INVARIANT: has_opt_in_whatsapp=true in all createSubscriber calls", ()
     })
     await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null)
 
-    const createCalls = callsTo(calls, "/fb/subscriber/createSubscriber")
-    expect(createCalls.length).toBeGreaterThan(0)
-    for (const c of createCalls) {
+    const updateCalls = callsTo(calls, "/fb/subscriber/updateSubscriber")
+    expect(updateCalls.length, "updateSubscriber must be called for existing subscriber found via system field").toBeGreaterThan(0)
+    for (const c of updateCalls) {
       expect(c.body?.has_opt_in_whatsapp).toBe(true)
+      expect(c.body?.subscriber_id).toBe(SUB_ID)
     }
   })
 
-  it("processLeadInManychat — knownSubscriberId path: opt-in upsert has has_opt_in_whatsapp=true", async () => {
+  it("processLeadInManychat — knownSubscriberId path: updateSubscriber called with has_opt_in_whatsapp=true", async () => {
     const { calls } = setupFetch()
     await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null, SUB_ID)
 
-    // Even when subscriber_id is already known, opt-in upsert must run
-    const createCalls = callsTo(calls, "/fb/subscriber/createSubscriber")
-    expect(createCalls.length, "opt-in upsert must run even for known subscriber_id").toBeGreaterThan(0)
-    for (const c of createCalls) {
+    const updateCalls = callsTo(calls, "/fb/subscriber/updateSubscriber")
+    expect(updateCalls.length, "updateSubscriber must run even for known subscriber_id").toBeGreaterThan(0)
+    for (const c of updateCalls) {
       expect(c.body?.has_opt_in_whatsapp).toBe(true)
+      expect(c.body?.subscriber_id).toBe(SUB_ID)
     }
   })
 })
@@ -244,8 +250,8 @@ describe("INVARIANT: sendFlowToSubscriber called with correct subscriber_id", ()
 // INVARIANT 3 — opt-in upsert happens BEFORE sendFlow (order matters)
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe("INVARIANT: opt-in upsert runs before sendFlow", () => {
-  it("found by custom field: createSubscriber (opt-in upsert) index < sendFlow index", async () => {
+describe("INVARIANT: opt-in upsert (updateSubscriber) runs before sendFlow", () => {
+  it("found by custom field: updateSubscriber index < sendFlow index", async () => {
     const { calls } = setupFetch({
       "/fb/subscriber/findByCustomField": {
         body: { status: "success", data: [{ id: SUB_ID }] },
@@ -253,15 +259,15 @@ describe("INVARIANT: opt-in upsert runs before sendFlow", () => {
     })
     await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
 
-    const createIdx = indexOfFirst(calls, "/fb/subscriber/createSubscriber")
+    const updateIdx = indexOfFirst(calls, "/fb/subscriber/updateSubscriber")
     const sendIdx = indexOfFirst(calls, "/fb/sending/sendFlow")
 
-    expect(createIdx, "opt-in upsert (createSubscriber) must be called").toBeGreaterThanOrEqual(0)
+    expect(updateIdx, "updateSubscriber must be called").toBeGreaterThanOrEqual(0)
     expect(sendIdx, "sendFlow must be called").toBeGreaterThanOrEqual(0)
-    expect(createIdx).toBeLessThan(sendIdx)
+    expect(updateIdx).toBeLessThan(sendIdx)
   })
 
-  it("found by system field: createSubscriber (opt-in upsert) index < sendFlow index", async () => {
+  it("found by system field: updateSubscriber index < sendFlow index", async () => {
     const { calls } = setupFetch({
       "/fb/subscriber/findBySystemField": {
         body: { status: "success", data: { id: SUB_ID } },
@@ -269,12 +275,12 @@ describe("INVARIANT: opt-in upsert runs before sendFlow", () => {
     })
     await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null)
 
-    const createIdx = indexOfFirst(calls, "/fb/subscriber/createSubscriber")
+    const updateIdx = indexOfFirst(calls, "/fb/subscriber/updateSubscriber")
     const sendIdx = indexOfFirst(calls, "/fb/sending/sendFlow")
 
-    expect(createIdx).toBeGreaterThanOrEqual(0)
+    expect(updateIdx).toBeGreaterThanOrEqual(0)
     expect(sendIdx).toBeGreaterThanOrEqual(0)
-    expect(createIdx).toBeLessThan(sendIdx)
+    expect(updateIdx).toBeLessThan(sendIdx)
   })
 })
 
@@ -461,10 +467,15 @@ describe("INVARIANT: Validation error from sendFlow → sem_optin=true", () => {
 })
 
 // ═════════════════════════════════════════════════════════════════════════════
-// INVARIANT 7 — phone normalization: always uses E.164 (+55...) format
+// INVARIANT 7 — phone normalization: smart E.164 with Brazilian DDD detection
+//
+// Rules (spec-aligned):
+//   12-13 digits starting with 55  → Brazil with DDI → +55...
+//   10-11 digits with valid DDD BR → Brazil without DDI → prepend 55 → +55...
+//   Anything else                  → use as-is with + prefix (no Brazil assumed)
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe("INVARIANT: phone normalization to E.164 (+55...) format", () => {
+describe("INVARIANT: phone normalization — smart E.164 with BR DDD detection", () => {
   it("createSubscriber uses E.164 phone format with + prefix", async () => {
     const { calls } = setupFetch()
     await createManychatSubscriber(API_KEY, LEAD)
@@ -481,7 +492,7 @@ describe("INVARIANT: phone normalization to E.164 (+55...) format", () => {
     expect(lookupCall?.url).toContain(encodeURIComponent(PHONE_E164))
   })
 
-  it("opt-in upsert in processLeadInManychat uses E.164 format", async () => {
+  it("updateSubscriber opt-in upsert uses E.164 format", async () => {
     const { calls } = setupFetch({
       "/fb/subscriber/findByCustomField": {
         body: { status: "success", data: [{ id: SUB_ID }] },
@@ -489,9 +500,48 @@ describe("INVARIANT: phone normalization to E.164 (+55...) format", () => {
     })
     await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
 
-    const createCalls = callsTo(calls, "/fb/subscriber/createSubscriber")
-    for (const c of createCalls) {
+    const updateCalls = callsTo(calls, "/fb/subscriber/updateSubscriber")
+    expect(updateCalls.length).toBeGreaterThan(0)
+    for (const c of updateCalls) {
       expect(c.body?.whatsapp_phone).toBe(PHONE_E164)
     }
+  })
+
+  // ── Smart normalization unit cases ────────────────────────────────────────
+
+  it("BR number with DDI (13 digits, starts with 55) → +55...", async () => {
+    // LEAD telefone = "5542998234664" → already has DDI 55
+    const { calls } = setupFetch()
+    await createManychatSubscriber(API_KEY, { nome: "Test", telefone: "5542998234664" })
+    const c = callsTo(calls, "/fb/subscriber/createSubscriber")[0]
+    expect(c.body?.whatsapp_phone).toBe("+5542998234664")
+  })
+
+  it("BR number without DDI (11 digits, valid DDD 42) → prepends 55 → +5542...", async () => {
+    const { calls } = setupFetch()
+    await createManychatSubscriber(API_KEY, { nome: "Test", telefone: "42998234664" })
+    const c = callsTo(calls, "/fb/subscriber/createSubscriber")[0]
+    expect(c.body?.whatsapp_phone).toBe("+5542998234664")
+  })
+
+  it("BR number without DDI (10 digits, valid DDD 42) → prepends 55 → +5542...", async () => {
+    const { calls } = setupFetch()
+    await createManychatSubscriber(API_KEY, { nome: "Test", telefone: "4298234664" })
+    const c = callsTo(calls, "/fb/subscriber/createSubscriber")[0]
+    expect(c.body?.whatsapp_phone).toBe("+554298234664")
+  })
+
+  it("Portuguese number (12 digits, 351...) → NOT forced to BR → +351...", async () => {
+    const { calls } = setupFetch()
+    await createManychatSubscriber(API_KEY, { nome: "Test", telefone: "351912345678" })
+    const c = callsTo(calls, "/fb/subscriber/createSubscriber")[0]
+    expect(c.body?.whatsapp_phone).toBe("+351912345678")
+  })
+
+  it("Formatted BR number with +55 and spaces → stripped to +5542...", async () => {
+    const { calls } = setupFetch()
+    await createManychatSubscriber(API_KEY, { nome: "Test", telefone: "+55 (42) 9 9823-4664" })
+    const c = callsTo(calls, "/fb/subscriber/createSubscriber")[0]
+    expect(c.body?.whatsapp_phone).toBe("+5542998234664")
   })
 })
