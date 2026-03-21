@@ -69,7 +69,16 @@ interface LeadItem {
   id: string
   nome: string
   telefone: string
+  email: string | null
   status: string
+  erro_msg: string | null
+  tentativas: number
+  subscriber_id: string | null
+  flow_executado: string | null
+  conta_nome: string | null
+  grupo_entrou_at: string | null
+  grupo_saiu_at: string | null
+  processado_at: string | null
   created_at: string
   webhook: { nome: string } | null
 }
@@ -88,6 +97,24 @@ function statusColor(s: string) {
   if (s === "ok" || s === "enviado") return "text-[#25D366]"
   if (s === "falha" || s === "erro") return "text-[#F87171]"
   return "text-[#F59E0B]"
+}
+
+function fmtDt(str: string | null) {
+  if (!str) return null
+  return new Date(str).toLocaleString("pt-BR", {
+    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+  })
+}
+
+function leadStatusStyle(status: string): { border: string; badge: string; bg: string } {
+  switch (status) {
+    case "sucesso": return { border: "border-l-[#25D366]", badge: "bg-[#25D366]/15 text-[#25D366]", bg: "" }
+    case "falha":   return { border: "border-l-[#F87171]", badge: "bg-[#F87171]/15 text-[#F87171]", bg: "" }
+    case "sem_optin": return { border: "border-l-[#F59E0B]", badge: "bg-[#F59E0B]/15 text-[#F59E0B]", bg: "" }
+    case "processando": return { border: "border-l-[#60A5FA]", badge: "bg-[#60A5FA]/15 text-[#60A5FA]", bg: "" }
+    case "aguardando": return { border: "border-l-[#F59E0B]", badge: "bg-[#F59E0B]/15 text-[#F59E0B]", bg: "" }
+    default: return { border: "border-l-[#8B8B9E]", badge: "bg-[#8B8B9E]/15 text-[#8B8B9E]", bg: "" }
+  }
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
@@ -813,43 +840,82 @@ export default function CampanhaDetailPage() {
                     <Button variant="outline" size="sm">Ver todos em Leads</Button>
                   </Link>
                 </div>
-                <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-hidden">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-[#1E1E2A]">
-                        <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Nome</th>
-                        <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Telefone</th>
-                        <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Status</th>
-                        <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Webhook</th>
-                        <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Recebido</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {leads.map((lead) => (
-                        <tr key={lead.id} className="border-b border-[#1E1E2A] last:border-0 hover:bg-[#1C1C28] transition-colors">
-                          <td className="px-5 py-3">
-                            <Link href={`/admin/leads/${lead.id}`} className="text-[#F1F1F3] font-medium text-sm hover:text-[#25D366] transition-colors">
+                <div className="space-y-3">
+                  {leads.map((lead) => {
+                    const style = leadStatusStyle(lead.status)
+                    const isError = lead.status === "falha" || lead.status === "sem_optin"
+                    return (
+                      <div
+                        key={lead.id}
+                        className={`bg-[#16161E] border border-[#1E1E2A] border-l-4 ${style.border} rounded-xl px-5 py-4`}
+                      >
+                        {/* Row 1: name + phone + status badge */}
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="flex items-baseline gap-3 min-w-0">
+                            <Link
+                              href={`/admin/leads/${lead.id}`}
+                              className="text-[#F1F1F3] font-semibold text-sm hover:text-[#25D366] transition-colors truncate"
+                            >
                               {lead.nome}
                             </Link>
-                          </td>
-                          <td className="px-5 py-3">
-                            <span className="text-[#C4C4D4] text-sm font-mono">{lead.telefone}</span>
-                          </td>
-                          <td className="px-5 py-3">
-                            <span className={`text-xs font-medium capitalize ${statusColor(lead.status)}`}>
-                              {lead.status}
+                            <span className="text-[#8B8B9E] text-xs font-mono shrink-0">{lead.telefone}</span>
+                          </div>
+                          <span className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full shrink-0 ${style.badge}`}>
+                            {lead.status}
+                          </span>
+                        </div>
+
+                        {/* Row 2: timeline strip */}
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs mb-2">
+                          <span className="flex items-center gap-1 text-[#8B8B9E]">
+                            <span className="text-[#5A5A72]">📅</span>
+                            Recebido: <span className="text-[#C4C4D4] font-mono">{fmtDt(lead.created_at) ?? "—"}</span>
+                          </span>
+                          <span className="flex items-center gap-1 text-[#8B8B9E]">
+                            <span className={lead.processado_at ? "text-[#25D366]" : "text-[#5A5A72]"}>⚡</span>
+                            Flow:{" "}
+                            {lead.processado_at
+                              ? <span className="text-[#25D366] font-mono">{fmtDt(lead.processado_at)}</span>
+                              : <span className="text-[#5A5A72]">—</span>
+                            }
+                            {lead.conta_nome && (
+                              <span className="text-[#5A5A72]"> · {lead.conta_nome}</span>
+                            )}
+                          </span>
+                          {lead.grupo_entrou_at && (
+                            <span className="flex items-center gap-1 text-[#8B8B9E]">
+                              <span className="text-[#25D366]">👥</span>
+                              Entrou grupo: <span className="text-[#25D366] font-mono">{fmtDt(lead.grupo_entrou_at)}</span>
                             </span>
-                          </td>
-                          <td className="px-5 py-3">
-                            <span className="text-[#8B8B9E] text-xs">{lead.webhook?.nome || "—"}</span>
-                          </td>
-                          <td className="px-5 py-3">
-                            <span className="text-[#5A5A72] text-xs">{formatDate(lead.created_at)}</span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                          )}
+                          {lead.grupo_saiu_at && (
+                            <span className="flex items-center gap-1 text-[#8B8B9E]">
+                              <span className="text-[#F87171]">🚪</span>
+                              Saiu grupo: <span className="text-[#F87171] font-mono">{fmtDt(lead.grupo_saiu_at)}</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Row 3: flow_ns + tentativas + webhook */}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-[#5A5A72]">
+                          {lead.flow_executado && (
+                            <span className="font-mono truncate max-w-[200px]" title={lead.flow_executado}>
+                              {lead.flow_executado}
+                            </span>
+                          )}
+                          <span>{lead.tentativas} tentativa{lead.tentativas !== 1 ? "s" : ""}</span>
+                          {lead.webhook?.nome && (
+                            <span className="text-[#5A5A72]">· {lead.webhook.nome}</span>
+                          )}
+                        </div>
+
+                        {/* Row 4: error message */}
+                        {isError && lead.erro_msg && (
+                          <p className="text-[#F87171] text-xs mt-2 leading-snug">{lead.erro_msg}</p>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </>
             )}
