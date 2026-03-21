@@ -22,9 +22,15 @@ interface Lead {
   processado_at: string | null
   created_at: string
   webhook: { id: string; nome: string }
+  campanha: { id: string; nome: string } | null
 }
 
 interface WebhookOption {
+  id: string
+  nome: string
+}
+
+interface CampanhaOption {
   id: string
   nome: string
 }
@@ -63,7 +69,9 @@ export default function LeadsPage() {
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("todos")
   const [webhookFilter, setWebhookFilter] = useState("")
+  const [campanhaFilter, setCampanhaFilter] = useState("")
   const [webhooks, setWebhooks] = useState<WebhookOption[]>([])
+  const [campanhas, setCampanhas] = useState<CampanhaOption[]>([])
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
@@ -84,6 +92,12 @@ export default function LeadsPage() {
       .then((r) => r.json())
       .then((data) => setWebhooks(data.webhooks || []))
       .catch(() => {})
+    fetch("/api/admin/campanhas?per_page=100", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+      .then((r) => r.json())
+      .then((data) => setCampanhas(data.data || []))
+      .catch(() => {})
   }, [accessToken])
 
   const fetchLeads = useCallback(async () => {
@@ -96,6 +110,7 @@ export default function LeadsPage() {
         ...(search && { q: search }),
         ...(statusFilter && statusFilter !== "todos" && { status: statusFilter }),
         ...(webhookFilter && { webhook_id: webhookFilter }),
+        ...(campanhaFilter && { campanha_id: campanhaFilter }),
       })
       const res = await fetch(`/api/admin/leads?${params}`, {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -111,9 +126,9 @@ export default function LeadsPage() {
     } finally {
       setLoading(false)
     }
-  }, [accessToken, page, search, statusFilter, webhookFilter])
+  }, [accessToken, page, search, statusFilter, webhookFilter, campanhaFilter])
 
-  useEffect(() => { setPage(1) }, [search, statusFilter, webhookFilter])
+  useEffect(() => { setPage(1) }, [search, statusFilter, webhookFilter, campanhaFilter])
   useEffect(() => {
     const timer = setTimeout(fetchLeads, search ? 400 : 0)
     return () => clearTimeout(timer)
@@ -274,6 +289,18 @@ export default function LeadsPage() {
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
+          {campanhas.length > 0 && (
+            <select
+              value={campanhaFilter}
+              onChange={(e) => setCampanhaFilter(e.target.value)}
+              className="h-10 px-3 rounded-lg border border-[#1E1E2A] bg-[#111118] text-sm text-[#F1F1F3] focus:outline-none focus:border-[#25D366] transition-colors"
+            >
+              <option value="">Todas as campanhas</option>
+              {campanhas.map((c) => (
+                <option key={c.id} value={c.id}>{c.nome}</option>
+              ))}
+            </select>
+          )}
           {webhooks.length > 0 && (
             <select
               value={webhookFilter}
@@ -323,10 +350,10 @@ export default function LeadsPage() {
               </div>
               <div className="text-center">
                 <p className="text-[#F1F1F3] font-semibold text-lg">
-                  {search || statusFilter !== "todos" || webhookFilter ? "Nenhum lead encontrado" : "Nenhum lead ainda"}
+                  {search || statusFilter !== "todos" || webhookFilter || campanhaFilter ? "Nenhum lead encontrado" : "Nenhum lead ainda"}
                 </p>
                 <p className="text-[#8B8B9E] text-sm mt-1">
-                  {search || statusFilter !== "todos" || webhookFilter
+                  {search || statusFilter !== "todos" || webhookFilter || campanhaFilter
                     ? "Tente ajustar os filtros"
                     : "Leads aparecerão aqui após os primeiros webhooks serem recebidos"}
                 </p>
@@ -348,7 +375,7 @@ export default function LeadsPage() {
                       </th>
                     )}
                     <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Nome / Contato</th>
-                    <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Webhook</th>
+                    <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Campanha / Webhook</th>
                     <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Status</th>
                     <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Tentativas</th>
                     <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Grupo WA</th>
@@ -379,7 +406,10 @@ export default function LeadsPage() {
                           </Link>
                         </td>
                         <td className="px-5 py-3">
-                          <span className="text-[#C4C4D4] text-sm">{lead.webhook.nome}</span>
+                          {lead.campanha && (
+                            <p className="text-[#C4C4D4] text-sm">{lead.campanha.nome}</p>
+                          )}
+                          <p className="text-[#5A5A72] text-xs mt-0.5">{lead.webhook.nome}</p>
                         </td>
                         <td className="px-5 py-3">{statusBadge(lead.status)}</td>
                         <td className="px-5 py-3">

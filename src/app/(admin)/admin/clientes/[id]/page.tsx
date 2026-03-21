@@ -57,7 +57,21 @@ interface ClienteData {
 }
 
 type TesteStatus = "idle" | "testing" | "ok" | "error"
-type Tab = "dados" | "campanhas" | "manychat" | "zapi" | "notif-wa"
+type Tab = "dados" | "campanhas" | "contatos" | "manychat" | "zapi" | "notif-wa"
+
+interface ContatoItem {
+  id: string
+  nome: string
+  telefone: string
+  email: string | null
+  created_at: string
+  leads: Array<{
+    id: string
+    status: string
+    grupo_entrou_at: string | null
+    campanha: { id: string; nome: string } | null
+  }>
+}
 
 function formatDate(str: string) {
   return new Date(str).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })
@@ -99,6 +113,12 @@ export default function ClienteDetailPage() {
   // ── Campanhas tab ────────────────────────────────────────────────────────────
   const [campanhas, setCampanhas] = useState<CampanhaItem[]>([])
   const [loadingCampanhas, setLoadingCampanhas] = useState(false)
+
+  // ── Contatos tab ─────────────────────────────────────────────────────────────
+  const [contatos, setContatos] = useState<ContatoItem[]>([])
+  const [loadingContatos, setLoadingContatos] = useState(false)
+  const [contatosTotal, setContatosTotal] = useState(0)
+  const [contatosSearch, setContatosSearch] = useState("")
 
   // ── Z-API tab ────────────────────────────────────────────────────────────────
   const [instancias, setInstancias] = useState<InstanciaZApi[]>([])
@@ -161,6 +181,26 @@ export default function ClienteDetailPage() {
     }
   }, [accessToken, id])
 
+  // ── Fetch contatos for this client (lazy) ───────────────────────────────────
+
+  const fetchContatos = useCallback(async (search = "") => {
+    if (!accessToken || !id) return
+    setLoadingContatos(true)
+    try {
+      const params = new URLSearchParams({ per_page: "50" })
+      if (search) params.set("q", search)
+      const res = await fetch(`/api/admin/clientes/${id}/contatos?${params}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      setContatos(data.data?.contatos || [])
+      setContatosTotal(data.data?.pagination?.total || 0)
+    } catch { /* silent */ } finally {
+      setLoadingContatos(false)
+    }
+  }, [accessToken, id])
+
   // ── Fetch Z-API instancias for this client (lazy) ───────────────────────────
 
   const fetchInstancias = useCallback(async () => {
@@ -180,6 +220,7 @@ export default function ClienteDetailPage() {
 
   useEffect(() => {
     if (tab === "campanhas" && campanhas.length === 0) fetchCampanhas()
+    if (tab === "contatos" && contatos.length === 0) fetchContatos()
     if (tab === "zapi" && instancias.length === 0) fetchInstancias()
   }, [tab])  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -331,6 +372,7 @@ export default function ClienteDetailPage() {
   const tabs: { id: Tab; label: string }[] = [
     { id: "dados", label: "Dados" },
     { id: "campanhas", label: "Campanhas" },
+    { id: "contatos", label: `Contatos${contatosTotal > 0 ? ` (${contatosTotal})` : ""}` },
     { id: "manychat", label: `Manychat${cliente.contas_manychat.length > 0 ? ` (${cliente.contas_manychat.length})` : ""}` },
     { id: "zapi", label: "Z-API" },
     { id: "notif-wa", label: "Notificações WA" },
@@ -441,6 +483,106 @@ export default function ClienteDetailPage() {
                     </div>
                   </Link>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Tab: Contatos ─────────────────────────────────────────────────── */}
+        {tab === "contatos" && (
+          <div className="p-6 max-w-3xl space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-[#8B8B9E] text-sm">
+                {contatosTotal > 0 ? `${contatosTotal} contato${contatosTotal !== 1 ? "s" : ""} vinculados via campanha` : "Contatos vinculados a este cliente via campanha"}
+              </p>
+              <div className="flex-1 max-w-xs ml-4">
+                <input
+                  placeholder="Buscar por nome ou telefone..."
+                  value={contatosSearch}
+                  onChange={(e) => { setContatosSearch(e.target.value); fetchContatos(e.target.value) }}
+                  className="w-full h-9 px-3 rounded-lg border border-[#1E1E2A] bg-[#111118] text-sm text-[#F1F1F3] placeholder-[#5A5A72] focus:outline-none focus:border-[#25D366] transition-colors"
+                />
+              </div>
+            </div>
+
+            {loadingContatos ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin w-5 h-5 border-2 border-[#25D366] border-t-transparent rounded-full" />
+              </div>
+            ) : contatos.length === 0 ? (
+              <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl flex flex-col items-center justify-center py-14 gap-4">
+                <Users2 className="w-10 h-10 text-[#5A5A72]" />
+                <div className="text-center">
+                  <p className="text-[#C4C4D4] font-medium">Nenhum contato encontrado</p>
+                  <p className="text-[#5A5A72] text-sm mt-1">
+                    {contatosSearch ? "Tente ajustar a busca" : "Contatos aparecerão aqui quando leads forem processados"}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-hidden">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[#1E1E2A]">
+                      <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Contato</th>
+                      <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Campanha</th>
+                      <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Status</th>
+                      <th className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">Grupo WA</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {contatos.map((c) => (
+                      <tr key={c.id} className="border-b border-[#1E1E2A] last:border-0 hover:bg-[#1C1C28] transition-colors">
+                        <td className="px-5 py-3">
+                          <p className="text-[#F1F1F3] text-sm font-medium">{c.nome}</p>
+                          <p className="text-[#5A5A72] text-xs mt-0.5">{c.telefone}</p>
+                          {c.email && <p className="text-[#5A5A72] text-xs">{c.email}</p>}
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="space-y-1">
+                            {c.leads.map((l) => (
+                              <div key={l.id}>
+                                {l.campanha && (
+                                  <Link href={`/admin/campanhas/${l.campanha.id}`} className="text-[#C4C4D4] text-xs hover:text-[#25D366] transition-colors">
+                                    {l.campanha.nome}
+                                  </Link>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-5 py-3">
+                          {c.leads[0] && (() => {
+                            const s = c.leads[0].status
+                            const variants: Record<string, string> = {
+                              sucesso: "bg-[#162516] text-[#25D366] border-[#25D366]/30",
+                              falha: "bg-[#2A1616] text-[#F87171] border-[#F87171]/30",
+                              processando: "bg-[#1E1E2A] text-[#60A5FA] border-[#60A5FA]/30",
+                              aguardando: "bg-[#1A1500] text-[#F59E0B] border-[#F59E0B]/40",
+                              pendente: "bg-[#2A2A1E] text-[#F59E0B] border-[#F59E0B]/30",
+                              sem_optin: "bg-[#2A2010] text-[#F59E0B] border-[#F59E0B]/30",
+                            }
+                            return (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${variants[s] || ""}`}>
+                                {s}
+                              </span>
+                            )
+                          })()}
+                        </td>
+                        <td className="px-5 py-3">
+                          {c.leads[0]?.grupo_entrou_at ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-[#25D366]">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#25D366] shrink-0" />
+                              {new Date(c.leads[0].grupo_entrou_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                            </span>
+                          ) : (
+                            <span className="text-[#5A5A72] text-xs">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
