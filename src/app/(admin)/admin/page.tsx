@@ -10,7 +10,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts"
-import { RefreshCw, Users2, CheckCircle2, XCircle, TrendingUp, Activity, Layers } from "lucide-react"
+import { RefreshCw, Users2, CheckCircle2, XCircle, TrendingUp, Activity, Layers, AlertTriangle, CheckCheck, Loader2 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Header } from "@/components/layout/Header"
 import { toast } from "sonner"
@@ -18,6 +18,11 @@ import { toast } from "sonner"
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+interface AlertaSistema {
+  id: string; titulo: string; mensagem: string; nivel: string
+  referencia_nome?: string | null; created_at: string
+}
 
 interface FilterOptions {
   clientes: { id: string; nome: string }[]
@@ -219,6 +224,10 @@ export default function DashboardPage() {
   const [campanhaId, setCampanhaId] = useState("")
   const [contaId, setContaId] = useState("")
 
+  // --- Alertas ---
+  const [alertasCriticos, setAlertasCriticos] = useState<AlertaSistema[]>([])
+  const [resolvingId, setResolvingId] = useState<string | null>(null)
+
   // --- Filter options ---
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null)
 
@@ -234,6 +243,32 @@ export default function DashboardPage() {
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
 
   const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // --- Fetch alertas críticos ---
+  useEffect(() => {
+    if (!accessToken) return
+    fetch("/api/admin/alertas", { headers: { Authorization: `Bearer ${accessToken}` } })
+      .then((r) => r.json())
+      .then((json) => {
+        const ativos: AlertaSistema[] = json?.data?.ativos ?? []
+        setAlertasCriticos(ativos.filter((a) => a.nivel === "critico"))
+      })
+      .catch(() => {})
+  }, [accessToken])
+
+  const resolverAlerta = useCallback(async (id: string) => {
+    if (!accessToken) return
+    setResolvingId(id)
+    try {
+      await fetch(`/api/admin/alertas/${id}/resolve`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      setAlertasCriticos((prev) => prev.filter((a) => a.id !== id))
+    } finally {
+      setResolvingId(null)
+    }
+  }, [accessToken])
 
   // --- Fetch filter options ---
   useEffect(() => {
@@ -358,6 +393,43 @@ export default function DashboardPage() {
             Atualizar
           </button>
         </div>
+
+        {/* Alertas críticos */}
+        {alertasCriticos.length > 0 && (
+          <div className="bg-[#2A1616] border border-[#F87171]/40 rounded-xl p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-[#F87171] animate-pulse shrink-0" />
+              <p className="text-[#F87171] text-sm font-semibold">
+                {alertasCriticos.length} alerta{alertasCriticos.length > 1 ? "s" : ""} crítico{alertasCriticos.length > 1 ? "s" : ""}
+              </p>
+            </div>
+            <ul className="space-y-2">
+              {alertasCriticos.map((a) => (
+                <li key={a.id} className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[#F1F1F3] text-xs font-medium">{a.titulo}</p>
+                    <p className="text-[#8B8B9E] text-xs mt-0.5">{a.mensagem}</p>
+                    <p className="text-[#5A5A72] text-[10px] mt-0.5">
+                      {new Date(a.created_at).toLocaleString("pt-BR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" })}
+                      {a.referencia_nome && <> · <span className="font-mono">{a.referencia_nome}</span></>}
+                    </p>
+                  </div>
+                  <button
+                    disabled={resolvingId === a.id}
+                    onClick={() => resolverAlerta(a.id)}
+                    className="shrink-0 flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md border border-[#F87171]/30 text-[#F87171] hover:bg-[#F87171]/10 disabled:opacity-50 transition-colors"
+                  >
+                    {resolvingId === a.id ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <><CheckCheck className="w-3 h-3" /> Resolver</>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Filter bar */}
         <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-4 space-y-3">

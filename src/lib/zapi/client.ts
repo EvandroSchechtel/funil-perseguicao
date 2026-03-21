@@ -184,7 +184,9 @@ export async function sendTextMessage(
 export interface ZApiWebhookPayload {
   type: string
   isGroup?: boolean
-  notification?: string           // "GROUP_PARTICIPANT_ADD" | "GROUP_PARTICIPANT_REMOVE" | ...
+  notification?: string           // "GROUP_PARTICIPANT_ADD" | "GROUP_PARTICIPANT_REMOVE" |
+                                  // "GROUP_PARTICIPANT_LEAVE" | "MEMBERSHIP_APPROVAL_REQUEST" | ...
+  notificationParameters?: string[] // phones involved in the event (Z-API official docs)
   phone?: string                  // group ID (e.g. "120363019502650977-group") or sender phone
   chatId?: string                 // group/chat ID (e.g. "120363019502650977@g.us")
   chatName?: string               // group display name
@@ -203,10 +205,10 @@ export interface ZApiWebhookPayload {
 
 /**
  * Returns true if the payload represents a participant joining a group.
+ * Note: isGroup may not always be set by Z-API, so we don't require it.
  */
 export function isGroupJoinEvent(payload: ZApiWebhookPayload): boolean {
   return (
-    payload.isGroup === true &&
     payload.notification === "GROUP_PARTICIPANT_ADD" &&
     typeof payload.participantPhone === "string" &&
     payload.participantPhone.length > 0
@@ -215,11 +217,13 @@ export function isGroupJoinEvent(payload: ZApiWebhookPayload): boolean {
 
 /**
  * Returns true if the payload represents a participant leaving a group.
- * Note: isGroup may not be set by Z-API for REMOVE events, so we don't require it.
+ * Covers both REMOVE (admin-kicked) and LEAVE (self-leave) notification types.
+ * Note: isGroup may not always be set by Z-API, so we don't require it.
  */
 export function isGroupExitEvent(payload: ZApiWebhookPayload): boolean {
   return (
-    payload.notification === "GROUP_PARTICIPANT_REMOVE" &&
+    (payload.notification === "GROUP_PARTICIPANT_REMOVE" ||
+      payload.notification === "GROUP_PARTICIPANT_LEAVE") &&
     typeof payload.participantPhone === "string" &&
     payload.participantPhone.length > 0
   )

@@ -3,7 +3,10 @@ import { getRedisConfig } from "./redis"
 import { prisma } from "@/lib/db/prisma"
 import { processLeadInManychat, setWhatsappIdField } from "@/lib/manychat/client"
 import { isLimitReached, incrementUsage, msUntilMidnightBRT } from "@/lib/services/uso-diario.service"
-import type { WebhookJobData } from "./queues"
+import { processarEntradaGrupo } from "@/lib/services/entradas.service"
+import { processarSaidaGrupo } from "@/lib/services/saidas.service"
+import { executarMonitoramento } from "@/lib/services/monitor.service"
+import type { WebhookJobData, GrupoEventoJobData } from "./queues"
 
 export function startWebhookWorker(): Worker {
   const worker = new Worker(
@@ -166,5 +169,50 @@ export function startWebhookWorker(): Worker {
     console.error(`[Worker] Job ${job?.id} failed (attempt ${job?.attemptsMade}/${job?.opts?.attempts}): ${err.message}`)
   })
 
+  return worker
+}
+
+// ── Grupo Eventos Worker ───────────────────────────────────────────────────────
+
+export function startGrupoEventosWorker(): Worker {
+  const worker = new Worker(
+    "grupo-eventos",
+    async (job: Job<GrupoEventoJobData>) => {
+      const { tipo, instanciaId, payload } = job.data
+      if (tipo === "entrada") {
+        await processarEntradaGrupo(instanciaId, payload)
+      } else {
+        await processarSaidaGrupo(instanciaId, payload)
+      }
+    },
+    {
+      connection: getRedisConfig(),
+      concurrency: 3,
+    }
+  )
+
+  worker.on("completed", (job) => {
+    console.log(`[GrupoWorker] Job ${job.id} concluído`)
+  })
+
+  worker.on("failed", (job, err) => {
+    console.error(`[GrupoWorker] Job ${job?.id} falhou (tentativa ${job?.attemptsMade}): ${err.message}`)
+  })
+
+  return worker
+}
+
+// ── Monitor Worker ─────────────────────────────────────────────────────────────
+
+export function startMonitorWorker(): Worker {
+  const worker = new Worker(
+    "monitor",
+    async () => { await executarMonitoramento() },
+    { connection: getRedisConfig(), concurrency: 1 }
+  )
+  worker.on("completed", () => console.log("[MonitorWorker] Health check concluído"))
+  worker.on("failed", (job, err) =>
+    console.error(`[MonitorWorker] Erro no health check: ${err.message}`)
+  )
   return worker
 }

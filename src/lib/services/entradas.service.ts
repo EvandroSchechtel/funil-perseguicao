@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db/prisma"
 import { addTag } from "@/lib/manychat/tags"
 import { normalizePhone, type ZApiWebhookPayload } from "@/lib/zapi/client"
 import { tentarAutoVincularGrupo } from "@/lib/services/grupo-auto-vincular.service"
+import { addWebhookJob } from "@/lib/queue/queues"
 
 /**
  * Core logic: processes a Z-API GROUP_PARTICIPANT_ADD event.
@@ -20,12 +21,10 @@ export async function processarEntradaGrupo(
   instanciaId: string,
   payload: ZApiWebhookPayload
 ): Promise<void> {
-  const {
-    phone: groupWaId = "",
-    chatName = "",
-    participantPhone = "",
-    senderName,
-  } = payload
+  const { chatName = "", participantPhone = "", senderName } = payload
+
+  // Z-API may send the group ID in either `phone` or `chatId`
+  const groupWaId = payload.phone || payload.chatId || ""
 
   const telefoneNorm = normalizePhone(participantPhone)
   if (!telefoneNorm) {
@@ -45,8 +44,11 @@ export async function processarEntradaGrupo(
     },
   })
 
-  const matched = grupos.filter((g) =>
-    chatName.toLowerCase().includes(g.nome_filtro.toLowerCase())
+  // 2. Match by grupo_wa_id (exact) or nome_filtro (contains)
+  const matched = grupos.filter(
+    (g) =>
+      (groupWaId && g.grupo_wa_id === groupWaId) ||
+      chatName.toLowerCase().includes(g.nome_filtro.toLowerCase())
   )
 
   if (matched.length === 0) {
@@ -112,28 +114,90 @@ async function processarEntradaParaGrupo({
     }).catch(() => {})
   }
 
-  // 2. Find Contato by phone (try with and without country code variants)
-  const contato = await prisma.contato.findFirst({
+  // 2. Find OR auto-create Contato by phone
+  let contato = await prisma.contato.findFirst({
     where: {
       OR: [
         { telefone: telefoneNorm },
         { telefone: `+${telefoneNorm}` },
-        // strip country code 55 for local format
         ...(telefoneNorm.startsWith("55") ? [{ telefone: telefoneNorm.slice(2) }] : []),
       ],
     },
   })
 
-  // 3. Find Lead by contato + campanha
+  if (!contato) {
+    try {
+      contato = await prisma.contato.create({
+        data: {
+          telefone: telefoneNorm,
+          nome: senderName || telefoneNorm,
+        },
+      })
+      console.log(`[Entradas] Contato auto-criado telefone=${telefoneNorm}`)
+    } catch {
+      // Race condition: another concurrent job created it — retry lookup
+      contato = await prisma.contato.findFirst({ where: { telefone: telefoneNorm } }) ?? null
+      if (contato) console.log(`[Entradas] Contato já existia (race condition resolvida)`)
+    }
+  }
+
+  // 3. Find OR auto-create Lead
   let lead: { id: string; subscriber_id: string | null } | null = null
   if (contato) {
     lead = await prisma.lead.findFirst({
-      where: {
-        contato_id: contato.id,
-        campanha_id: grupo.campanha_id,
-      },
+      where: { contato_id: contato.id, campanha_id: grupo.campanha_id },
       select: { id: true, subscriber_id: true },
     })
+
+    if (!lead) {
+      // Look up the campaign's active webhook + pick a flow (round-robin)
+      const webhook = await prisma.webhook.findFirst({
+        where: { campanha_id: grupo.campanha_id, status: "ativo", deleted_at: null },
+        include: {
+          webhook_flows: {
+            where: { status: "ativo", deleted_at: null },
+            orderBy: [{ total_enviados: "asc" }, { ordem: "asc" }],
+            take: 1,
+          },
+        },
+      })
+
+      if (webhook) {
+        const flow = webhook.webhook_flows[0] ?? null
+        lead = await prisma.lead.create({
+          data: {
+            contato_id: contato.id,
+            webhook_id: webhook.id,
+            campanha_id: grupo.campanha_id,
+            webhook_flow_id: flow?.id ?? null,
+            nome: senderName || telefoneNorm,
+            telefone: telefoneNorm,
+            status: flow ? "pendente" : "aguardando",
+            erro_msg: "Lead não rastreado — entrada via grupo sem webhook prévio",
+          },
+          select: { id: true, subscriber_id: true },
+        })
+        console.log(`[Entradas] Lead não-rastreado criado id=${lead.id} campanha=${grupo.campanha_id}`)
+
+        // Increment round-robin counter and enqueue for Manychat processing
+        if (flow) {
+          await prisma.webhookFlow.update({
+            where: { id: flow.id },
+            data: { total_enviados: { increment: 1 } },
+          }).catch(() => {})
+          await addWebhookJob({
+            leadId: lead.id,
+            webhookId: webhook.id,
+            contaId: flow.conta_id,
+            flowNs: flow.flow_ns,
+            nome: senderName || telefoneNorm,
+            telefone: telefoneNorm,
+          }).catch((err) => console.error("[Entradas] Erro ao enfileirar lead não-rastreado:", err))
+        }
+      } else {
+        console.warn(`[Entradas] Campanha ${grupo.campanha_id} sem webhook ativo — lead não criado`)
+      }
+    }
   }
 
   // 4. Find subscriber_id — prefer lead's own, fallback to ContatoConta

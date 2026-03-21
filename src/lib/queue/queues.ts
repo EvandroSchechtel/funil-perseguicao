@@ -1,5 +1,6 @@
 import { Queue } from "bullmq"
 import { getRedisConfig } from "./redis"
+import type { ZApiWebhookPayload } from "@/lib/zapi/client"
 
 // Main queue for processing incoming webhook payloads → Manychat API
 let _webhookQueue: Queue | null = null
@@ -41,6 +42,82 @@ export async function addWebhookJob(data: WebhookJobData, opts?: { forceNew?: bo
   }
   return queue.add("process-lead", data, { jobId: data.leadId, delay: opts?.delay })
 }
+
+// ── grupo-eventos queue ────────────────────────────────────────────────────────
+
+export interface GrupoEventoJobData {
+  tipo: "entrada" | "saida"
+  instanciaId: string
+  payload: ZApiWebhookPayload
+}
+
+let _grupoEventosQueue: Queue | null = null
+
+export function getGrupoEventosQueue(): Queue {
+  if (!_grupoEventosQueue) {
+    _grupoEventosQueue = new Queue("grupo-eventos", {
+      connection: getRedisConfig(),
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: "exponential", delay: 5000 }, // 5s → 25s → 125s
+        removeOnComplete: { count: 100 },
+        removeOnFail: { count: 200 },
+      },
+    })
+  }
+  return _grupoEventosQueue
+}
+
+/**
+ * Enqueues a Z-API group entry or exit event for reliable async processing.
+ * Deduplicates by phone+group (entries) or phone+group+minute (exits).
+ * Swallows Redis errors silently so the webhook route always returns 200.
+ */
+export async function addGrupoEventoJob(data: GrupoEventoJobData): Promise<void> {
+  const { tipo, instanciaId, payload } = data
+  const telefone = (payload.participantPhone ?? "").replace(/\D/g, "")
+  const grupoRef = payload.phone || payload.chatId || payload.chatName || "unknown"
+
+  // Entries: same phone+group → safe to dedup (DB upsert is idempotent)
+  // Exits: include minute-epoch to allow multiple exits but dedup Z-API retries
+  const jobId =
+    tipo === "entrada"
+      ? `entrada:${instanciaId}:${telefone}:${grupoRef}`
+      : `saida:${instanciaId}:${telefone}:${grupoRef}:${Math.floor(Date.now() / 60000)}`
+
+  await getGrupoEventosQueue()
+    .add("grupo-evento", data, { jobId })
+    .catch((err) => console.error("[addGrupoEventoJob] Redis indisponível:", err))
+}
+
+// ── monitor queue ─────────────────────────────────────────────────────────────
+
+let _monitorQueue: Queue | null = null
+
+export function getMonitorQueue(): Queue {
+  if (!_monitorQueue) {
+    _monitorQueue = new Queue("monitor", {
+      connection: getRedisConfig(),
+      defaultJobOptions: { removeOnComplete: { count: 10 }, removeOnFail: { count: 20 } },
+    })
+  }
+  return _monitorQueue
+}
+
+/**
+ * Schedules a repeating health-check job every 5 minutes.
+ * Safe to call multiple times — BullMQ deduplicates by jobId.
+ */
+export async function agendarMonitoramento(): Promise<void> {
+  await getMonitorQueue().add(
+    "health-check",
+    {},
+    { repeat: { every: 5 * 60 * 1000 }, jobId: "health-check-repeat" }
+  )
+  console.log("[Monitor] Job de monitoramento agendado (a cada 5min)")
+}
+
+// ── stats ──────────────────────────────────────────────────────────────────────
 
 export async function getQueueStats() {
   try {

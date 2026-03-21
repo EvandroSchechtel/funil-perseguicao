@@ -1,6 +1,6 @@
 "use client"
 
-import React from "react"
+import React, { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { LayoutDashboard, Webhook, Users2, Zap, Shield, User, LogOut, Bot, Megaphone, Building2, Contact, Activity, MessageSquare, FileText, Rocket } from "lucide-react"
@@ -103,8 +103,25 @@ const roleLabels: Record<Role, string> = {
 }
 
 export function Sidebar() {
-  const { user, logout } = useAuth()
+  const { user, logout, accessToken } = useAuth()
   const pathname = usePathname()
+  const [alertCount, setAlertCount] = useState(0)
+
+  useEffect(() => {
+    if (!accessToken) return
+    let cancelled = false
+    const check = () => {
+      fetch("/api/admin/alertas", { headers: { Authorization: `Bearer ${accessToken}` } })
+        .then((r) => r.json())
+        .then((json) => {
+          if (!cancelled) setAlertCount(json?.data?.ativos?.length ?? 0)
+        })
+        .catch(() => {})
+    }
+    check()
+    const id = setInterval(check, 60_000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [accessToken])
 
   if (!user) return null
 
@@ -149,7 +166,12 @@ export function Sidebar() {
               )}
             >
               {item.icon}
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {item.href === "/admin/fila" && alertCount > 0 && (
+                <span className="bg-[#F87171] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center leading-none shrink-0">
+                  {alertCount > 9 ? "9+" : alertCount}
+                </span>
+              )}
             </Link>
           )
         })}

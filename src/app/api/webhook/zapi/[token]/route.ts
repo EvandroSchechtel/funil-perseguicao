@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db/prisma"
 import { isGroupJoinEvent, isGroupExitEvent, type ZApiWebhookPayload } from "@/lib/zapi/client"
-import { processarEntradaGrupo } from "@/lib/services/entradas.service"
-import { processarSaidaGrupo } from "@/lib/services/saidas.service"
+import { addGrupoEventoJob } from "@/lib/queue/queues"
 
 // Always return 200 to Z-API — never 4xx/5xx to avoid retry storms
 function ok() {
@@ -193,18 +192,14 @@ export async function POST(
     }
   }
 
-  // 4. GROUP_PARTICIPANT_ADD — track entry
+  // 4. GROUP_PARTICIPANT_ADD — enqueue entry (retry + dedup via BullMQ)
   if (isGroupJoinEvent(payload)) {
-    processarEntradaGrupo(instancia.id, payload).catch((err) => {
-      console.error("[ZApi Webhook] processarEntradaGrupo error:", err)
-    })
+    await addGrupoEventoJob({ tipo: "entrada", instanciaId: instancia.id, payload })
   }
 
-  // 5. GROUP_PARTICIPANT_REMOVE — track exit
+  // 5. GROUP_PARTICIPANT_REMOVE / LEAVE — enqueue exit (retry + dedup via BullMQ)
   if (isGroupExitEvent(payload)) {
-    processarSaidaGrupo(instancia.id, payload).catch((err) => {
-      console.error("[ZApi Webhook] processarSaidaGrupo error:", err)
-    })
+    await addGrupoEventoJob({ tipo: "saida", instanciaId: instancia.id, payload })
   }
 
   return ok()

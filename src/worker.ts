@@ -9,16 +9,22 @@
  *   pm2 start npm --name "funil-worker" -- run worker
  */
 
-import { startWebhookWorker } from "./lib/queue/workers"
+import { startWebhookWorker, startGrupoEventosWorker, startMonitorWorker } from "./lib/queue/workers"
+import { agendarMonitoramento } from "./lib/queue/queues"
 
-console.log("[Worker] Starting standalone BullMQ webhook worker...")
+console.log("[Worker] Starting BullMQ workers...")
 console.log(`[Worker] Redis: ${process.env.REDIS_URL || "redis://localhost:6379"}`)
 
-const worker = startWebhookWorker()
+const webhookWorker = startWebhookWorker()
+const grupoWorker = startGrupoEventosWorker()
+const monitorWorker = startMonitorWorker()
+
+// Schedule repeating health-check (every 5min)
+agendarMonitoramento().catch((err) => console.error("[Worker] Erro ao agendar monitoramento:", err))
 
 async function shutdown(signal: string) {
   console.log(`[Worker] ${signal} received — shutting down gracefully...`)
-  await worker.close()
+  await Promise.all([webhookWorker.close(), grupoWorker.close(), monitorWorker.close()])
   console.log("[Worker] Shutdown complete.")
   process.exit(0)
 }
@@ -26,4 +32,4 @@ async function shutdown(signal: string) {
 process.on("SIGTERM", () => shutdown("SIGTERM"))
 process.on("SIGINT", () => shutdown("SIGINT"))
 
-console.log("[Worker] Ready. Waiting for jobs...")
+console.log("[Worker] Ready. Workers: webhooks, grupo-eventos, monitor")

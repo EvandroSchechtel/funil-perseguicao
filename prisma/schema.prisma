@@ -419,6 +419,23 @@ model SaidaGrupo {
   @@map("saidas_grupo")
 }
 
+// ── Monitoramento do Sistema ──────────────────────────────────────────────────
+
+model AlertaSistema {
+  id              String    @id @default(uuid())
+  tipo            String    // "campanha_sem_webhook" | "zapi_desconectado" | "fila_travada" | "manychat_limite"
+  nivel           String    // "critico" | "aviso"
+  titulo          String
+  mensagem        String
+  referencia_id   String?   // campanha_id, instancia_id, nome da fila, etc.
+  referencia_nome String?   // nome legível para exibição
+  resolvido_at    DateTime? // null = alerta ainda ativo
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  @@map("alertas_sistema")
+}
+
 // ── Portal do Cliente — Demandas ──────────────────────────────────────────────
 
 model Demanda {
