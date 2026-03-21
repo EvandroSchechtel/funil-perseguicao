@@ -10,6 +10,8 @@ const addFlowSchema = z.object({
   flow_ns: z.string().min(1, "Flow NS é obrigatório"),
   flow_nome: z.string().max(200).optional(),
   ordem: z.number().int().min(0).optional(),
+  tag_manychat_id: z.number().int().positive().optional(),
+  tag_manychat_nome: z.string().max(200).optional(),
 })
 
 // GET /api/admin/webhooks/[id]/flows

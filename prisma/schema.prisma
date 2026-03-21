@@ -242,13 +242,15 @@ model WebhookFlow {
   conta_id       String
   conta          ContaManychat @relation(fields: [conta_id], references: [id])
   flow_ns        String
-  flow_nome      String?
-  ordem          Int           @default(0)
-  total_enviados Int           @default(0)
-  status         Status        @default(ativo)
-  created_at     DateTime      @default(now())
-  updated_at     DateTime      @updatedAt
-  deleted_at     DateTime?
+  flow_nome         String?
+  ordem             Int           @default(0)
+  total_enviados    Int           @default(0)
+  status            Status        @default(ativo)
+  tag_manychat_id   Int?
+  tag_manychat_nome String?
+  created_at        DateTime      @default(now())
+  updated_at        DateTime      @updatedAt
+  deleted_at        DateTime?
 
   leads Lead[]
 

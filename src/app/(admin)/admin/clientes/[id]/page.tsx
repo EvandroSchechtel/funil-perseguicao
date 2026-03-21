@@ -27,6 +27,8 @@ interface Conta {
   page_name: string | null
   status: "ativo" | "inativo"
   whatsapp_field_id: number | null
+  limite_diario: number | null
+  uso_hoje: number
   _count: { webhook_flows: number; contatos_vinculados: number; grupos_monitoramento: number }
 }
 
@@ -847,8 +849,35 @@ export default function ClienteDetailPage() {
                             <Pencil className="w-3 h-3" />
                           </button>
                         </div>
+                        {/* Limite diário + uso hoje */}
+                        <div className="mt-2 space-y-1">
+                          <div className="flex items-center gap-3 text-xs text-[#8B8B9E]">
+                            <span>
+                              {conta.limite_diario
+                                ? <><span className="text-[#C4C4D4] font-mono">{conta.uso_hoje}</span> / <span className="font-mono">{conta.limite_diario}</span> enviados hoje</>
+                                : <><span className="text-[#C4C4D4] font-mono">{conta.uso_hoje}</span> enviados hoje · <span className="text-[#5A5A72]">sem limite</span></>
+                              }
+                            </span>
+                          </div>
+                          {conta.limite_diario != null && conta.limite_diario > 0 && (() => {
+                            const pct = Math.min(conta.uso_hoje / conta.limite_diario, 1)
+                            const color = pct >= 1 ? "#F87171" : pct >= 0.8 ? "#F59E0B" : "#25D366"
+                            return (
+                              <div className="h-1 w-32 rounded-full bg-[#1E1E2A] overflow-hidden">
+                                <div className="h-full rounded-full transition-all" style={{ width: `${pct * 100}%`, backgroundColor: color }} />
+                              </div>
+                            )
+                          })()}
+                        </div>
                       </div>
                       <div className="flex items-center gap-1">
+                        <Link
+                          href={`/admin/manychat/${conta.id}/editar`}
+                          className="p-1.5 text-[#5A5A72] hover:text-[#C4C4D4] transition-colors"
+                          title="Editar conta"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Link>
                         <button
                           onClick={() => handleToggleConta(conta)}
                           disabled={actionLoading === conta.id}

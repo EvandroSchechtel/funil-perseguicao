@@ -7,7 +7,7 @@ import {
   Pencil, Webhook, Users2, Copy, CheckCircle2, XCircle, Loader2,
   Plus, Trash2, ToggleLeft, ToggleRight, Info, GripVertical, FlaskConical,
   Building2, Calendar, ChevronDown, ChevronRight, PauseCircle, PlayCircle,
-  ListOrdered, ChevronsRight, DoorOpen,
+  ListOrdered, ChevronsRight, DoorOpen, Tag,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { toast } from "sonner"
+import { AddFlowDialog } from "@/components/admin/AddFlowDialog"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -45,6 +46,8 @@ interface Flow {
   ordem: number
   total_enviados: number
   status: "ativo" | "inativo"
+  tag_manychat_id: number | null
+  tag_manychat_nome: string | null
   conta: { id: string; nome: string; page_name: string | null }
 }
 
@@ -56,13 +59,6 @@ interface WebhookItem {
   url_publica: string
   leads_count: number
   webhook_flows: Flow[]
-}
-
-interface Conta {
-  id: string
-  nome: string
-  page_name: string | null
-  status: "ativo" | "inativo"
 }
 
 interface LeadItem {
@@ -137,12 +133,6 @@ export default function CampanhaDetailPage() {
 
   // Add flow dialog
   const [showAddFlow, setShowAddFlow] = useState<string | null>(null) // webhookId
-  const [contas, setContas] = useState<Conta[]>([])
-  const [flowContaId, setFlowContaId] = useState("")
-  const [flowNs, setFlowNs] = useState("")
-  const [flowNome, setFlowNome] = useState("")
-  const [flowErrors, setFlowErrors] = useState<Record<string, string>>({})
-  const [addFlowLoading, setAddFlowLoading] = useState(false)
 
   // Test webhook dialog
   const [testeWebhook, setTesteWebhook] = useState<WebhookItem | null>(null)
@@ -246,20 +236,6 @@ export default function CampanhaDetailPage() {
     }
   }, [campanha?.id])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Fetch contas (for add flow) ─────────────────────────────────────────────
-
-  const fetchContas = useCallback(async () => {
-    if (!accessToken || contas.length > 0) return
-    try {
-      const res = await fetch("/api/admin/contas?per_page=100&status=ativo", {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      })
-      if (!res.ok) return
-      const data = await res.json()
-      setContas(data.contas || [])
-    } catch { /* silent */ }
-  }, [accessToken, contas.length])
-
   // ── Copy URL ────────────────────────────────────────────────────────────────
 
   async function handleCopy(url: string, wid: string) {
@@ -289,41 +265,6 @@ export default function CampanhaDetailPage() {
     } catch { /* silent */ } finally {
       setActionLoading(null)
     }
-  }
-
-  // ── Add flow ────────────────────────────────────────────────────────────────
-
-  function handleOpenAddFlow(webhookId: string) {
-    setShowAddFlow(webhookId)
-    setFlowContaId("")
-    setFlowNs("")
-    setFlowNome("")
-    setFlowErrors({})
-    fetchContas()
-  }
-
-  async function handleAddFlow() {
-    const errs: Record<string, string> = {}
-    if (!flowContaId) errs.conta_id = "Selecione uma conta"
-    if (!flowNs.trim()) errs.flow_ns = "Flow NS é obrigatório"
-    if (Object.keys(errs).length > 0) { setFlowErrors(errs); return }
-
-    setAddFlowLoading(true)
-    try {
-      const res = await fetch(`/api/admin/webhooks/${showAddFlow}/flows`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ conta_id: flowContaId, flow_ns: flowNs.trim(), flow_nome: flowNome.trim() || undefined }),
-      })
-      const data = await res.json()
-      if (res.ok) {
-        toast.success(data.message)
-        setShowAddFlow(null)
-        fetchWebhooks()
-      } else {
-        toast.error(data.message || "Erro ao adicionar flow.")
-      }
-    } catch { toast.error("Erro de conexão.") } finally { setAddFlowLoading(false) }
   }
 
   // ── Toggle flow ─────────────────────────────────────────────────────────────
@@ -661,7 +602,7 @@ export default function CampanhaDetailPage() {
                                 <FlaskConical className="w-3.5 h-3.5 mr-1" />Testar
                               </Button>
                             )}
-                            <Button size="sm" onClick={() => handleOpenAddFlow(w.id)}>
+                            <Button size="sm" onClick={() => setShowAddFlow(w.id)}>
                               <Plus className="w-3.5 h-3.5 mr-1" />Adicionar Flow
                             </Button>
                             <button onClick={() => handleToggleWebhook(w)} className="text-[#5A5A72] hover:text-[#25D366] transition-colors p-1.5" title={w.status === "ativo" ? "Desativar webhook" : "Ativar webhook"}>
@@ -682,6 +623,11 @@ export default function CampanhaDetailPage() {
                                 <div className="flex-1 min-w-0">
                                   <p className="text-[#C4C4D4] text-sm font-medium">{flow.conta.nome}</p>
                                   <p className="text-[#5A5A72] text-xs font-mono">{flow.flow_nome || flow.flow_ns.slice(0, 40) + (flow.flow_ns.length > 40 ? "…" : "")}</p>
+                                  {flow.tag_manychat_nome && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] text-[#A78BFA] mt-0.5">
+                                      <Tag className="w-2.5 h-2.5" />{flow.tag_manychat_nome}
+                                    </span>
+                                  )}
                                 </div>
                                 <Badge variant={flow.status === "ativo" ? "ativo" : "inativo"}>{flow.status === "ativo" ? "Ativo" : "Inativo"}</Badge>
                                 <span className="text-[#8B8B9E] text-xs shrink-0">{flow.total_enviados} enviados</span>
@@ -794,54 +740,14 @@ export default function CampanhaDetailPage() {
       </div>
 
       {/* ── Add Flow Dialog ─────────────────────────────────────────────────── */}
-      <Dialog open={!!showAddFlow} onOpenChange={() => setShowAddFlow(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Adicionar Flow</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-[#C4C4D4]">
-                Conta Manychat <span className="text-[#F87171]">*</span>
-              </label>
-              {contas.length === 0 ? (
-                <div className="h-10 rounded-lg border border-[#F87171]/30 bg-[#2A1616] flex items-center px-3">
-                  <span className="text-[#F87171] text-sm">Nenhuma conta ativa encontrada.</span>
-                </div>
-              ) : (
-                <select
-                  value={flowContaId}
-                  onChange={(e) => setFlowContaId(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-[#1E1E2A] bg-[#111118] text-sm text-[#F1F1F3] focus:outline-none focus:border-[#25D366]"
-                >
-                  <option value="">Selecione uma conta...</option>
-                  {contas.map((c) => (
-                    <option key={c.id} value={c.id}>{c.nome}{c.page_name ? ` — ${c.page_name}` : ""}</option>
-                  ))}
-                </select>
-              )}
-              {flowErrors.conta_id && <p className="text-xs text-[#F87171]">{flowErrors.conta_id}</p>}
-            </div>
-            <Input
-              label="Flow NS"
-              placeholder="Ex: content20210501abc123..."
-              value={flowNs}
-              onChange={(e) => setFlowNs(e.target.value)}
-              error={flowErrors.flow_ns}
-              helperText="Automação → Flows → clique no flow → copie o NS da URL"
-              required
-            />
-            <Input
-              label="Nome do Flow (opcional)"
-              placeholder="Ex: Flow Perseguição Produto X"
-              value={flowNome}
-              onChange={(e) => setFlowNome(e.target.value)}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddFlow(null)} disabled={addFlowLoading}>Cancelar</Button>
-            <Button onClick={handleAddFlow} loading={addFlowLoading}>Adicionar Flow</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AddFlowDialog
+        open={!!showAddFlow}
+        webhookId={showAddFlow ?? ""}
+        clienteId={campanha?.cliente?.id ?? null}
+        accessToken={accessToken}
+        onClose={() => setShowAddFlow(null)}
+        onSuccess={() => { setShowAddFlow(null); fetchWebhooks() }}
+      />
 
       {/* ── Delete Flow Dialog ──────────────────────────────────────────────── */}
       <Dialog open={!!deleteFlow} onOpenChange={() => setDeleteFlow(null)}>

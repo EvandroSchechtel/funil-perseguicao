@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { testManychatConnection, ensureWhatsappIdField } from "@/lib/manychat/client"
 import { ServiceError } from "./errors"
+import { getTodayUsageMap } from "./uso-diario.service"
 
 export interface ListClientesParams {
   page?: number
@@ -73,6 +74,7 @@ export async function buscarCliente(id: string) {
           page_name: true,
           status: true,
           whatsapp_field_id: true,
+          limite_diario: true,
           _count: {
             select: {
               webhook_flows: { where: { deleted_at: null } },
@@ -89,9 +91,15 @@ export async function buscarCliente(id: string) {
 
   if (!cliente) throw new ServiceError("not_found", "Cliente não encontrado.")
 
+  const usageMap = await getTodayUsageMap(cliente.contas_manychat.map((c) => c.id))
+
   return {
     data: {
       ...cliente,
+      contas_manychat: cliente.contas_manychat.map((c) => ({
+        ...c,
+        uso_hoje: usageMap.get(c.id) ?? 0,
+      })),
       campanhas_count: cliente._count.campanhas,
       _count: undefined,
     },

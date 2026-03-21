@@ -18,6 +18,8 @@ export async function listarWebhookFlows(webhookId: string) {
       created_at: true,
       updated_at: true,
       conta: { select: { id: true, nome: true, page_name: true } },
+      tag_manychat_id: true,
+      tag_manychat_nome: true,
     },
     orderBy: { ordem: "asc" },
   })
@@ -30,6 +32,8 @@ export interface AdicionarFlowParams {
   flow_ns: string
   flow_nome?: string
   ordem?: number
+  tag_manychat_id?: number
+  tag_manychat_nome?: string
 }
 
 export async function adicionarFlow(webhookId: string, params: AdicionarFlowParams) {
@@ -58,6 +62,8 @@ export async function adicionarFlow(webhookId: string, params: AdicionarFlowPara
       flow_ns: params.flow_ns,
       flow_nome: params.flow_nome || null,
       ordem,
+      tag_manychat_id: params.tag_manychat_id ?? null,
+      tag_manychat_nome: params.tag_manychat_nome ?? null,
     },
     select: {
       id: true,
@@ -67,6 +73,8 @@ export async function adicionarFlow(webhookId: string, params: AdicionarFlowPara
       ordem: true,
       total_enviados: true,
       status: true,
+      tag_manychat_id: true,
+      tag_manychat_nome: true,
       created_at: true,
       conta: { select: { id: true, nome: true, page_name: true } },
     },
