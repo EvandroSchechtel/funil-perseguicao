@@ -377,27 +377,86 @@ describe("INVARIANT: alreadyExists → retry lookup → sendFlow", () => {
 })
 
 // ═════════════════════════════════════════════════════════════════════════════
-// INVARIANT 6 — sendFlow error (non-sem_optin) must propagate as ok=false
-// so the worker throws and BullMQ retries the job
+// INVARIANT 6 — sendFlow error (non-optin) must propagate as ok=false
+// so the worker throws and BullMQ retries the job.
+// "Validation error" is treated as sem_optin=true (no retry) — tested below.
 // ═════════════════════════════════════════════════════════════════════════════
 
 describe("INVARIANT: sendFlow failure propagates correctly for retry", () => {
-  it("returns ok=false with error message when sendFlow returns HTTP error", async () => {
+  it("non-optin error: returns ok=false, sem_optin falsy → worker retries", async () => {
+    setupFetch({
+      "/fb/subscriber/findByCustomField": {
+        body: { status: "success", data: [{ id: SUB_ID }] },
+      },
+      "/fb/sending/sendFlow": {
+        status: 500,
+        body: { message: "Internal server error" },
+      },
+    })
+    const result = await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
+
+    expect(result.ok).toBe(false)
+    expect(result.sem_optin).toBeFalsy()  // NOT sem_optin — worker should retry
+    expect(result.error).toBeTruthy()
+    expect(result.subscriber_id).toBe(SUB_ID)
+  })
+})
+
+// ═════════════════════════════════════════════════════════════════════════════
+// INVARIANT 8 — "Validation error" from sendFlow → sem_optin=true (no retry)
+// Manychat "Validation error" = subscriber lacks WhatsApp opt-in.
+// Retrying will never fix this — worker must mark as sem_optin, not falha.
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe("INVARIANT: Validation error from sendFlow → sem_optin=true", () => {
+  it("found by custom field: Validation error → sem_optin=true with subscriber_id", async () => {
     setupFetch({
       "/fb/subscriber/findByCustomField": {
         body: { status: "success", data: [{ id: SUB_ID }] },
       },
       "/fb/sending/sendFlow": {
         status: 400,
-        body: { message: "Validation error" },
+        body: { message: "Validation error", messages: [{ message: "Subscriber does not have WhatsApp opt-in" }] },
       },
     })
     const result = await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
 
     expect(result.ok).toBe(false)
-    expect(result.sem_optin).toBeFalsy()  // Must NOT be sem_optin — worker should retry
-    expect(result.error).toBeTruthy()
-    expect(result.subscriber_id).toBe(SUB_ID)  // subscriber_id still returned for tracking
+    expect(result.sem_optin).toBe(true)
+    expect(result.subscriber_id).toBe(SUB_ID)
+    expect(result.error).toContain("Validation error")
+  })
+
+  it("knownSubscriberId path: Validation error → sem_optin=true with subscriber_id", async () => {
+    setupFetch({
+      "/fb/sending/sendFlow": {
+        status: 400,
+        body: { message: "Validation error" },
+      },
+    })
+    const result = await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null, SUB_ID)
+
+    expect(result.ok).toBe(false)
+    expect(result.sem_optin).toBe(true)
+    expect(result.subscriber_id).toBe(SUB_ID)
+    expect(result.error).toContain("Validation error")
+  })
+
+  it("sendFlowToSubscriber: captures data.messages[] in error detail", async () => {
+    setupFetch({
+      "/fb/sending/sendFlow": {
+        status: 400,
+        body: {
+          message: "Validation error",
+          messages: [{ message: "Subscriber does not have WhatsApp opt-in" }],
+        },
+      },
+    })
+    const result = await sendFlowToSubscriber(API_KEY, SUB_ID, FLOW_NS)
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain("Validation error")
+    expect(result.error).toContain("Subscriber does not have WhatsApp opt-in")
   })
 })
 

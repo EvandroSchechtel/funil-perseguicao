@@ -92,7 +92,7 @@ export async function buscarLead(id: string) {
         },
       },
       tentativas_hist: {
-        orderBy: { numero: "asc" },
+        orderBy: { numero: "desc" },
         select: {
           id: true,
           numero: true,

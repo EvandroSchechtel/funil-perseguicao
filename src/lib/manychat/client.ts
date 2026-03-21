@@ -235,7 +235,11 @@ export async function sendFlowToSubscriber(
       if (res.status === 401) return { ok: false, error: "API key inválida." }
       if (res.status === 404) return { ok: false, error: "Subscriber ou Flow não encontrado." }
       const data = await res.json().catch(() => ({}))
-      return { ok: false, error: data.message || `Erro Manychat: ${res.status}` }
+      const extra = Array.isArray(data.messages)
+        ? (data.messages as Array<Record<string, unknown>>).map((m) => m.message).filter(Boolean).join("; ")
+        : ""
+      const error = [data.message, extra].filter(Boolean).join(" — ") || `Erro Manychat: ${res.status}`
+      return { ok: false, error }
     }
 
     return { ok: true }
@@ -244,6 +248,12 @@ export async function sendFlowToSubscriber(
     if ((err as Error).name === "AbortError") return { ok: false, error: "Tempo limite atingido (10s)." }
     return { ok: false, error: "Erro ao chamar API Manychat." }
   }
+}
+
+/** Returns true when a sendFlow error indicates a missing WhatsApp opt-in (Validation error). */
+function isOptInError(error?: string): boolean {
+  const e = error?.toLowerCase() ?? ""
+  return e.includes("validation error") || e.includes("opt-in") || e.includes("opt_in")
 }
 
 /**
@@ -284,6 +294,9 @@ export async function processLeadInManychat(
     }).then(() => optinC0()).catch(() => optinC0())
     const result = await sendFlowToSubscriber(apiKey, knownSubscriberId, flowNs)
     console.log(`[Manychat] sendFlow result →`, JSON.stringify(result))
+    if (!result.ok && isOptInError(result.error)) {
+      return { ok: false, sem_optin: true, subscriber_id: knownSubscriberId, error: result.error }
+    }
     return { ok: result.ok, subscriber_id: knownSubscriberId, error: result.error }
   }
 
@@ -352,6 +365,9 @@ export async function processLeadInManychat(
   console.log(`[Manychat] sendFlow — subscriber_id=${subscriber.id}, flow_ns=${flowNs}`)
   const result = await sendFlowToSubscriber(apiKey, subscriber.id, flowNs)
   console.log(`[Manychat] sendFlow result →`, JSON.stringify(result))
+  if (!result.ok && isOptInError(result.error)) {
+    return { ok: false, sem_optin: true, subscriber_id: subscriber.id, error: result.error }
+  }
   return { ok: result.ok, subscriber_id: subscriber.id, error: result.error }
 }
 

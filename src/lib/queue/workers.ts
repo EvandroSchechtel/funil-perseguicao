@@ -119,7 +119,7 @@ export function startWebhookWorker(): Worker {
       } else if (result.sem_optin) {
         await prisma.lead.update({
           where: { id: leadId },
-          data: { status: "sem_optin", erro_msg: result.error },
+          data: { status: "sem_optin", erro_msg: result.error, subscriber_id: result.subscriber_id ?? null },
         })
         try {
           await prisma.leadTentativa.create({
@@ -128,6 +128,7 @@ export function startWebhookWorker(): Worker {
               numero: numeroTentativa,
               status: "sem_optin",
               erro_msg: result.error ?? null,
+              subscriber_id: result.subscriber_id ?? null,
               flow_ns: flowNs,
               conta_nome: conta.nome,
             },
@@ -138,7 +139,7 @@ export function startWebhookWorker(): Worker {
       } else {
         await prisma.lead.update({
           where: { id: leadId },
-          data: { status: "falha", erro_msg: result.error },
+          data: { status: "falha", erro_msg: result.error, subscriber_id: result.subscriber_id ?? null },
         })
         try {
           await prisma.leadTentativa.create({
@@ -147,6 +148,7 @@ export function startWebhookWorker(): Worker {
               numero: numeroTentativa,
               status: "falha",
               erro_msg: result.error ?? null,
+              subscriber_id: result.subscriber_id ?? null,
               flow_ns: flowNs,
               conta_nome: conta.nome,
             },
