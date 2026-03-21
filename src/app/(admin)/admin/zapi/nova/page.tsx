@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useRef } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, Wifi, Info, Search, ChevronDown, CheckCircle2, Lock } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
@@ -117,6 +117,8 @@ function ClienteSearchSelect({
 
 export default function NovaInstanciaPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const clienteIdFromUrl = searchParams.get("cliente_id") || ""
   const { accessToken } = useAuth()
   const [loading, setLoading] = useState(false)
   const [clientes, setClientes] = useState<Cliente[]>([])
@@ -127,7 +129,7 @@ export default function NovaInstanciaPage() {
     instance_id: "",
     token: "",
     client_token: "",
-    cliente_id: "",
+    cliente_id: clienteIdFromUrl,
   })
 
   useEffect(() => {
@@ -245,13 +247,26 @@ export default function NovaInstanciaPage() {
                     imutável após criação
                   </span>
                 </label>
-                <ClienteSearchSelect
-                  clientes={clientes}
-                  loading={loadingClientes}
-                  value={form.cliente_id}
-                  onChange={(id) => setForm((p) => ({ ...p, cliente_id: id }))}
-                  error={errors.cliente_id}
-                />
+                {clienteIdFromUrl ? (
+                  // Auto-selecionado via URL — exibir como somente leitura
+                  <div className="flex h-10 w-full items-center gap-2 rounded-lg border border-[#1C1C2C] bg-[#13131F] px-3 text-sm text-[#EEEEF5] opacity-70 cursor-not-allowed">
+                    <Lock className="w-3.5 h-3.5 text-[#3F3F58] shrink-0" />
+                    {loadingClientes
+                      ? "Carregando…"
+                      : clientes.find((c) => c.id === clienteIdFromUrl)?.nome ?? clienteIdFromUrl}
+                  </div>
+                ) : (
+                  <ClienteSearchSelect
+                    clientes={clientes}
+                    loading={loadingClientes}
+                    value={form.cliente_id}
+                    onChange={(id) => setForm((p) => ({ ...p, cliente_id: id }))}
+                    error={errors.cliente_id}
+                  />
+                )}
+                {errors.cliente_id && !clienteIdFromUrl && (
+                  <p className="text-xs text-[#F87171]">{errors.cliente_id}</p>
+                )}
                 <FieldHint>
                   Vincula grupos desta instância às campanhas do cliente.{" "}
                   <strong className="text-[#5A5A72]">Não pode ser alterado após salvar.</strong>

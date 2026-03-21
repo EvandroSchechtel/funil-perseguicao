@@ -133,6 +133,9 @@ export default function ClienteDetailPage() {
   // ── Z-API tab ────────────────────────────────────────────────────────────────
   const [instancias, setInstancias] = useState<InstanciaZApi[]>([])
   const [loadingInstancias, setLoadingInstancias] = useState(false)
+  const [deleteInstanciaDialog, setDeleteInstanciaDialog] = useState<InstanciaZApi | null>(null)
+  const [deleteInstanciaText, setDeleteInstanciaText] = useState("")
+  const [deletingInstanciaId, setDeletingInstanciaId] = useState<string | null>(null)
 
   // ── Fetch cliente ────────────────────────────────────────────────────────────
 
@@ -361,6 +364,26 @@ export default function ClienteDetailPage() {
         toast.error(data.message || "Erro ao excluir conta.")
       }
     } catch { toast.error("Erro de conexão.") } finally { setDeletingContaId(null) }
+  }
+
+  async function handleDeleteInstancia(inst: InstanciaZApi) {
+    setDeletingInstanciaId(inst.id)
+    try {
+      const res = await fetch(`/api/admin/zapi/instancias/${inst.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast.success(data.message || "Instância removida.")
+        setDeleteInstanciaDialog(null)
+        setDeleteInstanciaText("")
+        setInstancias([])
+        fetchInstancias()
+      } else {
+        toast.error(data.message || "Erro ao excluir instância.")
+      }
+    } catch { toast.error("Erro de conexão.") } finally { setDeletingInstanciaId(null) }
   }
 
   // ── WA handlers ──────────────────────────────────────────────────────────────
@@ -772,8 +795,8 @@ export default function ClienteDetailPage() {
             ) : (
               <div className="space-y-2">
                 {instancias.map((inst) => (
-                  <Link key={inst.id} href={`/admin/zapi/${inst.id}`}>
-                    <div className="bg-[#0F0F1A] border border-[#1C1C2C] rounded-xl px-5 py-4 flex items-center gap-4 hover:border-[#252535] hover:bg-[#121220] transition-all cursor-pointer">
+                  <div key={inst.id} className="bg-[#0F0F1A] border border-[#1C1C2C] rounded-xl px-5 py-4 flex items-center gap-4 hover:border-[#252535] hover:bg-[#121220] transition-all">
+                    <Link href={`/admin/zapi/${inst.id}`} className="flex items-center gap-4 flex-1 min-w-0">
                       <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${inst.status === "ativo" ? "bg-[#22C55E]/10" : "bg-[#13131F]"}`}>
                         <Wifi className={`w-4 h-4 ${inst.status === "ativo" ? "text-[#22C55E]" : "text-[#3F3F58]"}`} />
                       </div>
@@ -786,8 +809,15 @@ export default function ClienteDetailPage() {
                         <p className="text-[#3F3F58] text-[10px]">grupos</p>
                       </div>
                       <ChevronRight className="w-4 h-4 text-[#3F3F58] shrink-0" />
-                    </div>
-                  </Link>
+                    </Link>
+                    <button
+                      onClick={() => { setDeleteInstanciaDialog(inst); setDeleteInstanciaText("") }}
+                      title="Excluir instância"
+                      className="p-1.5 text-[#3F3F58] hover:text-[#F87171] transition-colors shrink-0"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -999,6 +1029,62 @@ export default function ClienteDetailPage() {
               loading={deletingContaId === deleteContaDialog?.id}
             >
               Excluir Conta
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete Instância Z-API Dialog ───────────────────────────────────── */}
+      <Dialog open={!!deleteInstanciaDialog} onOpenChange={(open) => { if (!open) { setDeleteInstanciaDialog(null); setDeleteInstanciaText("") } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-[#F87171]">Excluir Instância Z-API</DialogTitle>
+          </DialogHeader>
+
+          <p className="text-[#8B8B9E] text-sm">
+            Você está prestes a excluir a instância{" "}
+            <span className="text-[#F1F1F3] font-semibold">{deleteInstanciaDialog?.nome}</span>.
+          </p>
+
+          <div className="bg-[#2A1616] border border-[#F87171]/20 rounded-lg p-4 space-y-2">
+            <p className="text-[#F87171] text-sm font-semibold flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              Dados que serão removidos
+            </p>
+            <ul className="text-xs text-[#C4C4D4] space-y-1 ml-6 list-disc">
+              <li>{deleteInstanciaDialog?._count.grupos ?? 0} grupo(s) monitorado(s)</li>
+            </ul>
+            {(deleteInstanciaDialog?._count.grupos ?? 0) > 0 && (
+              <p className="text-xs text-[#F87171] mt-1">
+                Remova todos os grupos antes de excluir a instância.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm text-[#8B8B9E]">
+              Digite <span className="font-mono font-bold text-[#F87171]">excluir</span> para confirmar:
+            </p>
+            <input
+              value={deleteInstanciaText}
+              onChange={(e) => setDeleteInstanciaText(e.target.value)}
+              placeholder="excluir"
+              autoComplete="off"
+              className="w-full h-10 px-3 rounded-lg border border-[#1E1E2A] bg-[#111118] text-sm text-[#F1F1F3] placeholder-[#5A5A72] focus:outline-none focus:border-[#F87171]/50 transition-colors"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDeleteInstanciaDialog(null); setDeleteInstanciaText("") }}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteInstanciaDialog && handleDeleteInstancia(deleteInstanciaDialog)}
+              disabled={deleteInstanciaText !== "excluir" || deletingInstanciaId === deleteInstanciaDialog?.id}
+              loading={deletingInstanciaId === deleteInstanciaDialog?.id}
+            >
+              Excluir Instância
             </Button>
           </DialogFooter>
         </DialogContent>
