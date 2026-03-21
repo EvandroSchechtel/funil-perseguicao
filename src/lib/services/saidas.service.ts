@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db/prisma"
-import { normalizePhone, type ZApiWebhookPayload } from "@/lib/zapi/client"
+import { normalizePhone, getParticipantPhone, type ZApiWebhookPayload } from "@/lib/zapi/client"
 
 /**
  * Core logic: processes a Z-API GROUP_PARTICIPANT_REMOVE event.
@@ -14,13 +14,8 @@ export async function processarSaidaGrupo(
   instanciaId: string,
   payload: ZApiWebhookPayload
 ): Promise<void> {
-  const {
-    phone,
-    chatId,
-    chatName = "",
-    participantPhone = "",
-    senderName,
-  } = payload
+  const { phone, chatId, chatName = "", senderName } = payload
+  const participantPhone = getParticipantPhone(payload)
 
   // Z-API may send the group ID in either `phone` or `chatId`
   const groupWaId = phone || chatId || ""

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/prisma"
 import { addTag } from "@/lib/manychat/tags"
-import { normalizePhone, type ZApiWebhookPayload } from "@/lib/zapi/client"
+import { normalizePhone, getParticipantPhone, type ZApiWebhookPayload } from "@/lib/zapi/client"
 import { tentarAutoVincularGrupo } from "@/lib/services/grupo-auto-vincular.service"
 import { addWebhookJob } from "@/lib/queue/queues"
 
@@ -21,7 +21,8 @@ export async function processarEntradaGrupo(
   instanciaId: string,
   payload: ZApiWebhookPayload
 ): Promise<void> {
-  const { chatName = "", participantPhone = "", senderName } = payload
+  const { chatName = "", senderName } = payload
+  const participantPhone = getParticipantPhone(payload)
 
   // Z-API may send the group ID in either `phone` or `chatId`
   const groupWaId = payload.phone || payload.chatId || ""

@@ -205,6 +205,15 @@ export interface ZApiWebhookPayload {
 }
 
 /**
+ * Extracts the participant phone from a Z-API group event payload.
+ * GROUP_PARTICIPANT_INVITE sends the phone in notificationParameters[0]
+ * instead of participantPhone — this helper normalizes both cases.
+ */
+export function getParticipantPhone(payload: ZApiWebhookPayload): string {
+  return payload.participantPhone || payload.notificationParameters?.[0] || ""
+}
+
+/**
  * Returns true if the payload represents a participant joining a group.
  * Covers GROUP_PARTICIPANT_ADD (added by admin) and GROUP_PARTICIPANT_INVITE (joined via link).
  * Note: isGroup may not always be set by Z-API, so we don't require it.
@@ -213,8 +222,7 @@ export function isGroupJoinEvent(payload: ZApiWebhookPayload): boolean {
   return (
     (payload.notification === "GROUP_PARTICIPANT_ADD" ||
       payload.notification === "GROUP_PARTICIPANT_INVITE") &&
-    typeof payload.participantPhone === "string" &&
-    payload.participantPhone.length > 0
+    getParticipantPhone(payload).length > 0
   )
 }
 
@@ -227,8 +235,7 @@ export function isGroupExitEvent(payload: ZApiWebhookPayload): boolean {
   return (
     (payload.notification === "GROUP_PARTICIPANT_REMOVE" ||
       payload.notification === "GROUP_PARTICIPANT_LEAVE") &&
-    typeof payload.participantPhone === "string" &&
-    payload.participantPhone.length > 0
+    getParticipantPhone(payload).length > 0
   )
 }
 

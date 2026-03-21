@@ -1,6 +1,6 @@
 import { Queue } from "bullmq"
 import { getRedisConfig } from "./redis"
-import type { ZApiWebhookPayload } from "@/lib/zapi/client"
+import { getParticipantPhone, type ZApiWebhookPayload } from "@/lib/zapi/client"
 
 // Main queue for processing incoming webhook payloads → Manychat API
 let _webhookQueue: Queue | null = null
@@ -75,7 +75,7 @@ export function getGrupoEventosQueue(): Queue {
  */
 export async function addGrupoEventoJob(data: GrupoEventoJobData): Promise<void> {
   const { tipo, instanciaId, payload } = data
-  const telefone = (payload.participantPhone ?? "").replace(/\D/g, "")
+  const telefone = getParticipantPhone(payload).replace(/\D/g, "")
   const grupoRef = payload.phone || payload.chatId || payload.chatName || "unknown"
 
   // Entries: same phone+group → safe to dedup (DB upsert is idempotent)
