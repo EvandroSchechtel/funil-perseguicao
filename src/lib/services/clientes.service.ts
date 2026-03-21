@@ -67,8 +67,21 @@ export async function buscarCliente(id: string) {
       updated_at: true,
       contas_manychat: {
         where: { deleted_at: null },
-        select: { id: true, nome: true, page_name: true, status: true, whatsapp_field_id: true },
-        orderBy: { nome: "asc" },
+        select: {
+          id: true,
+          nome: true,
+          page_name: true,
+          status: true,
+          whatsapp_field_id: true,
+          _count: {
+            select: {
+              webhook_flows: { where: { deleted_at: null } },
+              contatos_vinculados: true,
+              grupos_monitoramento: { where: { status: "ativo" } },
+            },
+          },
+        },
+        orderBy: { created_at: "asc" }, // primeira = conta principal
       },
       _count: { select: { campanhas: true } },
     },

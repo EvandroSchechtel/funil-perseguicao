@@ -7,7 +7,7 @@ import {
   Plus, Zap, Eye, EyeOff, CheckCircle2, XCircle, Loader2,
   ToggleRight, ToggleLeft, Hash, AlertCircle, Pencil,
   MessageSquare, Save, WifiOff, Building2, Megaphone,
-  Webhook, Users2, Wifi, ChevronRight,
+  Webhook, Users2, Wifi, ChevronRight, Trash2, AlertTriangle, Crown,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Header } from "@/components/layout/Header"
@@ -26,6 +26,7 @@ interface Conta {
   page_name: string | null
   status: "ativo" | "inativo"
   whatsapp_field_id: number | null
+  _count: { webhook_flows: number; contatos_vinculados: number; grupos_monitoramento: number }
 }
 
 interface InstanciaZApi {
@@ -106,6 +107,11 @@ export default function ClienteDetailPage() {
   const [newFieldId, setNewFieldId] = useState("")
   const [ensureFieldStatus, setEnsureFieldStatus] = useState<"idle" | "loading" | "ok" | "error">("idle")
   const [ensureFieldMsg, setEnsureFieldMsg] = useState("")
+
+  // Delete conta dialog
+  const [deleteContaDialog, setDeleteContaDialog] = useState<Conta | null>(null)
+  const [deleteContaText, setDeleteContaText] = useState("")
+  const [deletingContaId, setDeletingContaId] = useState<string | null>(null)
 
   // ── Notif WA state ───────────────────────────────────────────────────────────
   const [instanciasNotif, setInstanciasNotif] = useState<InstanciaZApi[]>([])
@@ -336,6 +342,25 @@ export default function ClienteDetailPage() {
       if (res.ok) { toast.success("Field ID salvo."); setEditFieldConta(null); fetchCliente() }
       else { toast.error(data.message || "Erro ao salvar.") }
     } catch { toast.error("Erro de conexão.") } finally { setFieldIdLoading(false) }
+  }
+
+  async function handleDeleteConta(conta: Conta) {
+    setDeletingContaId(conta.id)
+    try {
+      const res = await fetch(`/api/admin/contas/${conta.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast.success(data.message || "Conta removida.")
+        setDeleteContaDialog(null)
+        setDeleteContaText("")
+        fetchCliente()
+      } else {
+        toast.error(data.message || "Erro ao excluir conta.")
+      }
+    } catch { toast.error("Erro de conexão.") } finally { setDeletingContaId(null) }
   }
 
   // ── WA handlers ──────────────────────────────────────────────────────────────
@@ -643,12 +668,21 @@ export default function ClienteDetailPage() {
                   </Button>
                 </div>
               ) : (
-                cliente.contas_manychat.map((conta) => (
+                cliente.contas_manychat.map((conta, idx) => {
+                const isPrincipal = idx === 0
+                const isUnica = cliente.contas_manychat.length === 1
+                return (
                   <div key={conta.id} className="border-b border-[#1E1E2A] last:border-0 px-5 py-4 hover:bg-[#1C1C28] transition-colors">
                     <div className="flex items-center gap-3">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-[#C4C4D4] text-sm font-medium">{conta.nome}</p>
+                          {isPrincipal && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#F59E0B]/10 text-[#F59E0B] border border-[#F59E0B]/30">
+                              <Crown className="w-2.5 h-2.5" />
+                              Principal
+                            </span>
+                          )}
                           <Badge variant={conta.status === "ativo" ? "ativo" : "inativo"}>
                             {conta.status === "ativo" ? "Ativa" : "Inativa"}
                           </Badge>
@@ -675,18 +709,30 @@ export default function ClienteDetailPage() {
                           </button>
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleToggleConta(conta)}
-                        disabled={actionLoading === conta.id}
-                        className="p-1.5 text-[#5A5A72] hover:text-[#25D366] transition-colors disabled:opacity-50"
-                      >
-                        {conta.status === "ativo"
-                          ? <ToggleRight className="w-5 h-5 text-[#25D366]" />
-                          : <ToggleLeft className="w-5 h-5" />}
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleToggleConta(conta)}
+                          disabled={actionLoading === conta.id}
+                          className="p-1.5 text-[#5A5A72] hover:text-[#25D366] transition-colors disabled:opacity-50"
+                          title={conta.status === "ativo" ? "Desativar" : "Ativar"}
+                        >
+                          {conta.status === "ativo"
+                            ? <ToggleRight className="w-5 h-5 text-[#25D366]" />
+                            : <ToggleLeft className="w-5 h-5" />}
+                        </button>
+                        <button
+                          onClick={() => { setDeleteContaDialog(conta); setDeleteContaText("") }}
+                          disabled={isUnica}
+                          title={isUnica ? "Não é possível excluir a única conta do cliente" : "Excluir conta"}
+                          className="p-1.5 text-[#5A5A72] hover:text-[#F87171] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                ))
+                )
+              })
               )}
             </div>
           </div>
@@ -901,6 +947,59 @@ export default function ClienteDetailPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddConta(false)} disabled={addLoading}>Cancelar</Button>
             <Button onClick={handleAddConta} loading={addLoading}>Adicionar Conta</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete Conta Dialog ──────────────────────────────────────────────── */}
+      <Dialog open={!!deleteContaDialog} onOpenChange={(open) => { if (!open) { setDeleteContaDialog(null); setDeleteContaText("") } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-[#F87171]">Excluir Conta Manychat</DialogTitle>
+          </DialogHeader>
+
+          <p className="text-[#8B8B9E] text-sm">
+            Você está prestes a excluir a conta{" "}
+            <span className="text-[#F1F1F3] font-semibold">{deleteContaDialog?.nome}</span>.
+          </p>
+
+          <div className="bg-[#2A1616] border border-[#F87171]/20 rounded-lg p-4 space-y-2">
+            <p className="text-[#F87171] text-sm font-semibold flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              Dados que serão desvinculados
+            </p>
+            <ul className="text-xs text-[#C4C4D4] space-y-1 ml-6 list-disc">
+              <li>{deleteContaDialog?._count.webhook_flows ?? 0} fluxo(s) de webhook</li>
+              <li>{deleteContaDialog?._count.contatos_vinculados ?? 0} contato(s) vinculado(s)</li>
+              <li>{deleteContaDialog?._count.grupos_monitoramento ?? 0} grupo(s) monitorado(s)</li>
+            </ul>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm text-[#8B8B9E]">
+              Digite <span className="font-mono font-bold text-[#F87171]">excluir</span> para confirmar:
+            </p>
+            <input
+              value={deleteContaText}
+              onChange={(e) => setDeleteContaText(e.target.value)}
+              placeholder="excluir"
+              autoComplete="off"
+              className="w-full h-10 px-3 rounded-lg border border-[#1E1E2A] bg-[#111118] text-sm text-[#F1F1F3] placeholder-[#5A5A72] focus:outline-none focus:border-[#F87171]/50 transition-colors"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDeleteContaDialog(null); setDeleteContaText("") }}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteContaDialog && handleDeleteConta(deleteContaDialog)}
+              disabled={deleteContaText !== "excluir" || deletingContaId === deleteContaDialog?.id}
+              loading={deletingContaId === deleteContaDialog?.id}
+            >
+              Excluir Conta
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -35,10 +35,18 @@ export async function listarContas(params: ListContasParams = {}) {
         page_id: true,
         page_name: true,
         status: true,
+        cliente_id: true,
         limite_diario: true,
         ultimo_sync: true,
         created_at: true,
         usuario: { select: { nome: true } },
+        _count: {
+          select: {
+            webhook_flows: { where: { deleted_at: null } },
+            contatos_vinculados: true,
+            grupos_monitoramento: { where: { status: "ativo" } },
+          },
+        },
       },
       orderBy: { created_at: "desc" },
       skip: (page - 1) * perPage,
@@ -193,8 +201,24 @@ export async function atualizarConta(id: string, data: AtualizarContaParams) {
 }
 
 export async function deletarConta(id: string) {
-  const existing = await prisma.contaManychat.findFirst({ where: { id, deleted_at: null } })
+  const existing = await prisma.contaManychat.findFirst({
+    where: { id, deleted_at: null },
+    select: { id: true, cliente_id: true },
+  })
   if (!existing) throw new ServiceError("not_found", "Conta não encontrada.")
+
+  // Regra de hierarquia: todo cliente precisa ter ao menos 1 conta Manychat
+  if (existing.cliente_id) {
+    const totalContas = await prisma.contaManychat.count({
+      where: { cliente_id: existing.cliente_id, deleted_at: null },
+    })
+    if (totalContas <= 1) {
+      throw new ServiceError(
+        "bad_request",
+        "Não é possível excluir a única conta Manychat vinculada ao cliente. Todo cliente deve ter ao menos uma conta."
+      )
+    }
+  }
 
   await prisma.contaManychat.update({ where: { id }, data: { deleted_at: new Date() } })
 

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
-import { Plus, Search, Zap, CheckCircle2, XCircle, MoreHorizontal, RefreshCw } from "lucide-react"
+import { Plus, Search, Zap, CheckCircle2, XCircle, MoreHorizontal, RefreshCw, AlertTriangle } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
 import { Button } from "@/components/ui/button"
@@ -26,11 +26,13 @@ interface Conta {
   page_id: string | null
   page_name: string | null
   status: "ativo" | "inativo"
+  cliente_id: string | null
   limite_diario: number | null
   uso_hoje: number
   ultimo_sync: string | null
   created_at: string
   usuario: { nome: string }
+  _count: { webhook_flows: number; contatos_vinculados: number; grupos_monitoramento: number }
 }
 
 export default function ManychatPage() {
@@ -40,6 +42,7 @@ export default function ManychatPage() {
   const [search, setSearch] = useState("")
   const [testingId, setTestingId] = useState<string | null>(null)
   const [deleteDialog, setDeleteDialog] = useState<Conta | null>(null)
+  const [deleteConfirmText, setDeleteConfirmText] = useState("")
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   const canWrite = user ? hasPermission(user.role, "contas:write") : false
@@ -109,6 +112,11 @@ export default function ManychatPage() {
     }
   }
 
+  function closeDeleteDialog() {
+    setDeleteDialog(null)
+    setDeleteConfirmText("")
+  }
+
   async function handleDelete(conta: Conta) {
     setActionLoading(conta.id + "-delete")
     try {
@@ -119,10 +127,10 @@ export default function ManychatPage() {
       const data = await res.json()
       if (res.ok) {
         toast.success(data.message)
-        setDeleteDialog(null)
+        closeDeleteDialog()
         fetchContas()
       } else {
-        toast.error(data.message)
+        toast.error(data.message || "Erro ao excluir conta.")
       }
     } catch {
       toast.error("Erro ao excluir conta.")
@@ -335,26 +343,55 @@ export default function ManychatPage() {
       </div>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
+      <Dialog open={!!deleteDialog} onOpenChange={closeDeleteDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Excluir Conta</DialogTitle>
+            <DialogTitle className="text-[#F87171]">Excluir Conta Manychat</DialogTitle>
           </DialogHeader>
+
           <p className="text-[#8B8B9E] text-sm">
-            Tem certeza que deseja excluir a conta{" "}
-            <span className="text-[#F1F1F3] font-semibold">{deleteDialog?.nome}</span>?
-            Esta ação não pode ser desfeita.
+            Você está prestes a excluir a conta{" "}
+            <span className="text-[#F1F1F3] font-semibold">{deleteDialog?.nome}</span>.
           </p>
+
+          {/* Related data warning */}
+          <div className="bg-[#2A1616] border border-[#F87171]/20 rounded-lg p-4 space-y-2">
+            <p className="text-[#F87171] text-sm font-semibold flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              Dados que serão desvinculados
+            </p>
+            <ul className="text-xs text-[#C4C4D4] space-y-1 ml-6 list-disc">
+              <li>{deleteDialog?._count.webhook_flows ?? 0} fluxo(s) de webhook</li>
+              <li>{deleteDialog?._count.contatos_vinculados ?? 0} contato(s) vinculado(s)</li>
+              <li>{deleteDialog?._count.grupos_monitoramento ?? 0} grupo(s) monitorado(s)</li>
+            </ul>
+          </div>
+
+          {/* Confirmation input */}
+          <div className="space-y-2">
+            <p className="text-sm text-[#8B8B9E]">
+              Digite <span className="font-mono font-bold text-[#F87171]">excluir</span> para confirmar:
+            </p>
+            <input
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="excluir"
+              autoComplete="off"
+              className="w-full h-10 px-3 rounded-lg border border-[#1E1E2A] bg-[#111118] text-sm text-[#F1F1F3] placeholder-[#5A5A72] focus:outline-none focus:border-[#F87171]/50 transition-colors"
+            />
+          </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialog(null)}>
+            <Button variant="outline" onClick={closeDeleteDialog}>
               Cancelar
             </Button>
             <Button
               variant="destructive"
               onClick={() => deleteDialog && handleDelete(deleteDialog)}
+              disabled={deleteConfirmText !== "excluir" || actionLoading === deleteDialog?.id + "-delete"}
               loading={actionLoading === deleteDialog?.id + "-delete"}
             >
-              Excluir
+              Excluir Conta
             </Button>
           </DialogFooter>
         </DialogContent>
