@@ -104,6 +104,11 @@ export default function ClienteDetailPage() {
   const [editFieldConta, setEditFieldConta] = useState<Conta | null>(null)
   const [fieldIdInput, setFieldIdInput] = useState("")
   const [fieldIdLoading, setFieldIdLoading] = useState(false)
+  type VerifyState = "idle" | "checking" | "valid" | "invalid"
+  const [verifyState, setVerifyState] = useState<VerifyState>("idle")
+  const [verifiedField, setVerifiedField] = useState<{ name: string; type: string } | null>(null)
+  const [verifyMsg, setVerifyMsg] = useState("")
+  const [creatingField, setCreatingField] = useState(false)
   // Field ID for new conta dialog
   const [newFieldId, setNewFieldId] = useState("")
   const [ensureFieldStatus, setEnsureFieldStatus] = useState<"idle" | "loading" | "ok" | "error">("idle")
@@ -337,6 +342,10 @@ export default function ClienteDetailPage() {
   function handleOpenEditFieldId(conta: Conta) {
     setEditFieldConta(conta)
     setFieldIdInput(conta.whatsapp_field_id ? String(conta.whatsapp_field_id) : "")
+    setVerifyState("idle")
+    setVerifiedField(null)
+    setVerifyMsg("")
+    setCreatingField(false)
   }
 
   async function handleSaveFieldId() {
@@ -354,6 +363,54 @@ export default function ClienteDetailPage() {
       if (res.ok) { toast.success("Field ID salvo."); setEditFieldConta(null); fetchCliente() }
       else { toast.error(data.message || "Erro ao salvar.") }
     } catch { toast.error("Erro de conexão.") } finally { setFieldIdLoading(false) }
+  }
+
+  // Debounce auto-verify field_id when editing
+  useEffect(() => {
+    if (!editFieldConta) return
+    const num = parseInt(fieldIdInput.trim(), 10)
+    if (!fieldIdInput.trim() || isNaN(num) || num <= 0) {
+      setVerifyState("idle"); setVerifiedField(null); return
+    }
+    setVerifyState("checking"); setVerifiedField(null)
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/admin/contas/${editFieldConta.id}/verify-field`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ field_id: num }),
+        })
+        const data = await res.json()
+        if (data.ok) {
+          setVerifyState("valid"); setVerifiedField(data.field)
+        } else {
+          setVerifyState("invalid"); setVerifyMsg(data.message || "Campo não encontrado.")
+        }
+      } catch {
+        setVerifyState("invalid"); setVerifyMsg("Erro ao verificar. Tente novamente.")
+      }
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [fieldIdInput, editFieldConta?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleCreateField() {
+    if (!editFieldConta) return
+    setCreatingField(true)
+    try {
+      const res = await fetch(`/api/admin/contas/${editFieldConta.id}/ensure-field`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      const data = await res.json()
+      if (data.ok && data.field_id) {
+        setFieldIdInput(String(data.field_id))
+        setVerifyState("valid")
+        setVerifiedField({ name: "[esc]whatsapp-id", type: "text" })
+        toast.success(data.message)
+      } else {
+        toast.error(data.message || "Erro ao criar campo.")
+      }
+    } catch { toast.error("Erro de conexão.") } finally { setCreatingField(false) }
   }
 
   async function handleDeleteConta(conta: Conta) {
@@ -1245,6 +1302,33 @@ export default function ClienteDetailPage() {
             </div>
             <Input label="Field ID" placeholder="Ex: 11947822" type="number"
               value={fieldIdInput} onChange={(e) => setFieldIdInput(e.target.value)} required />
+
+            {/* Verification status */}
+            {verifyState === "checking" && (
+              <div className="flex items-center gap-2 text-xs text-[#8B8B9E]">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Verificando no Manychat...
+              </div>
+            )}
+            {verifyState === "valid" && verifiedField && (
+              <div className="flex items-center gap-2 text-xs text-[#25D366]">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Campo <span className="font-mono">{verifiedField.name}</span> encontrado
+                {verifiedField.type !== "text" && (
+                  <span className="text-[#F59E0B] ml-1">(tipo: {verifiedField.type} — esperado: text)</span>
+                )}
+              </div>
+            )}
+            {verifyState === "invalid" && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs text-[#F87171]">
+                  <XCircle className="w-3.5 h-3.5 shrink-0" />
+                  {verifyMsg || "Este campo não existe nesta conta Manychat. Informe outro ID ou crie um."}
+                </div>
+                <Button size="sm" variant="outline" onClick={handleCreateField} loading={creatingField}>
+                  <Plus className="w-3.5 h-3.5 mr-1" /> Criar [esc]whatsapp-id automaticamente
+                </Button>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditFieldConta(null)} disabled={fieldIdLoading}>Cancelar</Button>

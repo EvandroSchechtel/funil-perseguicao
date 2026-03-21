@@ -358,6 +358,41 @@ export async function getWhatsappIdFieldId(apiKey: string): Promise<number | nul
   }
 }
 
+export interface VerifyFieldResult {
+  ok: boolean
+  field?: { id: number; name: string; type: string }
+  message?: string
+}
+
+/**
+ * Verifies whether a specific custom field ID exists in the Manychat account.
+ * Fetches the full custom fields list and searches by numeric id.
+ * Returns the field info if found, or ok=false with a message if not.
+ */
+export async function verifyCustomFieldId(
+  apiKey: string,
+  fieldId: number
+): Promise<VerifyFieldResult> {
+  const { signal, clear } = withTimeout(10000)
+  try {
+    const res = await fetch(`${MANYCHAT_API_BASE}/fb/subscriber/getCustomFields`, {
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      signal,
+    })
+    clear()
+    if (!res.ok) return { ok: false, message: `Erro ao consultar Manychat: ${res.status}` }
+    const data = await res.json()
+    const fields: Array<{ id: number; name: string; type: string }> = data?.data ?? []
+    const found = fields.find((f) => f.id === fieldId)
+    if (!found) return { ok: false, message: "Campo não encontrado nesta conta Manychat." }
+    return { ok: true, field: found }
+  } catch (err) {
+    clear()
+    if ((err as Error).name === "AbortError") return { ok: false, message: "Tempo limite atingido." }
+    return { ok: false, message: "Erro ao conectar ao Manychat." }
+  }
+}
+
 export interface EnsureFieldResult {
   ok: boolean
   fieldId?: number
