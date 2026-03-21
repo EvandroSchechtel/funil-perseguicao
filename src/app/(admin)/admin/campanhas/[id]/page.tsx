@@ -83,8 +83,9 @@ interface LeadItem {
   webhook: { nome: string } | null
 }
 
-type Tab = "visao-geral" | "webhooks" | "leads"
 type TesteResultado = { ok: true; lead_id: string } | { ok: false; message: string } | null
+
+const LEADS_PREVIEW = 5
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -124,7 +125,6 @@ export default function CampanhaDetailPage() {
   const { accessToken, user } = useAuth()
   const router = useRouter()
 
-  const [tab, setTab] = useState<Tab>("visao-geral")
   const [campanha, setCampanha] = useState<CampanhaData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -156,10 +156,11 @@ export default function CampanhaDetailPage() {
   const [deleteFlow, setDeleteFlow] = useState<{ flow: Flow; webhookId: string } | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
-  // Leads tab
+  // Leads
   const [leads, setLeads] = useState<LeadItem[]>([])
   const [loadingLeads, setLoadingLeads] = useState(false)
   const [leadsTotal, setLeadsTotal] = useState(0)
+  const [leadsExpanded, setLeadsExpanded] = useState(false)
 
   // Pause actions
   const [pauseLoading, setPauseLoading] = useState<string | null>(null)
@@ -223,7 +224,7 @@ export default function CampanhaDetailPage() {
     if (!accessToken || !id) return
     setLoadingLeads(true)
     try {
-      const res = await fetch(`/api/admin/leads?campanha_id=${id}&per_page=50`, {
+      const res = await fetch(`/api/admin/leads?campanha_id=${id}&per_page=100`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       })
       if (!res.ok) return
@@ -237,10 +238,13 @@ export default function CampanhaDetailPage() {
     }
   }, [accessToken, id])
 
+  // Fetch webhooks and leads once campanha is loaded
   useEffect(() => {
-    if (tab === "webhooks" && webhooks.length === 0) fetchWebhooks()
-    if (tab === "leads") fetchLeads()
-  }, [tab])  // eslint-disable-line react-hooks/exhaustive-deps
+    if (campanha) {
+      fetchWebhooks()
+      fetchLeads()
+    }
+  }, [campanha?.id])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Fetch contas (for add flow) ─────────────────────────────────────────────
 
@@ -442,11 +446,7 @@ export default function CampanhaDetailPage() {
     )
   }
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "visao-geral", label: "Visão Geral" },
-    { id: "webhooks", label: `Webhooks${campanha.webhooks_count > 0 ? ` (${campanha.webhooks_count})` : ""}` },
-    { id: "leads", label: `Leads${campanha.leads_count > 0 ? ` (${campanha.leads_count})` : ""}` },
-  ]
+  const visibleLeads = leadsExpanded ? leads : leads.slice(0, LEADS_PREVIEW)
 
   return (
     <div className="flex flex-col h-full">
@@ -483,7 +483,7 @@ export default function CampanhaDetailPage() {
       <div className="flex-1 overflow-auto">
         {/* Page title + meta */}
         <div className="px-6 pt-6 pb-0">
-          <div className="flex items-start justify-between gap-4 mb-5">
+          <div className="flex items-start gap-4 mb-6">
             <div>
               <div className="flex items-center gap-3 mb-1">
                 <h1 className="text-[#F1F1F3] text-2xl font-bold">{campanha.nome}</h1>
@@ -513,135 +513,76 @@ export default function CampanhaDetailPage() {
               </div>
             </div>
           </div>
-
-          {/* Tabs */}
-          <div className="flex items-center gap-1 border-b border-[#1E1E2A]">
-            {tabs.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`px-4 py-2.5 text-sm font-medium transition-all border-b-2 -mb-px ${
-                  tab === t.id
-                    ? "text-[#25D366] border-[#25D366]"
-                    : "text-[#8B8B9E] border-transparent hover:text-[#F1F1F3]"
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
         </div>
 
-        {/* ── Tab: Visão Geral ─────────────────────────────────────────────── */}
-        {tab === "visao-geral" && (
-          <div className="p-6 max-w-2xl space-y-5">
+        {/* ── Unified scrollable content ─────────────────────────────────── */}
+        <div className="px-6 pb-10 max-w-3xl space-y-10">
 
-            {/* Pause banner */}
-            {campanha.pausado_at && (
-              <div className="bg-[#1A1500] border border-[#F59E0B]/30 rounded-xl px-5 py-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <PauseCircle className="w-5 h-5 text-[#F59E0B] shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-[#F59E0B] font-semibold text-sm">Campanha pausada</p>
-                      <p className="text-[#A08030] text-xs mt-0.5">
-                        {campanha.aguardando_count > 0
-                          ? `${campanha.aguardando_count} lead(s) na fila de espera`
-                          : "Nenhum lead na fila ainda"}
-                        {" · "}Pausada em {formatDate(campanha.pausado_at)}
-                      </p>
+          {/* Pause banner */}
+          {campanha.pausado_at && (
+            <div className="bg-[#1A1500] border border-[#F59E0B]/30 rounded-xl px-5 py-4">
+              <div className="flex items-center gap-3">
+                <PauseCircle className="w-5 h-5 text-[#F59E0B] shrink-0" />
+                <div>
+                  <p className="text-[#F59E0B] font-semibold text-sm">Campanha pausada</p>
+                  <p className="text-[#A08030] text-xs mt-0.5">
+                    {campanha.aguardando_count > 0
+                      ? `${campanha.aguardando_count} lead(s) na fila de espera`
+                      : "Nenhum lead na fila ainda"}
+                    {" · "}Pausada em {formatDate(campanha.pausado_at)}
+                  </p>
+                </div>
+              </div>
+              {canWrite && (
+                <div className="flex flex-wrap gap-2 mt-4">
+                  <Button size="sm" onClick={() => callPauseAction("retomar")} loading={pauseLoading === "retomar"} disabled={!!pauseLoading}>
+                    <PlayCircle className="w-4 h-4 mr-1.5" />Retomar campanha
+                  </Button>
+                  {campanha.aguardando_count > 0 && (
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => callPauseAction("soltar-todos")} loading={pauseLoading === "soltar-todos"} disabled={!!pauseLoading}>
+                        <ChevronsRight className="w-4 h-4 mr-1.5" />Soltar todos ({campanha.aguardando_count})
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => callPauseAction("soltar-um")} loading={pauseLoading === "soltar-um"} disabled={!!pauseLoading}>
+                        <ListOrdered className="w-4 h-4 mr-1.5" />Soltar um
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Seção: Visão Geral ──────────────────────────────────────────── */}
+          <section className="space-y-4">
+            <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold">Visão Geral</p>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: "Webhooks", value: campanha.webhooks_count, icon: <Webhook className="w-4 h-4 text-[#7F7F9E]" /> },
+                { label: "Leads recebidos", value: campanha.leads_count, icon: <Users2 className="w-4 h-4 text-[#7F7F9E]" /> },
+                {
+                  label: "Entradas no grupo",
+                  value: campanha.grupos_entrados_count,
+                  icon: <DoorOpen className="w-4 h-4 text-[#25D366]" />,
+                  suffix: campanha.leads_count > 0
+                    ? <span className="text-xs font-semibold ml-1" style={{ color: campanha.grupos_entrados_count / campanha.leads_count >= 0.6 ? "#25D366" : campanha.grupos_entrados_count / campanha.leads_count >= 0.3 ? "#F59E0B" : "#F87171" }}>
+                        {((campanha.grupos_entrados_count / campanha.leads_count) * 100).toFixed(1)}%
+                      </span>
+                    : null,
+                },
+              ].map((s) => (
+                <div key={s.label} className="bg-[#0F0F1A] border border-[#1C1C2C] rounded-xl px-4 py-4 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-[#13131F] flex items-center justify-center shrink-0">{s.icon}</div>
+                  <div>
+                    <div className="flex items-baseline">
+                      <p className="text-xl font-bold text-[#EEEEF5] leading-none">{s.value}</p>
+                      {"suffix" in s ? s.suffix : null}
                     </div>
+                    <p className="text-[#7F7F9E] text-[10px] mt-1">{s.label}</p>
                   </div>
                 </div>
-                {canWrite && (
-                  <div className="flex flex-wrap gap-2 mt-4">
-                    <Button
-                      size="sm"
-                      onClick={() => callPauseAction("retomar")}
-                      loading={pauseLoading === "retomar"}
-                      disabled={!!pauseLoading}
-                    >
-                      <PlayCircle className="w-4 h-4 mr-1.5" />
-                      Retomar campanha
-                    </Button>
-                    {campanha.aguardando_count > 0 && (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => callPauseAction("soltar-todos")}
-                          loading={pauseLoading === "soltar-todos"}
-                          disabled={!!pauseLoading}
-                        >
-                          <ChevronsRight className="w-4 h-4 mr-1.5" />
-                          Soltar todos ({campanha.aguardando_count})
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => callPauseAction("soltar-um")}
-                          loading={pauseLoading === "soltar-um"}
-                          disabled={!!pauseLoading}
-                        >
-                          <ListOrdered className="w-4 h-4 mr-1.5" />
-                          Soltar um
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Stats */}
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { label: "Webhooks", value: campanha.webhooks_count, icon: <Webhook className="w-4 h-4 text-[#7F7F9E]" />, onClick: () => setTab("webhooks") },
-                { label: "Leads recebidos", value: campanha.leads_count, icon: <Users2 className="w-4 h-4 text-[#7F7F9E]" />, onClick: () => setTab("leads") },
-              ].map((s) => (
-                <button
-                  key={s.label}
-                  onClick={s.onClick}
-                  className="bg-[#0F0F1A] border border-[#1C1C2C] rounded-xl px-5 py-4 flex items-center gap-3.5 hover:border-[#252535] transition-all text-left"
-                >
-                  <div className="w-9 h-9 rounded-lg bg-[#13131F] flex items-center justify-center shrink-0">
-                    {s.icon}
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-[#EEEEF5] leading-none">{s.value}</p>
-                    <p className="text-[#7F7F9E] text-[11px] mt-1">{s.label}</p>
-                  </div>
-                </button>
               ))}
             </div>
-
-            {/* Group entry KPI */}
-            {campanha.grupos_entrados_count > 0 || campanha.leads_count > 0 ? (
-              <div className="bg-[#0F0F1A] border border-[#1C1C2C] rounded-xl px-5 py-4 flex items-center gap-3.5">
-                <div className="w-9 h-9 rounded-lg bg-[#13131F] flex items-center justify-center shrink-0">
-                  <DoorOpen className="w-4 h-4 text-[#25D366]" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-baseline gap-2">
-                    <p className="text-2xl font-bold text-[#EEEEF5] leading-none">{campanha.grupos_entrados_count}</p>
-                    {campanha.leads_count > 0 && (
-                      <p className="text-sm font-semibold" style={{
-                        color: campanha.grupos_entrados_count / campanha.leads_count >= 0.6
-                          ? "#25D366"
-                          : campanha.grupos_entrados_count / campanha.leads_count >= 0.3
-                          ? "#F59E0B"
-                          : "#F87171",
-                      }}>
-                        {((campanha.grupos_entrados_count / campanha.leads_count) * 100).toFixed(1)}%
-                      </p>
-                    )}
-                  </div>
-                  <p className="text-[#7F7F9E] text-[11px] mt-1">Leads que entraram no grupo</p>
-                </div>
-              </div>
-            ) : null}
-
-            {/* Details card */}
             <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-5 space-y-4">
               {campanha.descricao && (
                 <div>
@@ -672,34 +613,21 @@ export default function CampanhaDetailPage() {
                 )}
               </div>
             </div>
+          </section>
 
-            {canWrite && (
-              <Link href={`/admin/campanhas/${id}/editar`}>
-                <Button variant="outline" className="w-full">
-                  <Pencil className="w-4 h-4 mr-2" />
-                  Editar Campanha
-                </Button>
-              </Link>
-            )}
-          </div>
-        )}
-
-        {/* ── Tab: Webhooks ────────────────────────────────────────────────── */}
-        {tab === "webhooks" && (
-          <div className="p-6 max-w-3xl space-y-4">
+          {/* ── Seção: Webhooks ─────────────────────────────────────────────── */}
+          <section className="space-y-3">
+            <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold">
+              Webhooks{campanha.webhooks_count > 0 && <span className="text-[#3F3F58] normal-case ml-1">({campanha.webhooks_count})</span>}
+            </p>
             {loadingWebhooks ? (
-              <div className="flex items-center justify-center py-16">
-                <div className="animate-spin w-6 h-6 border-2 border-[#25D366] border-t-transparent rounded-full" />
+              <div className="flex items-center justify-center py-10">
+                <div className="animate-spin w-5 h-5 border-2 border-[#25D366] border-t-transparent rounded-full" />
               </div>
             ) : webhooks.length === 0 ? (
-              <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl flex flex-col items-center justify-center py-16 gap-4">
-                <div className="w-12 h-12 rounded-xl bg-[#1E1E2A] flex items-center justify-center">
-                  <Webhook className="w-6 h-6 text-[#5A5A72]" />
-                </div>
-                <div className="text-center">
-                  <p className="text-[#C4C4D4] font-medium">Nenhum webhook nesta campanha</p>
-                  <p className="text-[#5A5A72] text-sm mt-1">Webhooks são criados automaticamente ao criar uma campanha</p>
-                </div>
+              <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl flex items-center justify-center py-10 gap-3">
+                <Webhook className="w-5 h-5 text-[#5A5A72]" />
+                <p className="text-[#5A5A72] text-sm">Nenhum webhook nesta campanha</p>
               </div>
             ) : (
               webhooks.map((w) => {
@@ -707,165 +635,114 @@ export default function CampanhaDetailPage() {
                 const activeFlows = w.webhook_flows?.filter((f) => f.status === "ativo") || []
                 return (
                   <div key={w.id} className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-hidden">
-                    {/* Webhook header */}
-                    <div
-                      className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-[#1C1C28] transition-colors"
-                      onClick={() => setExpandedWebhook(expanded ? null : w.id)}
-                    >
+                    <div className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-[#1C1C28] transition-colors" onClick={() => setExpandedWebhook(expanded ? null : w.id)}>
                       <div className={`w-2 h-2 rounded-full shrink-0 ${w.status === "ativo" ? "bg-[#25D366]" : "bg-[#3F3F58]"}`} />
                       <div className="flex-1 min-w-0">
                         <p className="text-[#F1F1F3] font-medium text-sm">{w.nome}</p>
                         <p className="text-[#5A5A72] text-xs font-mono mt-0.5 truncate">{w.url_publica}</p>
                       </div>
-                      <Badge variant={w.status === "ativo" ? "ativo" : "inativo"} className="shrink-0">
-                        {w.status === "ativo" ? "Ativo" : "Inativo"}
-                      </Badge>
+                      <Badge variant={w.status === "ativo" ? "ativo" : "inativo"} className="shrink-0">{w.status === "ativo" ? "Ativo" : "Inativo"}</Badge>
                       <div className="flex items-center gap-3 shrink-0 text-[#8B8B9E] text-xs">
                         <span>{activeFlows.length} flows</span>
                         <span>{w.leads_count} leads</span>
                       </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleCopy(w.url_publica, w.id) }}
-                        className="p-1.5 text-[#5A5A72] hover:text-[#25D366] transition-colors shrink-0"
-                        title="Copiar URL"
-                      >
+                      <button onClick={(e) => { e.stopPropagation(); handleCopy(w.url_publica, w.id) }} className="p-1.5 text-[#5A5A72] hover:text-[#25D366] transition-colors shrink-0" title="Copiar URL">
                         {copiedId === w.id ? <CheckCircle2 className="w-4 h-4 text-[#25D366]" /> : <Copy className="w-4 h-4" />}
                       </button>
                       {expanded ? <ChevronDown className="w-4 h-4 text-[#5A5A72] shrink-0" /> : <ChevronRight className="w-4 h-4 text-[#5A5A72] shrink-0" />}
                     </div>
-
-                    {/* Expanded: flows + actions */}
                     {expanded && (
-                      <div className="border-t border-[#1E1E2A]">
-                        {/* Flows list */}
-                        <div className="px-5 py-3">
-                          <div className="flex items-center justify-between mb-3">
-                            <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold">Flows Manychat</p>
-                            <div className="flex gap-2">
-                              {activeFlows.length > 0 && (
-                                <Button size="sm" variant="outline" onClick={() => handleOpenTeste(w)}>
-                                  <FlaskConical className="w-3.5 h-3.5 mr-1" />
-                                  Testar
-                                </Button>
-                              )}
-                              <Button size="sm" onClick={() => handleOpenAddFlow(w.id)}>
-                                <Plus className="w-3.5 h-3.5 mr-1" />
-                                Adicionar Flow
+                      <div className="border-t border-[#1E1E2A] px-5 py-3">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold">Flows Manychat</p>
+                          <div className="flex gap-2">
+                            {activeFlows.length > 0 && (
+                              <Button size="sm" variant="outline" onClick={() => handleOpenTeste(w)}>
+                                <FlaskConical className="w-3.5 h-3.5 mr-1" />Testar
                               </Button>
-                              <button
-                                onClick={() => handleToggleWebhook(w)}
-                                className="text-[#5A5A72] hover:text-[#25D366] transition-colors p-1.5"
-                                title={w.status === "ativo" ? "Desativar webhook" : "Ativar webhook"}
-                              >
-                                {w.status === "ativo"
-                                  ? <ToggleRight className="w-5 h-5 text-[#25D366]" />
-                                  : <ToggleLeft className="w-5 h-5" />}
-                              </button>
-                            </div>
+                            )}
+                            <Button size="sm" onClick={() => handleOpenAddFlow(w.id)}>
+                              <Plus className="w-3.5 h-3.5 mr-1" />Adicionar Flow
+                            </Button>
+                            <button onClick={() => handleToggleWebhook(w)} className="text-[#5A5A72] hover:text-[#25D366] transition-colors p-1.5" title={w.status === "ativo" ? "Desativar webhook" : "Ativar webhook"}>
+                              {w.status === "ativo" ? <ToggleRight className="w-5 h-5 text-[#25D366]" /> : <ToggleLeft className="w-5 h-5" />}
+                            </button>
                           </div>
-
-                          {!w.webhook_flows || w.webhook_flows.length === 0 ? (
-                            <div className="flex items-center gap-2 py-4 text-center">
-                              <Info className="w-4 h-4 text-[#5A5A72] shrink-0" />
-                              <p className="text-[#5A5A72] text-sm">Nenhum flow. Adicione um flow para este webhook receber leads.</p>
-                            </div>
-                          ) : (
-                            <div className="space-y-1">
-                              {w.webhook_flows.map((flow) => (
-                                <div key={flow.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[#111118] border border-[#1E1E2A]">
-                                  <GripVertical className="w-4 h-4 text-[#2A2A3A] shrink-0" />
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-[#C4C4D4] text-sm font-medium">{flow.conta.nome}</p>
-                                    <p className="text-[#5A5A72] text-xs font-mono">
-                                      {flow.flow_nome || flow.flow_ns.slice(0, 40) + (flow.flow_ns.length > 40 ? "…" : "")}
-                                    </p>
-                                  </div>
-                                  <Badge variant={flow.status === "ativo" ? "ativo" : "inativo"}>
-                                    {flow.status === "ativo" ? "Ativo" : "Inativo"}
-                                  </Badge>
-                                  <span className="text-[#8B8B9E] text-xs shrink-0">{flow.total_enviados} enviados</span>
-                                  <div className="flex gap-1 shrink-0">
-                                    <button
-                                      onClick={() => handleToggleFlow(flow, w.id)}
-                                      disabled={actionLoading === flow.id + "-toggle"}
-                                      className="p-1.5 text-[#5A5A72] hover:text-[#25D366] transition-colors disabled:opacity-50"
-                                    >
-                                      {flow.status === "ativo"
-                                        ? <ToggleRight className="w-4 h-4 text-[#25D366]" />
-                                        : <ToggleLeft className="w-4 h-4" />}
-                                    </button>
-                                    <button
-                                      onClick={() => setDeleteFlow({ flow, webhookId: w.id })}
-                                      className="p-1.5 text-[#5A5A72] hover:text-[#F87171] transition-colors"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
                         </div>
+                        {!w.webhook_flows || w.webhook_flows.length === 0 ? (
+                          <div className="flex items-center gap-2 py-3">
+                            <Info className="w-4 h-4 text-[#5A5A72] shrink-0" />
+                            <p className="text-[#5A5A72] text-sm">Nenhum flow. Adicione um flow para este webhook receber leads.</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            {w.webhook_flows.map((flow) => (
+                              <div key={flow.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[#111118] border border-[#1E1E2A]">
+                                <GripVertical className="w-4 h-4 text-[#2A2A3A] shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[#C4C4D4] text-sm font-medium">{flow.conta.nome}</p>
+                                  <p className="text-[#5A5A72] text-xs font-mono">{flow.flow_nome || flow.flow_ns.slice(0, 40) + (flow.flow_ns.length > 40 ? "…" : "")}</p>
+                                </div>
+                                <Badge variant={flow.status === "ativo" ? "ativo" : "inativo"}>{flow.status === "ativo" ? "Ativo" : "Inativo"}</Badge>
+                                <span className="text-[#8B8B9E] text-xs shrink-0">{flow.total_enviados} enviados</span>
+                                <div className="flex gap-1 shrink-0">
+                                  <button onClick={() => handleToggleFlow(flow, w.id)} disabled={actionLoading === flow.id + "-toggle"} className="p-1.5 text-[#5A5A72] hover:text-[#25D366] transition-colors disabled:opacity-50">
+                                    {flow.status === "ativo" ? <ToggleRight className="w-4 h-4 text-[#25D366]" /> : <ToggleLeft className="w-4 h-4" />}
+                                  </button>
+                                  <button onClick={() => setDeleteFlow({ flow, webhookId: w.id })} className="p-1.5 text-[#5A5A72] hover:text-[#F87171] transition-colors">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
                 )
               })
             )}
-          </div>
-        )}
+          </section>
 
-        {/* ── Tab: Leads ───────────────────────────────────────────────────── */}
-        {tab === "leads" && (
-          <div className="p-6 max-w-3xl">
+          {/* ── Seção: Leads ────────────────────────────────────────────────── */}
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold">
+                Leads{leadsTotal > 0 && <span className="text-[#3F3F58] normal-case ml-1">({leadsTotal})</span>}
+              </p>
+              {leadsTotal > 0 && (
+                <Link href={`/admin/leads?campanha_id=${id}`} className="text-xs text-[#8B8B9E] hover:text-[#25D366] transition-colors">
+                  Ver todos →
+                </Link>
+              )}
+            </div>
             {loadingLeads ? (
-              <div className="flex items-center justify-center py-16">
-                <div className="animate-spin w-6 h-6 border-2 border-[#25D366] border-t-transparent rounded-full" />
+              <div className="flex items-center justify-center py-10">
+                <div className="animate-spin w-5 h-5 border-2 border-[#25D366] border-t-transparent rounded-full" />
               </div>
             ) : leads.length === 0 ? (
-              <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl flex flex-col items-center justify-center py-16 gap-4">
-                <Users2 className="w-10 h-10 text-[#5A5A72]" />
-                <div className="text-center">
-                  <p className="text-[#C4C4D4] font-medium">Nenhum lead nesta campanha</p>
-                  <p className="text-[#5A5A72] text-sm mt-1">Os leads aparecerão aqui quando chegarem via webhook</p>
-                </div>
+              <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl flex items-center justify-center py-10 gap-3">
+                <Users2 className="w-5 h-5 text-[#5A5A72]" />
+                <p className="text-[#5A5A72] text-sm">Nenhum lead nesta campanha</p>
               </div>
             ) : (
               <>
-                <div className="flex items-center justify-between mb-4">
-                  <p className="text-sm text-[#8B8B9E]">
-                    {leadsTotal} lead{leadsTotal !== 1 ? "s" : ""} recebido{leadsTotal !== 1 ? "s" : ""}
-                  </p>
-                  <Link href={`/admin/leads?campanha_id=${id}`}>
-                    <Button variant="outline" size="sm">Ver todos em Leads</Button>
-                  </Link>
-                </div>
                 <div className="space-y-3">
-                  {leads.map((lead) => {
+                  {visibleLeads.map((lead) => {
                     const style = leadStatusStyle(lead.status)
                     const isError = lead.status === "falha" || lead.status === "sem_optin"
                     return (
-                      <div
-                        key={lead.id}
-                        className={`bg-[#16161E] border border-[#1E1E2A] border-l-4 ${style.border} rounded-xl px-5 py-4`}
-                      >
-                        {/* Row 1: name + phone + status badge */}
+                      <div key={lead.id} className={`bg-[#16161E] border border-[#1E1E2A] border-l-4 ${style.border} rounded-xl px-5 py-4`}>
                         <div className="flex items-start justify-between gap-3 mb-3">
                           <div className="flex items-baseline gap-3 min-w-0">
-                            <Link
-                              href={`/admin/leads/${lead.id}`}
-                              className="text-[#F1F1F3] font-semibold text-sm hover:text-[#25D366] transition-colors truncate"
-                            >
+                            <Link href={`/admin/leads/${lead.id}`} className="text-[#F1F1F3] font-semibold text-sm hover:text-[#25D366] transition-colors truncate">
                               {lead.nome}
                             </Link>
                             <span className="text-[#8B8B9E] text-xs font-mono shrink-0">{lead.telefone}</span>
                           </div>
-                          <span className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full shrink-0 ${style.badge}`}>
-                            {lead.status}
-                          </span>
+                          <span className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full shrink-0 ${style.badge}`}>{lead.status}</span>
                         </div>
-
-                        {/* Row 2: timeline strip */}
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs mb-2">
                           <span className="flex items-center gap-1 text-[#8B8B9E]">
                             <span className="text-[#5A5A72]">📅</span>
@@ -874,13 +751,8 @@ export default function CampanhaDetailPage() {
                           <span className="flex items-center gap-1 text-[#8B8B9E]">
                             <span className={lead.processado_at ? "text-[#25D366]" : "text-[#5A5A72]"}>⚡</span>
                             Flow:{" "}
-                            {lead.processado_at
-                              ? <span className="text-[#25D366] font-mono">{fmtDt(lead.processado_at)}</span>
-                              : <span className="text-[#5A5A72]">—</span>
-                            }
-                            {lead.conta_nome && (
-                              <span className="text-[#5A5A72]"> · {lead.conta_nome}</span>
-                            )}
+                            {lead.processado_at ? <span className="text-[#25D366] font-mono">{fmtDt(lead.processado_at)}</span> : <span className="text-[#5A5A72]">—</span>}
+                            {lead.conta_nome && <span className="text-[#5A5A72]"> · {lead.conta_nome}</span>}
                           </span>
                           {lead.grupo_entrou_at && (
                             <span className="flex items-center gap-1 text-[#8B8B9E]">
@@ -895,32 +767,30 @@ export default function CampanhaDetailPage() {
                             </span>
                           )}
                         </div>
-
-                        {/* Row 3: flow_ns + tentativas + webhook */}
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-[#5A5A72]">
-                          {lead.flow_executado && (
-                            <span className="font-mono truncate max-w-[200px]" title={lead.flow_executado}>
-                              {lead.flow_executado}
-                            </span>
-                          )}
+                          {lead.flow_executado && <span className="font-mono truncate max-w-[200px]" title={lead.flow_executado}>{lead.flow_executado}</span>}
                           <span>{lead.tentativas} tentativa{lead.tentativas !== 1 ? "s" : ""}</span>
-                          {lead.webhook?.nome && (
-                            <span className="text-[#5A5A72]">· {lead.webhook.nome}</span>
-                          )}
+                          {lead.webhook?.nome && <span>· {lead.webhook.nome}</span>}
                         </div>
-
-                        {/* Row 4: error message */}
-                        {isError && lead.erro_msg && (
-                          <p className="text-[#F87171] text-xs mt-2 leading-snug">{lead.erro_msg}</p>
-                        )}
+                        {isError && lead.erro_msg && <p className="text-[#F87171] text-xs mt-2 leading-snug">{lead.erro_msg}</p>}
                       </div>
                     )
                   })}
                 </div>
+                {leadsTotal > LEADS_PREVIEW && (
+                  <button
+                    onClick={() => setLeadsExpanded(!leadsExpanded)}
+                    className="w-full py-3 text-sm text-[#8B8B9E] hover:text-[#F1F1F3] border border-[#1E1E2A] rounded-xl flex items-center justify-center gap-2 transition-colors hover:bg-[#16161E]"
+                  >
+                    <ChevronDown className={`w-4 h-4 transition-transform ${leadsExpanded ? "rotate-180" : ""}`} />
+                    {leadsExpanded ? "Mostrar menos" : `Mostrar todos os ${leadsTotal} leads`}
+                  </button>
+                )}
               </>
             )}
-          </div>
-        )}
+          </section>
+
+        </div>
       </div>
 
       {/* ── Add Flow Dialog ─────────────────────────────────────────────────── */}
