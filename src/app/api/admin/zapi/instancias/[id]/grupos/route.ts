@@ -1,9 +1,18 @@
 import { NextRequest } from "next/server"
+import { z } from "zod"
 import { getAuthContext } from "@/lib/api/auth-guard"
-import { ok, forbidden, serverError, handleServiceError, created, badRequest } from "@/lib/api/response"
+import { forbidden, serverError, handleServiceError, created, badRequest } from "@/lib/api/response"
 import { criarGrupo } from "@/lib/services/zapi.service"
 
 type Ctx = { params: Promise<{ id: string }> }
+
+const criarGrupoSchema = z.object({
+  campanha_id: z.string().min(1, "Campanha obrigatória"),
+  conta_manychat_id: z.string().min(1, "Conta Manychat obrigatória"),
+  nome_filtro: z.string().min(1, "Nome do grupo obrigatório"),
+  tag_manychat_id: z.number().int().positive("ID da tag deve ser um número positivo"),
+  tag_manychat_nome: z.string().min(1, "Nome da tag obrigatório"),
+})
 
 export async function POST(request: NextRequest, { params }: Ctx) {
   try {
@@ -14,20 +23,12 @@ export async function POST(request: NextRequest, { params }: Ctx) {
 
     const { id: instancia_id } = await params
     const body = await request.json()
-    const { campanha_id, conta_manychat_id, nome_filtro, tag_manychat_id, tag_manychat_nome } = body
-
-    if (!campanha_id || !conta_manychat_id || !nome_filtro || !tag_manychat_id || !tag_manychat_nome) {
-      return badRequest("campanha_id, conta_manychat_id, nome_filtro, tag_manychat_id e tag_manychat_nome são obrigatórios.")
+    const parsed = criarGrupoSchema.safeParse(body)
+    if (!parsed.success) {
+      return badRequest("Dados inválidos", parsed.error.flatten().fieldErrors as Record<string, string[]>)
     }
 
-    const result = await criarGrupo({
-      instancia_id,
-      campanha_id,
-      conta_manychat_id,
-      nome_filtro,
-      tag_manychat_id: Number(tag_manychat_id),
-      tag_manychat_nome,
-    })
+    const result = await criarGrupo({ instancia_id, ...parsed.data })
     return created(result)
   } catch (error) {
     return handleServiceError(error) ?? serverError()

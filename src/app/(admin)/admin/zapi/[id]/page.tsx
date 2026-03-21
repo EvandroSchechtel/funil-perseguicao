@@ -325,8 +325,8 @@ export default function InstanciaDetailPage() {
 
   async function handleSaveGrupo() {
     const { campanha_id, conta_manychat_id, nome_filtro, tag_manychat_id, tag_manychat_nome } = grupoForm
-    if (!campanha_id || !conta_manychat_id || !nome_filtro || !tag_manychat_id) {
-      toast.error("Preencha todos os campos do grupo.")
+    if (!campanha_id || !conta_manychat_id || !nome_filtro || !tag_manychat_id || Number(tag_manychat_id) <= 0) {
+      toast.error("Preencha todos os campos obrigatórios.")
       return
     }
     setSavingGrupo(true)
@@ -334,7 +334,13 @@ export default function InstanciaDetailPage() {
       const res = await fetch(`/api/admin/zapi/instancias/${id}/grupos`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ campanha_id, conta_manychat_id, nome_filtro, tag_manychat_id, tag_manychat_nome }),
+        body: JSON.stringify({
+          campanha_id,
+          conta_manychat_id,
+          nome_filtro,
+          tag_manychat_id: Number(tag_manychat_id),
+          tag_manychat_nome,
+        }),
       })
       const data = await res.json()
       if (res.ok) {
@@ -700,7 +706,7 @@ export default function InstanciaDetailPage() {
                       searchPlaceholder="Buscar conta…"
                       onChange={(val, label) => {
                         setGrupoForm((p) => ({ ...p, conta_manychat_id: val, conta_manychat_nome: label, tag_manychat_id: "", tag_manychat_nome: "" }))
-                        fetchTags(val)
+                        // fetchTags é acionado pelo useEffect([grupoForm.conta_manychat_id])
                       }}
                     />
                   </div>
@@ -751,6 +757,12 @@ export default function InstanciaDetailPage() {
                         disabled={!grupoForm.conta_manychat_id}
                         onChange={(val, label) => setGrupoForm((p) => ({ ...p, tag_manychat_id: val, tag_manychat_nome: label }))}
                       />
+                      {grupoForm.tag_manychat_id && Number(grupoForm.tag_manychat_id) > 0 && (
+                        <p className="text-[10px] text-[#25D366]/70 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 shrink-0" />
+                          ID capturado: <span className="font-mono">{grupoForm.tag_manychat_id}</span>
+                        </p>
+                      )}
                       {/* Criar tag inline */}
                       {grupoForm.conta_manychat_id && !tagsLoading && (
                         <div className="flex gap-2">
