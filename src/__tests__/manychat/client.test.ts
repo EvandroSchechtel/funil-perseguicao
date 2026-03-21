@@ -1,0 +1,438 @@
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * CRITICAL SERVICE TESTS — Manychat Client
+ * ══════════════════════════════════════════════════════════════════════════════
+ *
+ * These tests protect the core lead-processing logic.
+ * If any of these tests fail, a lead WILL NOT reach Manychat.
+ *
+ * NEVER modify processLeadInManychat, createManychatSubscriber, or
+ * sendFlowToSubscriber without ensuring all tests still pass.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+
+import { describe, it, expect, vi, afterEach } from "vitest"
+import {
+  processLeadInManychat,
+  createManychatSubscriber,
+  sendFlowToSubscriber,
+} from "@/lib/manychat/client"
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const BASE = "https://api.manychat.com"
+const API_KEY = "test_api_key_abc123"
+const FLOW_NS = "content20260319193116_225492"
+const FIELD_ID = 12345
+const LEAD = { nome: "João Silva", telefone: "5542998234664" }
+const PHONE_E164 = "+5542998234664"
+const SUB_ID = "subscriber_existing_789"
+const SUB_ID_NEW = "subscriber_new_456"
+
+// ── Fetch call recorder ───────────────────────────────────────────────────────
+
+interface FetchCall {
+  url: string
+  method: string
+  body: Record<string, unknown> | null
+}
+
+function setupFetch(
+  overrides: Record<string, { status?: number; body: object }> = {}
+): { calls: FetchCall[] } {
+  const calls: FetchCall[] = []
+
+  vi.stubGlobal(
+    "fetch",
+    async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = String(input)
+      let body: Record<string, unknown> | null = null
+      try {
+        body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : null
+      } catch { /* ignore */ }
+
+      calls.push({ url, method: init?.method ?? "GET", body })
+
+      // Check user-provided overrides first
+      for (const [key, val] of Object.entries(overrides)) {
+        if (url.includes(key)) {
+          return new Response(JSON.stringify(val.body), { status: val.status ?? 200 })
+        }
+      }
+
+      // Default responses per endpoint
+      if (url.includes("/fb/subscriber/findByCustomField")) {
+        // Default: not found (empty list)
+        return new Response(JSON.stringify({ status: "success", data: [] }), { status: 200 })
+      }
+      if (url.includes("/fb/subscriber/findBySystemField")) {
+        // Default: not found
+        return new Response(JSON.stringify({ status: "error", data: null }), { status: 404 })
+      }
+      if (url.includes("/fb/subscriber/createSubscriber")) {
+        // Default: created successfully
+        return new Response(
+          JSON.stringify({ status: "success", data: { id: SUB_ID_NEW } }),
+          { status: 200 }
+        )
+      }
+      if (url.includes("/fb/sending/sendFlow")) {
+        // Default: sent successfully
+        return new Response(JSON.stringify({ status: "success" }), { status: 200 })
+      }
+      // Catch-all for setCustomField, setCustomFieldByName, etc.
+      return new Response(JSON.stringify({ status: "success" }), { status: 200 })
+    }
+  )
+
+  return { calls }
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+// ── Helper: find calls by endpoint ───────────────────────────────────────────
+
+function callsTo(calls: FetchCall[], endpoint: string): FetchCall[] {
+  return calls.filter((c) => c.url.includes(endpoint))
+}
+
+function indexOfFirst(calls: FetchCall[], endpoint: string): number {
+  return calls.findIndex((c) => c.url.includes(endpoint))
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// INVARIANT 1 — has_opt_in_whatsapp: true MUST be present in every
+// createSubscriber call, always. This is the fix for Manychat "Validation error".
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe("INVARIANT: has_opt_in_whatsapp=true in all createSubscriber calls", () => {
+  it("createManychatSubscriber includes has_opt_in_whatsapp: true in request body", async () => {
+    const { calls } = setupFetch()
+    await createManychatSubscriber(API_KEY, LEAD)
+
+    const createCall = callsTo(calls, "/fb/subscriber/createSubscriber")[0]
+    expect(createCall, "createSubscriber fetch must be called").toBeDefined()
+    expect(createCall.body?.has_opt_in_whatsapp).toBe(true)
+  })
+
+  it("processLeadInManychat — new subscriber path: createSubscriber has has_opt_in_whatsapp=true", async () => {
+    const { calls } = setupFetch()
+    // All lookups return not-found → will create new subscriber
+    await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
+
+    const createCalls = callsTo(calls, "/fb/subscriber/createSubscriber")
+    expect(createCalls.length, "createSubscriber must be called at least once").toBeGreaterThan(0)
+    // EVERY createSubscriber call must have the flag
+    for (const c of createCalls) {
+      expect(c.body?.has_opt_in_whatsapp, `createSubscriber call missing has_opt_in_whatsapp: ${JSON.stringify(c.body)}`).toBe(true)
+    }
+  })
+
+  it("processLeadInManychat — found via custom field: opt-in upsert has has_opt_in_whatsapp=true", async () => {
+    const { calls } = setupFetch({
+      "/fb/subscriber/findByCustomField": {
+        body: { status: "success", data: [{ id: SUB_ID }] },
+      },
+    })
+    await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
+
+    const createCalls = callsTo(calls, "/fb/subscriber/createSubscriber")
+    // Opt-in upsert must have been called
+    expect(createCalls.length, "opt-in upsert must be called before sendFlow").toBeGreaterThan(0)
+    for (const c of createCalls) {
+      expect(c.body?.has_opt_in_whatsapp).toBe(true)
+    }
+  })
+
+  it("processLeadInManychat — found via system field: opt-in upsert has has_opt_in_whatsapp=true", async () => {
+    const { calls } = setupFetch({
+      "/fb/subscriber/findBySystemField": {
+        body: { status: "success", data: { id: SUB_ID } },
+      },
+    })
+    await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null)
+
+    const createCalls = callsTo(calls, "/fb/subscriber/createSubscriber")
+    expect(createCalls.length).toBeGreaterThan(0)
+    for (const c of createCalls) {
+      expect(c.body?.has_opt_in_whatsapp).toBe(true)
+    }
+  })
+
+  it("processLeadInManychat — knownSubscriberId path: opt-in upsert has has_opt_in_whatsapp=true", async () => {
+    const { calls } = setupFetch()
+    await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null, SUB_ID)
+
+    // Even when subscriber_id is already known, opt-in upsert must run
+    const createCalls = callsTo(calls, "/fb/subscriber/createSubscriber")
+    expect(createCalls.length, "opt-in upsert must run even for known subscriber_id").toBeGreaterThan(0)
+    for (const c of createCalls) {
+      expect(c.body?.has_opt_in_whatsapp).toBe(true)
+    }
+  })
+})
+
+// ═════════════════════════════════════════════════════════════════════════════
+// INVARIANT 2 — sendFlow is ALWAYS called with the correct subscriber_id
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe("INVARIANT: sendFlowToSubscriber called with correct subscriber_id", () => {
+  it("returns ok=true and subscriber_id when sendFlow succeeds", async () => {
+    setupFetch({
+      "/fb/subscriber/findByCustomField": {
+        body: { status: "success", data: [{ id: SUB_ID }] },
+      },
+    })
+    const result = await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
+
+    expect(result.ok).toBe(true)
+    expect(result.subscriber_id).toBe(SUB_ID)
+  })
+
+  it("new subscriber: sendFlow uses subscriber_id from createSubscriber response", async () => {
+    const { calls } = setupFetch()
+    const result = await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null)
+
+    expect(result.ok).toBe(true)
+    expect(result.subscriber_id).toBe(SUB_ID_NEW)
+
+    const sendCall = callsTo(calls, "/fb/sending/sendFlow")[0]
+    expect(sendCall?.body?.subscriber_id).toBe(SUB_ID_NEW)
+    expect(sendCall?.body?.flow_ns).toBe(FLOW_NS)
+  })
+
+  it("knownSubscriberId path: sendFlow uses the provided subscriber_id", async () => {
+    const { calls } = setupFetch()
+    const result = await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null, SUB_ID)
+
+    expect(result.ok).toBe(true)
+    expect(result.subscriber_id).toBe(SUB_ID)
+
+    const sendCall = callsTo(calls, "/fb/sending/sendFlow")[0]
+    expect(sendCall?.body?.subscriber_id).toBe(SUB_ID)
+    expect(sendCall?.body?.flow_ns).toBe(FLOW_NS)
+  })
+
+  it("sendFlowToSubscriber: returns ok=true on HTTP 200", async () => {
+    setupFetch()
+    const result = await sendFlowToSubscriber(API_KEY, SUB_ID, FLOW_NS)
+    expect(result.ok).toBe(true)
+  })
+
+  it("sendFlowToSubscriber: returns ok=false with error on HTTP 404", async () => {
+    setupFetch({
+      "/fb/sending/sendFlow": { status: 404, body: { message: "Subscriber ou Flow não encontrado." } },
+    })
+    const result = await sendFlowToSubscriber(API_KEY, SUB_ID, FLOW_NS)
+    expect(result.ok).toBe(false)
+    expect(result.error).toBeTruthy()
+  })
+
+  it("sendFlowToSubscriber: returns ok=false with error on Manychat Validation error", async () => {
+    setupFetch({
+      "/fb/sending/sendFlow": { status: 400, body: { message: "Validation error" } },
+    })
+    const result = await sendFlowToSubscriber(API_KEY, SUB_ID, FLOW_NS)
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain("Validation error")
+  })
+})
+
+// ═════════════════════════════════════════════════════════════════════════════
+// INVARIANT 3 — opt-in upsert happens BEFORE sendFlow (order matters)
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe("INVARIANT: opt-in upsert runs before sendFlow", () => {
+  it("found by custom field: createSubscriber (opt-in upsert) index < sendFlow index", async () => {
+    const { calls } = setupFetch({
+      "/fb/subscriber/findByCustomField": {
+        body: { status: "success", data: [{ id: SUB_ID }] },
+      },
+    })
+    await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
+
+    const createIdx = indexOfFirst(calls, "/fb/subscriber/createSubscriber")
+    const sendIdx = indexOfFirst(calls, "/fb/sending/sendFlow")
+
+    expect(createIdx, "opt-in upsert (createSubscriber) must be called").toBeGreaterThanOrEqual(0)
+    expect(sendIdx, "sendFlow must be called").toBeGreaterThanOrEqual(0)
+    expect(createIdx).toBeLessThan(sendIdx)
+  })
+
+  it("found by system field: createSubscriber (opt-in upsert) index < sendFlow index", async () => {
+    const { calls } = setupFetch({
+      "/fb/subscriber/findBySystemField": {
+        body: { status: "success", data: { id: SUB_ID } },
+      },
+    })
+    await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null)
+
+    const createIdx = indexOfFirst(calls, "/fb/subscriber/createSubscriber")
+    const sendIdx = indexOfFirst(calls, "/fb/sending/sendFlow")
+
+    expect(createIdx).toBeGreaterThanOrEqual(0)
+    expect(sendIdx).toBeGreaterThanOrEqual(0)
+    expect(createIdx).toBeLessThan(sendIdx)
+  })
+})
+
+// ═════════════════════════════════════════════════════════════════════════════
+// INVARIANT 4 — sem_optin=true returned (not thrown) when subscriber not found
+// Subscriber not found is NOT a retryable error — worker must not retry it.
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe("INVARIANT: sem_optin returned when subscriber cannot be found", () => {
+  it("returns sem_optin=true and ok=false when all lookups and create fail", async () => {
+    setupFetch({
+      "/fb/subscriber/createSubscriber": {
+        status: 500,
+        body: { status: "error", message: "Internal error" },
+      },
+    })
+    const result = await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null)
+
+    expect(result.ok).toBe(false)
+    expect(result.sem_optin).toBe(true)
+    expect(result.error).toBeTruthy()
+  })
+
+  it("sendFlow is NOT called when subscriber cannot be found", async () => {
+    const { calls } = setupFetch({
+      "/fb/subscriber/createSubscriber": {
+        status: 500,
+        body: { status: "error" },
+      },
+    })
+    await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null)
+
+    const sendCalls = callsTo(calls, "/fb/sending/sendFlow")
+    expect(sendCalls.length, "sendFlow must NOT be called when subscriber not found").toBe(0)
+  })
+
+  it("does NOT throw — must return a result object, never throw", async () => {
+    setupFetch({
+      "/fb/subscriber/createSubscriber": {
+        status: 500,
+        body: { status: "error" },
+      },
+    })
+    await expect(
+      processLeadInManychat(API_KEY, LEAD, FLOW_NS, null)
+    ).resolves.toBeDefined()
+  })
+})
+
+// ═════════════════════════════════════════════════════════════════════════════
+// INVARIANT 5 — alreadyExists fallback: lookups retried, sendFlow still called
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe("INVARIANT: alreadyExists → retry lookup → sendFlow", () => {
+  it("retries lookups after alreadyExists and still sends flow", async () => {
+    let customFieldCallCount = 0
+    const { calls } = setupFetch()
+
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const url = String(input)
+        let body: Record<string, unknown> | null = null
+        try { body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : null } catch { /* ignore */ }
+        calls.push({ url, method: init?.method ?? "GET", body })
+
+        if (url.includes("/fb/subscriber/findByCustomField")) {
+          customFieldCallCount++
+          if (customFieldCallCount === 1) {
+            // First call: not found
+            return new Response(JSON.stringify({ status: "success", data: [] }), { status: 200 })
+          }
+          // Retry call: found
+          return new Response(JSON.stringify({ status: "success", data: [{ id: SUB_ID }] }), { status: 200 })
+        }
+        if (url.includes("/fb/subscriber/findBySystemField")) {
+          return new Response(JSON.stringify({ status: "error" }), { status: 404 })
+        }
+        if (url.includes("/fb/subscriber/createSubscriber")) {
+          // Subscriber already exists
+          return new Response(
+            JSON.stringify({ status: "error", message: "already exists" }),
+            { status: 409 }
+          )
+        }
+        if (url.includes("/fb/sending/sendFlow")) {
+          return new Response(JSON.stringify({ status: "success" }), { status: 200 })
+        }
+        return new Response(JSON.stringify({ status: "success" }), { status: 200 })
+      }
+    )
+
+    const result = await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
+
+    expect(result.ok).toBe(true)
+    expect(result.subscriber_id).toBe(SUB_ID)
+    const sendCall = callsTo(calls, "/fb/sending/sendFlow")[0]
+    expect(sendCall?.body?.subscriber_id).toBe(SUB_ID)
+  })
+})
+
+// ═════════════════════════════════════════════════════════════════════════════
+// INVARIANT 6 — sendFlow error (non-sem_optin) must propagate as ok=false
+// so the worker throws and BullMQ retries the job
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe("INVARIANT: sendFlow failure propagates correctly for retry", () => {
+  it("returns ok=false with error message when sendFlow returns HTTP error", async () => {
+    setupFetch({
+      "/fb/subscriber/findByCustomField": {
+        body: { status: "success", data: [{ id: SUB_ID }] },
+      },
+      "/fb/sending/sendFlow": {
+        status: 400,
+        body: { message: "Validation error" },
+      },
+    })
+    const result = await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
+
+    expect(result.ok).toBe(false)
+    expect(result.sem_optin).toBeFalsy()  // Must NOT be sem_optin — worker should retry
+    expect(result.error).toBeTruthy()
+    expect(result.subscriber_id).toBe(SUB_ID)  // subscriber_id still returned for tracking
+  })
+})
+
+// ═════════════════════════════════════════════════════════════════════════════
+// INVARIANT 7 — phone normalization: always uses E.164 (+55...) format
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe("INVARIANT: phone normalization to E.164 (+55...) format", () => {
+  it("createSubscriber uses E.164 phone format with + prefix", async () => {
+    const { calls } = setupFetch()
+    await createManychatSubscriber(API_KEY, LEAD)
+
+    const createCall = callsTo(calls, "/fb/subscriber/createSubscriber")[0]
+    expect(createCall.body?.whatsapp_phone).toBe(PHONE_E164)
+  })
+
+  it("sendFlow lookup uses E.164 phone for custom field search", async () => {
+    const { calls } = setupFetch()
+    await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
+
+    const lookupCall = calls.find((c) => c.url.includes("/fb/subscriber/findByCustomField"))
+    expect(lookupCall?.url).toContain(encodeURIComponent(PHONE_E164))
+  })
+
+  it("opt-in upsert in processLeadInManychat uses E.164 format", async () => {
+    const { calls } = setupFetch({
+      "/fb/subscriber/findByCustomField": {
+        body: { status: "success", data: [{ id: SUB_ID }] },
+      },
+    })
+    await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
+
+    const createCalls = callsTo(calls, "/fb/subscriber/createSubscriber")
+    for (const c of createCalls) {
+      expect(c.body?.whatsapp_phone).toBe(PHONE_E164)
+    }
+  })
+})
