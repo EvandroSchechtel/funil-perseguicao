@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Webhook, Users2, Zap, Shield, User, LogOut, Bot, Megaphone, Building2, Contact, Activity, MessageSquare, FileText, Rocket } from "lucide-react"
+import { LayoutDashboard, Webhook, Zap, Shield, User, LogOut, Bot, Megaphone, Building2, Contact, Activity, MessageSquare, FileText, Rocket } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -17,17 +17,12 @@ interface NavItem {
   requiredRoles?: Role[]
 }
 
-const navItems: NavItem[] = [
+// Operacional — visível para operadores
+const navItemsOperacional: NavItem[] = [
   {
     label: "Dashboard",
     href: "/admin",
     icon: <LayoutDashboard className="w-5 h-5" />,
-  },
-  {
-    label: "Implantação",
-    href: "/admin/implantacao",
-    icon: <Rocket className="w-5 h-5" />,
-    requiredRoles: ["super_admin", "admin"],
   },
   {
     label: "Clientes",
@@ -48,17 +43,15 @@ const navItems: NavItem[] = [
     requiredRoles: ["super_admin", "admin", "operador"],
   },
   {
-    label: "Leads",
-    href: "/admin/leads",
-    icon: <Users2 className="w-5 h-5" />,
-    requiredRoles: ["super_admin", "admin", "operador"],
-  },
-  {
     label: "Contatos",
     href: "/admin/contatos",
     icon: <Contact className="w-5 h-5" />,
     requiredRoles: ["super_admin", "admin", "operador"],
   },
+]
+
+// Infra/Config — admin e super_admin
+const navItemsInfra: NavItem[] = [
   {
     label: "Fila",
     href: "/admin/fila",
@@ -72,16 +65,22 @@ const navItems: NavItem[] = [
     requiredRoles: ["super_admin", "admin"],
   },
   {
-    label: "Usuários",
-    href: "/admin/usuarios",
-    icon: <Shield className="w-5 h-5" />,
-    requiredRoles: ["super_admin"],
-  },
-  {
     label: "Agente IA",
     href: "/admin/agente",
     icon: <Bot className="w-5 h-5" />,
     requiredRoles: ["super_admin", "admin", "operador"],
+  },
+  {
+    label: "Implantação",
+    href: "/admin/implantacao",
+    icon: <Rocket className="w-5 h-5" />,
+    requiredRoles: ["super_admin", "admin"],
+  },
+  {
+    label: "Usuários",
+    href: "/admin/usuarios",
+    icon: <Shield className="w-5 h-5" />,
+    requiredRoles: ["super_admin"],
   },
 ]
 
@@ -125,14 +124,42 @@ export function Sidebar() {
 
   if (!user) return null
 
-  const visibleItems = navItems.filter((item) => {
-    if (!item.requiredRoles) return true
-    return item.requiredRoles.includes(user.role)
-  })
+  function filterByRole(items: NavItem[]) {
+    return items.filter((item) => {
+      if (!item.requiredRoles) return true
+      return item.requiredRoles.includes(user!.role)
+    })
+  }
+
+  const operacional = filterByRole(navItemsOperacional)
+  const infra = filterByRole(navItemsInfra)
 
   function isActive(href: string): boolean {
     if (href === "/admin") return pathname === "/admin"
     return pathname.startsWith(href)
+  }
+
+  function NavLink({ item }: { item: NavItem }) {
+    const active = isActive(item.href)
+    return (
+      <Link
+        href={item.href}
+        className={cn(
+          "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
+          active
+            ? "bg-[rgba(37,211,102,0.10)] text-[#25D366] border-l-2 border-[#25D366] pl-[10px]"
+            : "text-[#8B8B9E] hover:bg-[#16161E] hover:text-[#F1F1F3]"
+        )}
+      >
+        {item.icon}
+        <span className="flex-1">{item.label}</span>
+        {item.href === "/admin/fila" && alertCount > 0 && (
+          <span className="bg-[#F87171] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center leading-none shrink-0">
+            {alertCount > 9 ? "9+" : alertCount}
+          </span>
+        )}
+      </Link>
+    )
   }
 
   return (
@@ -151,30 +178,19 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-        {visibleItems.map((item) => {
-          const active = isActive(item.href)
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
-                active
-                  ? "bg-[rgba(37,211,102,0.10)] text-[#25D366] border-l-2 border-[#25D366] pl-[10px]"
-                  : "text-[#8B8B9E] hover:bg-[#16161E] hover:text-[#F1F1F3]"
-              )}
-            >
-              {item.icon}
-              <span className="flex-1">{item.label}</span>
-              {item.href === "/admin/fila" && alertCount > 0 && (
-                <span className="bg-[#F87171] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center leading-none shrink-0">
-                  {alertCount > 9 ? "9+" : alertCount}
-                </span>
-              )}
-            </Link>
-          )
-        })}
+      <nav className="flex-1 p-4 overflow-y-auto">
+        <div className="space-y-1">
+          {operacional.map((item) => <NavLink key={item.href} item={item} />)}
+        </div>
+
+        {infra.length > 0 && (
+          <>
+            <div className="border-t border-[#1E1E2A] mx-1 my-3" />
+            <div className="space-y-1">
+              {infra.map((item) => <NavLink key={item.href} item={item} />)}
+            </div>
+          </>
+        )}
       </nav>
 
       {/* Divider */}
