@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/prisma"
 import { addTag } from "@/lib/manychat/tags"
-import { normalizePhone, getParticipantPhone, type ZApiWebhookPayload } from "@/lib/zapi/client"
+import { normalizePhone, getParticipantPhone, isSystemJoinName, type ZApiWebhookPayload } from "@/lib/zapi/client"
 import { tentarAutoVincularGrupo } from "@/lib/services/grupo-auto-vincular.service"
 import { addWebhookJob } from "@/lib/queue/queues"
 
@@ -26,6 +26,20 @@ export async function processarEntradaGrupo(
 
   // Z-API may send the group ID in either `phone` or `chatId`
   const groupWaId = payload.phone || payload.chatId || ""
+
+  // For GROUP_PARTICIPANT_INVITE via link, Z-API sends senderName="invite" and
+  // leaves participantPhone empty, falling back to notificationParameters[0]
+  // which is a WhatsApp internal ID (not a real phone). Skip these events.
+  if (isSystemJoinName(senderName) && !payload.participantPhone) {
+    console.warn(
+      `[Entradas] GROUP_PARTICIPANT_INVITE via link sem telefone real (senderName="${senderName}") — ignorando`
+    )
+    return
+  }
+
+  // Use null for system-generated names (e.g. "invite") so Contato/Lead names
+  // fall back to the phone number instead of storing a system string.
+  const nomeSender = isSystemJoinName(senderName) ? null : (senderName ?? null)
 
   const telefoneNorm = normalizePhone(participantPhone)
   if (!telefoneNorm) {
@@ -63,7 +77,7 @@ export async function processarEntradaGrupo(
         include: { conta_manychat: { select: { id: true, api_key: true } } },
       })
       if (novoGrupo) {
-        await processarEntradaParaGrupo({ grupo: novoGrupo, groupWaId, groupWaName: chatName, telefoneNorm, senderName })
+        await processarEntradaParaGrupo({ grupo: novoGrupo, groupWaId, groupWaName: chatName, telefoneNorm, senderName: nomeSender ?? undefined })
       }
     } else {
       console.log(`[Entradas] Nenhum grupo monitorado corresponde a "${chatName}"`)
@@ -80,7 +94,7 @@ export async function processarEntradaGrupo(
         groupWaId,
         groupWaName: chatName,
         telefoneNorm,
-        senderName,
+        senderName: nomeSender ?? undefined,
       })
     } catch (err) {
       console.error(`[Entradas] Erro processando grupo ${grupo.id}:`, err)

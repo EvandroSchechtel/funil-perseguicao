@@ -416,6 +416,7 @@ model SaidaGrupo {
   saiu_at       DateTime           @default(now())
   created_at    DateTime           @default(now())
 
+  @@unique([grupo_id, telefone])   // upsert em re-saída
   @@map("saidas_grupo")
 }
 

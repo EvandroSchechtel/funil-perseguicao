@@ -78,13 +78,19 @@ export async function processarSaidaGrupo(
         leadId = lead?.id ?? null
       }
 
-      // 5. Insert SaidaGrupo
-      await prisma.saidaGrupo.create({
-        data: {
+      // 5. Upsert SaidaGrupo (re-saída atualiza timestamp, sem duplicar)
+      await prisma.saidaGrupo.upsert({
+        where: { grupo_id_telefone: { grupo_id: grupo.id, telefone: telefoneNorm } },
+        create: {
           grupo_id: grupo.id,
           lead_id: leadId,
           telefone: telefoneNorm,
           nome_whatsapp: senderName ?? null,
+        },
+        update: {
+          lead_id: leadId,
+          nome_whatsapp: senderName ?? null,
+          saiu_at: new Date(),
         },
       })
 

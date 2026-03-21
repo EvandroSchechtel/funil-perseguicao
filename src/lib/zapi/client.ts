@@ -246,3 +246,16 @@ export function isGroupExitEvent(payload: ZApiWebhookPayload): boolean {
 export function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, "")
 }
+
+/**
+ * Returns true if senderName is a Z-API system value, not a real person's name.
+ * For GROUP_PARTICIPANT_INVITE via link, Z-API sends senderName="invite" to
+ * indicate the join method. When this happens together with an empty
+ * participantPhone, notificationParameters[0] is a WhatsApp internal ID
+ * (not a real phone number) and the event should be skipped.
+ */
+export function isSystemJoinName(name?: string): boolean {
+  if (!name) return false
+  const lower = name.trim().toLowerCase()
+  return lower === "invite" || lower === "add" || lower === "join"
+}
