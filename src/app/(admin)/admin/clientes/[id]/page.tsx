@@ -136,6 +136,13 @@ export default function ClienteDetailPage() {
   const [deleteInstanciaDialog, setDeleteInstanciaDialog] = useState<InstanciaZApi | null>(null)
   const [deleteInstanciaText, setDeleteInstanciaText] = useState("")
   const [deletingInstanciaId, setDeletingInstanciaId] = useState<string | null>(null)
+  // Nova instância dialog
+  const [showAddInstancia, setShowAddInstancia] = useState(false)
+  const [instanciaForm, setInstanciaForm] = useState({ nome: "", instance_id: "", token: "", client_token: "" })
+  const [instanciaErrors, setInstanciaErrors] = useState<Record<string, string>>({})
+  const [addInstanciaLoading, setAddInstanciaLoading] = useState(false)
+  const [showInstanciaToken, setShowInstanciaToken] = useState(false)
+  const [showInstanciaClientToken, setShowInstanciaClientToken] = useState(false)
 
   // ── Fetch cliente ────────────────────────────────────────────────────────────
 
@@ -384,6 +391,41 @@ export default function ClienteDetailPage() {
         toast.error(data.message || "Erro ao excluir instância.")
       }
     } catch { toast.error("Erro de conexão.") } finally { setDeletingInstanciaId(null) }
+  }
+
+  function handleOpenAddInstancia() {
+    setInstanciaForm({ nome: "", instance_id: "", token: "", client_token: "" })
+    setInstanciaErrors({})
+    setShowInstanciaToken(false)
+    setShowInstanciaClientToken(false)
+    setShowAddInstancia(true)
+  }
+
+  async function handleAddInstancia() {
+    const errs: Record<string, string> = {}
+    if (!instanciaForm.nome.trim()) errs.nome = "Nome é obrigatório"
+    if (!instanciaForm.instance_id.trim()) errs.instance_id = "Instance ID é obrigatório"
+    if (!instanciaForm.token.trim()) errs.token = "Token é obrigatório"
+    if (!instanciaForm.client_token.trim()) errs.client_token = "Client Token é obrigatório"
+    if (Object.keys(errs).length > 0) { setInstanciaErrors(errs); return }
+
+    setAddInstanciaLoading(true)
+    try {
+      const res = await fetch("/api/admin/zapi/instancias", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ ...instanciaForm, cliente_id: id }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast.success("Instância conectada com sucesso.")
+        setShowAddInstancia(false)
+        setInstancias([])
+        fetchInstancias()
+      } else {
+        toast.error(data.message || "Erro ao criar instância.")
+      }
+    } catch { toast.error("Erro de conexão.") } finally { setAddInstanciaLoading(false) }
   }
 
   // ── WA handlers ──────────────────────────────────────────────────────────────
@@ -766,12 +808,10 @@ export default function ClienteDetailPage() {
           <div className="p-6 max-w-2xl space-y-4">
             <div className="flex items-center justify-between">
               <p className="text-[#8B8B9E] text-sm">Instâncias Z-API vinculadas a este cliente</p>
-              <Link href={`/admin/zapi/nova?cliente_id=${id}`}>
-                <Button size="sm">
-                  <Plus className="w-4 h-4 mr-1.5" />
-                  Nova Instância
-                </Button>
-              </Link>
+              <Button size="sm" onClick={handleOpenAddInstancia}>
+                <Plus className="w-4 h-4 mr-1.5" />
+                Nova Instância
+              </Button>
             </div>
 
             {loadingInstancias ? (
@@ -785,12 +825,10 @@ export default function ClienteDetailPage() {
                   <p className="text-[#C4C4D4] font-medium">Nenhuma instância Z-API</p>
                   <p className="text-[#5A5A72] text-sm mt-1">Conecte uma instância para monitorar grupos</p>
                 </div>
-                <Link href={`/admin/zapi/nova?cliente_id=${id}`}>
-                  <Button size="sm" variant="outline">
-                    <Plus className="w-4 h-4 mr-1.5" />
-                    Nova Instância
-                  </Button>
-                </Link>
+                <Button size="sm" variant="outline" onClick={handleOpenAddInstancia}>
+                  <Plus className="w-4 h-4 mr-1.5" />
+                  Nova Instância
+                </Button>
               </div>
             ) : (
               <div className="space-y-2">
@@ -1029,6 +1067,97 @@ export default function ClienteDetailPage() {
               loading={deletingContaId === deleteContaDialog?.id}
             >
               Excluir Conta
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Nova Instância Z-API Dialog ─────────────────────────────────────── */}
+      <Dialog open={showAddInstancia} onOpenChange={(open) => { if (!open) setShowAddInstancia(false) }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Conectar Instância Z-API</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            {/* Nome */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[#C4C4D4]">
+                Nome <span className="text-[#F87171]">*</span>
+              </label>
+              <input
+                autoFocus
+                value={instanciaForm.nome}
+                onChange={(e) => setInstanciaForm((p) => ({ ...p, nome: e.target.value }))}
+                placeholder="Ex: WhatsApp Mari Tortella"
+                className={`w-full h-10 px-3 rounded-lg border bg-[#111118] text-sm text-[#F1F1F3] placeholder-[#5A5A72] focus:outline-none transition-colors ${instanciaErrors.nome ? "border-[#F87171]" : "border-[#1E1E2A] focus:border-[#25D366]"}`}
+              />
+              {instanciaErrors.nome && <p className="text-xs text-[#F87171]">{instanciaErrors.nome}</p>}
+            </div>
+
+            {/* Instance ID */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[#C4C4D4]">
+                Instance ID <span className="text-[#F87171]">*</span>
+              </label>
+              <input
+                value={instanciaForm.instance_id}
+                onChange={(e) => setInstanciaForm((p) => ({ ...p, instance_id: e.target.value }))}
+                placeholder="Ex: 3C0A9B2..."
+                className={`w-full h-10 px-3 rounded-lg border bg-[#111118] text-sm text-[#F1F1F3] placeholder-[#5A5A72] focus:outline-none transition-colors font-mono ${instanciaErrors.instance_id ? "border-[#F87171]" : "border-[#1E1E2A] focus:border-[#25D366]"}`}
+              />
+              {instanciaErrors.instance_id && <p className="text-xs text-[#F87171]">{instanciaErrors.instance_id}</p>}
+              <p className="text-xs text-[#5A5A72]">Painel Z-API → sua instância → copiar Instance ID.</p>
+            </div>
+
+            {/* Token */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[#C4C4D4]">
+                Token <span className="text-[#F87171]">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  type={showInstanciaToken ? "text" : "password"}
+                  value={instanciaForm.token}
+                  onChange={(e) => setInstanciaForm((p) => ({ ...p, token: e.target.value }))}
+                  placeholder="Token de acesso da instância"
+                  className={`w-full h-10 px-3 pr-10 rounded-lg border bg-[#111118] text-sm text-[#F1F1F3] placeholder-[#5A5A72] focus:outline-none transition-colors ${instanciaErrors.token ? "border-[#F87171]" : "border-[#1E1E2A] focus:border-[#25D366]"}`}
+                />
+                <button type="button" onClick={() => setShowInstanciaToken((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#5A5A72] hover:text-[#C4C4D4]">
+                  {showInstanciaToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {instanciaErrors.token && <p className="text-xs text-[#F87171]">{instanciaErrors.token}</p>}
+            </div>
+
+            {/* Client Token */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[#C4C4D4]">
+                Client Token <span className="text-[#F87171]">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  type={showInstanciaClientToken ? "text" : "password"}
+                  value={instanciaForm.client_token}
+                  onChange={(e) => setInstanciaForm((p) => ({ ...p, client_token: e.target.value }))}
+                  placeholder="Client token Z-API"
+                  className={`w-full h-10 px-3 pr-10 rounded-lg border bg-[#111118] text-sm text-[#F1F1F3] placeholder-[#5A5A72] focus:outline-none transition-colors ${instanciaErrors.client_token ? "border-[#F87171]" : "border-[#1E1E2A] focus:border-[#25D366]"}`}
+                />
+                <button type="button" onClick={() => setShowInstanciaClientToken((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#5A5A72] hover:text-[#C4C4D4]">
+                  {showInstanciaClientToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {instanciaErrors.client_token && <p className="text-xs text-[#F87171]">{instanciaErrors.client_token}</p>}
+              <p className="text-xs text-[#5A5A72]">Z-API → Security → Client Token (diferente do token da instância).</p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddInstancia(false)} disabled={addInstanciaLoading}>
+              Cancelar
+            </Button>
+            <Button onClick={handleAddInstancia} loading={addInstanciaLoading}>
+              <Wifi className="w-4 h-4" />
+              Conectar e Salvar
             </Button>
           </DialogFooter>
         </DialogContent>
