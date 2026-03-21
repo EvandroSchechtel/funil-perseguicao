@@ -312,11 +312,13 @@ model Lead {
   tentativas      Int          @default(0)
   processado_at   DateTime?
   grupo_entrou_at DateTime?    // preenchido quando detectado no grupo da campanha
+  grupo_saiu_at   DateTime?    // preenchido quando detectado saindo do grupo
   created_at      DateTime     @default(now())
   updated_at      DateTime     @updatedAt
 
   tentativas_hist LeadTentativa[]
   entradas_grupo  EntradaGrupo[]
+  saidas_grupo    SaidaGrupo[]
 
   @@unique([webhook_id, contato_id])  // um lead por webhook+contato
   @@map("leads")
@@ -378,6 +380,7 @@ model GrupoMonitoramento {
   updated_at          DateTime      @updatedAt
 
   entradas EntradaGrupo[]
+  saidas   SaidaGrupo[]
 
   @@map("grupos_monitoramento")
 }
@@ -400,6 +403,20 @@ model EntradaGrupo {
 
   @@unique([grupo_id, telefone])   // upsert em caso de re-entrada
   @@map("entradas_grupo")
+}
+
+model SaidaGrupo {
+  id            String             @id @default(uuid())
+  grupo_id      String
+  grupo         GrupoMonitoramento @relation(fields: [grupo_id], references: [id])
+  lead_id       String?
+  lead          Lead?              @relation(fields: [lead_id], references: [id])
+  telefone      String             // telefone normalizado (sem +, só dígitos)
+  nome_whatsapp String?
+  saiu_at       DateTime           @default(now())
+  created_at    DateTime           @default(now())
+
+  @@map("saidas_grupo")
 }
 
 // ── Portal do Cliente — Demandas ──────────────────────────────────────────────

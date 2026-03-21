@@ -76,6 +76,7 @@ export async function buscarLead(id: string) {
       flow_executado: true,
       conta_nome: true,
       grupo_entrou_at: true,
+      grupo_saiu_at: true,
       processado_at: true,
       created_at: true,
       updated_at: true,
@@ -100,6 +101,23 @@ export async function buscarLead(id: string) {
           flow_ns: true,
           conta_nome: true,
           executado_at: true,
+        },
+      },
+      entradas_grupo: {
+        orderBy: { entrou_at: "desc" },
+        select: {
+          id: true,
+          entrou_at: true,
+          tag_aplicada: true,
+          grupo: { select: { nome_filtro: true } },
+        },
+      },
+      saidas_grupo: {
+        orderBy: { saiu_at: "desc" },
+        select: {
+          id: true,
+          saiu_at: true,
+          grupo: { select: { nome_filtro: true } },
         },
       },
     },

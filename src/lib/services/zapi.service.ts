@@ -191,6 +191,21 @@ export async function deletarGrupo(id: string) {
 
 // ── Entradas ───────────────────────────────────────────────────────────────────
 
+export async function listarSaidas(instanciaId: string, grupoId?: string) {
+  return prisma.saidaGrupo.findMany({
+    where: {
+      grupo: { instancia_id: instanciaId },
+      ...(grupoId ? { grupo_id: grupoId } : {}),
+    },
+    include: {
+      grupo: { select: { nome_filtro: true } },
+      lead: { select: { id: true, nome: true, status: true } },
+    },
+    orderBy: { saiu_at: "desc" },
+    take: 200,
+  })
+}
+
 export async function listarEntradas(instanciaId: string, grupoId?: string) {
   return prisma.entradaGrupo.findMany({
     where: {

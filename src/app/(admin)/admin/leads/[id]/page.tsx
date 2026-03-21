@@ -6,7 +6,7 @@ import Link from "next/link"
 import {
   ArrowLeft, RefreshCw, CheckCircle2, XCircle, Clock, Loader2,
   User, Phone, Mail, Webhook, Zap, AlertTriangle, Send,
-  Hash, Building2, Megaphone, ExternalLink, UserCheck, Users,
+  Hash, Building2, Megaphone, ExternalLink, UserCheck, Users, LogIn, LogOut,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
@@ -39,6 +39,7 @@ interface LeadDetail {
   flow_executado: string | null
   conta_nome: string | null
   grupo_entrou_at: string | null
+  grupo_saiu_at: string | null
   processado_at: string | null
   created_at: string
   updated_at: string
@@ -51,6 +52,17 @@ interface LeadDetail {
     conta: { id: string; nome: string }
   } | null
   tentativas_hist: LeadTentativa[]
+  entradas_grupo: Array<{
+    id: string
+    entrou_at: string
+    tag_aplicada: boolean
+    grupo: { nome_filtro: string }
+  }>
+  saidas_grupo: Array<{
+    id: string
+    saiu_at: string
+    grupo: { nome_filtro: string }
+  }>
 }
 
 const STATUS_CONFIG = {
@@ -382,6 +394,20 @@ export default function LeadDetailPage() {
                   )
                 }
               />
+              <InfoRow
+                icon={Users}
+                label="Saiu do Grupo WA"
+                value={
+                  lead.grupo_saiu_at ? (
+                    <span className="inline-flex items-center gap-1.5 text-[#EF4444] font-medium">
+                      <XCircle className="w-3.5 h-3.5" />
+                      Sim — {formatDate(lead.grupo_saiu_at)}
+                    </span>
+                  ) : (
+                    <span className="text-[#5A5A72]">—</span>
+                  )
+                }
+              />
             </div>
 
             {/* ── Origem & Flow ── */}
@@ -509,6 +535,59 @@ export default function LeadDetailPage() {
                 })
               )}
             </div>
+
+            {/* ── Histórico de Grupos ── */}
+            {(lead.entradas_grupo.length > 0 || lead.saidas_grupo.length > 0) && (() => {
+              const historico = [
+                ...lead.entradas_grupo.map((e) => ({
+                  id: e.id, tipo: "entrada" as const,
+                  data: e.entrou_at, grupo: e.grupo.nome_filtro, tag_aplicada: e.tag_aplicada,
+                })),
+                ...lead.saidas_grupo.map((s) => ({
+                  id: s.id, tipo: "saida" as const,
+                  data: s.saiu_at, grupo: s.grupo.nome_filtro, tag_aplicada: null,
+                })),
+              ].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
+
+              return (
+                <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-hidden">
+                  <div className="px-5 pt-5 pb-3">
+                    <h2 className="text-[#F1F1F3] font-semibold">Histórico de Grupos</h2>
+                    <p className="text-[#5A5A72] text-xs mt-1">Entradas e saídas registradas nos grupos monitorados</p>
+                  </div>
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-t border-[#1E1E2A]">
+                        {["Evento", "Grupo", "Data"].map((h) => (
+                          <th key={h} className="text-left text-[10px] font-semibold text-[#3F3F58] uppercase tracking-wider px-5 py-3">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historico.map((ev) => (
+                        <tr key={`${ev.tipo}-${ev.id}`} className="border-t border-[#1E1E2A] hover:bg-[#121220] transition-colors">
+                          <td className="px-5 py-3">
+                            {ev.tipo === "entrada" ? (
+                              <span className="inline-flex items-center gap-1.5 text-[#22C55E] text-sm font-medium">
+                                <LogIn className="w-3.5 h-3.5" /> Entrada
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 text-[#EF4444] text-sm font-medium">
+                                <LogOut className="w-3.5 h-3.5" /> Saída
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3 text-[#9898B0] text-sm">{ev.grupo}</td>
+                          <td className="px-5 py-3 text-[#7F7F9E] text-sm whitespace-nowrap">{formatDate(ev.data)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            })()}
 
             {/* ── Datas ── */}
             <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-5">

@@ -1,21 +1,21 @@
 "use client"
 
-import React, { useState, useEffect, useRef, useCallback } from "react"
+import React, { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import {
   ArrowLeft, ArrowRight, Check, CheckCircle2, AlertCircle, X,
   Loader2, Building2, Zap, Wifi, Megaphone, ClipboardCheck,
-  Eye, EyeOff, Search, ChevronDown, Plus, Trash2, Tag, Users,
-  Info, ExternalLink, Copy,
+  Eye, EyeOff, Plus, Trash2, Tag, Users,
+  ExternalLink, Copy, RefreshCw,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Header } from "@/components/layout/Header"
 import { toast } from "sonner"
+import { FieldInfo, SearchableSelect } from "@/components/admin/AddGrupoForm"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,88 +45,6 @@ interface CreatedResources {
 }
 
 type StepId = 1 | 2 | 3 | 4 | 5
-
-// ── FieldInfo (tour / help icon) ─────────────────────────────────────────────
-
-function FieldInfo({ title, children }: { title: string; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="w-4 h-4 rounded-full border border-[#3F3F58] text-[#3F3F58] hover:border-[#25D366] hover:text-[#25D366] transition-colors flex items-center justify-center text-[9px] font-bold shrink-0"
-      >?</button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-[#EEEEF5]">
-              <Info className="w-4 h-4 text-[#25D366]" />{title}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="text-sm text-[#9898B0] space-y-2 py-1">{children}</div>
-        </DialogContent>
-      </Dialog>
-    </>
-  )
-}
-
-// ── SearchableSelect ──────────────────────────────────────────────────────────
-
-function SearchableSelect<T>({
-  options, value, onChange, getKey, getLabel, placeholder,
-  searchPlaceholder = "Buscar...", loading: isLoading, disabled, error,
-}: {
-  options: T[]; value: string; onChange: (v: string) => void
-  getKey: (i: T) => string; getLabel: (i: T) => string
-  placeholder: string; searchPlaceholder?: string
-  loading?: boolean; disabled?: boolean; error?: string
-}) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState("")
-  const ref = useRef<HTMLDivElement>(null)
-  const selected = options.find((o) => getKey(o) === value)
-  const filtered = options.filter((o) => getLabel(o).toLowerCase().includes(search.toLowerCase()))
-  useEffect(() => {
-    const h = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setSearch("") }
-    }
-    document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h)
-  }, [])
-  return (
-    <div className="relative" ref={ref}>
-      <button type="button" disabled={disabled || isLoading} onClick={() => { setOpen((v) => !v); setSearch("") }}
-        className={`flex h-10 w-full items-center justify-between rounded-lg border bg-[#13131F] px-3 py-2 text-sm transition-all disabled:opacity-40 hover:border-[#252535] focus:outline-none ${error ? "border-[#F87171]" : "border-[#1C1C2C] focus:border-[#25D366]/50"}`}>
-        <span className={selected ? "text-[#EEEEF5]" : "text-[#3F3F58]"}>{isLoading ? "Carregando…" : selected ? getLabel(selected) : placeholder}</span>
-        <ChevronDown className="w-3.5 h-3.5 text-[#3F3F58] shrink-0" />
-      </button>
-      {open && !isLoading && (
-        <div className="absolute z-50 mt-1 w-full rounded-xl border border-[#1C1C2C] bg-[#0F0F1A] shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
-          <div className="p-2 border-b border-[#1C1C2C]">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-[#3F3F58]" />
-              <input autoFocus type="text" value={search} onChange={(e) => setSearch(e.target.value)}
-                placeholder={searchPlaceholder}
-                className="w-full bg-[#13131F] rounded-lg border border-[#1C1C2C] text-sm text-[#EEEEF5] placeholder-[#3F3F58] pl-7 pr-3 py-1.5 focus:outline-none focus:border-[#25D366]/40" />
-            </div>
-          </div>
-          <div className="max-h-52 overflow-y-auto py-1">
-            {filtered.length === 0 ? (
-              <p className="text-[#3F3F58] text-xs text-center py-4">Nenhum resultado</p>
-            ) : filtered.map((o) => (
-              <button key={getKey(o)} type="button" onClick={() => { onChange(getKey(o)); setOpen(false); setSearch("") }}
-                className="w-full flex items-center justify-between px-3 py-2.5 text-sm hover:bg-[#13131F] transition-colors text-left gap-2">
-                <span className="text-[#EEEEF5] truncate">{getLabel(o)}</span>
-                {getKey(o) === value && <CheckCircle2 className="w-3.5 h-3.5 text-[#25D366] shrink-0" />}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {error && <p className="text-xs text-[#F87171] mt-1.5">{error}</p>}
-    </div>
-  )
-}
 
 // ── Step Header ───────────────────────────────────────────────────────────────
 
@@ -388,6 +306,8 @@ export default function ImplantacaoPage() {
   const [s4NomeFiltro, setS4NomeFiltro] = useState("")
   const [s4Errors, setS4Errors] = useState<Record<string, string>>({})
   const [s4Loading, setS4Loading] = useState(false)
+  const [s4NewTagName, setS4NewTagName] = useState("")
+  const [s4CreatingTag, setS4CreatingTag] = useState(false)
 
   // Auto-select the created instance
   useEffect(() => {
@@ -419,6 +339,34 @@ export default function ImplantacaoPage() {
       setS4Tags(data.tags || [])
     } catch { toast.error("Erro ao buscar tags.") }
     finally { setS4LoadingTags(false) }
+  }
+
+  // Auto-fetch tags when both s4ContaId and s4InstanciaId are set
+  useEffect(() => {
+    if (s4ContaId && s4InstanciaId) fetchS4Tags()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s4ContaId, s4InstanciaId])
+
+  async function handleS4CreateTag() {
+    if (!s4ContaId || !s4NewTagName.trim()) return
+    setS4CreatingTag(true)
+    try {
+      const res = await fetch(`/api/admin/contas/${s4ContaId}/tags`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ nome: s4NewTagName.trim() }),
+      })
+      const data = await res.json()
+      if (res.ok && data.tag) {
+        setS4Tags((prev) => [...prev, data.tag])
+        setS4TagId(String(data.tag.id))
+        setS4NewTagName("")
+        toast.success(`Tag "${data.tag.name}" criada com sucesso.`)
+      } else {
+        toast.error(data.message || "Erro ao criar tag.")
+      }
+    } catch { toast.error("Erro de conexão.") }
+    finally { setS4CreatingTag(false) }
   }
 
   function addGrupo() {
@@ -769,19 +717,42 @@ export default function ImplantacaoPage() {
                           className={`w-full h-10 px-3 rounded-lg border bg-[#13131F] text-sm text-[#EEEEF5] placeholder-[#3F3F58] focus:outline-none transition-all ${s4Errors.filtro ? "border-[#F87171]" : "border-[#1C1C2C] focus:border-[#25D366]/50"}`}
                         />
                       )}
-                      <div className="flex gap-2">
-                        <Button type="button" variant="outline" size="sm" className="flex-1 h-10"
-                          disabled={!s4ContaId || !s4InstanciaId || s4LoadingTags} onClick={fetchS4Tags}>
-                          {s4LoadingTags ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Tag className="w-3.5 h-3.5 mr-1.5" />}
-                          Buscar tags Manychat
-                        </Button>
-                      </div>
-                      {s4Tags.length > 0 && (
+                      {/* Tag — auto-fetched */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-[#9898B0] flex items-center gap-1.5">
+                          Tag de entrada
+                          {s4LoadingTags && <Loader2 className="w-3 h-3 animate-spin text-[#25D366]" />}
+                          {s4ContaId && s4InstanciaId && !s4LoadingTags && (
+                            <button type="button" onClick={fetchS4Tags}
+                              className="ml-auto text-[#3F3F58] hover:text-[#25D366] transition-colors" title="Atualizar tags">
+                              <RefreshCw className="w-3 h-3" />
+                            </button>
+                          )}
+                        </label>
                         <SearchableSelect options={s4Tags} value={s4TagId}
                           onChange={setS4TagId} getKey={(t) => String(t.id)} getLabel={(t) => t.name}
-                          placeholder="Selecionar tag de entrada" searchPlaceholder="Buscar tag..."
+                          placeholder={s4LoadingTags ? "Buscando tags…" : s4Tags.length === 0 ? "Nenhuma tag — crie abaixo" : "Selecionar tag de entrada"}
+                          searchPlaceholder="Buscar tag..."
+                          loading={s4LoadingTags}
                           error={s4Errors.tag} />
-                      )}
+                        {/* Criar tag inline */}
+                        {s4ContaId && !s4LoadingTags && (
+                          <div className="flex gap-2 mt-1">
+                            <input
+                              value={s4NewTagName}
+                              onChange={(e) => setS4NewTagName(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleS4CreateTag() } }}
+                              placeholder="Nome da nova tag…"
+                              className="flex-1 h-8 px-3 rounded-lg border border-[#1C1C2C] bg-[#13131F] text-xs text-[#EEEEF5] placeholder-[#3F3F58] focus:outline-none focus:border-[#25D366]/50 transition-colors"
+                            />
+                            <Button type="button" size="sm" variant="outline" className="h-8 px-3 text-xs shrink-0"
+                              disabled={!s4NewTagName.trim() || s4CreatingTag} onClick={handleS4CreateTag}>
+                              {s4CreatingTag ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                              Criar tag
+                            </Button>
+                          </div>
+                        )}
+                      </div>
                       {(s4Errors.grupo || s4Errors.tag || s4Errors.filtro) && (
                         <p className="text-xs text-[#F87171]">Preencha todos os campos para adicionar.</p>
                       )}

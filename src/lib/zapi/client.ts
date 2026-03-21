@@ -214,6 +214,18 @@ export function isGroupJoinEvent(payload: ZApiWebhookPayload): boolean {
 }
 
 /**
+ * Returns true if the payload represents a participant leaving a group.
+ */
+export function isGroupExitEvent(payload: ZApiWebhookPayload): boolean {
+  return (
+    payload.isGroup === true &&
+    payload.notification === "GROUP_PARTICIPANT_REMOVE" &&
+    typeof payload.participantPhone === "string" &&
+    payload.participantPhone.length > 0
+  )
+}
+
+/**
  * Normalizes a phone number to digits only (no +, no spaces, no dashes).
  * E.g. "+55 42 9982-34664" → "5542998234664"
  */

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db/prisma"
-import { isGroupJoinEvent, type ZApiWebhookPayload } from "@/lib/zapi/client"
+import { isGroupJoinEvent, isGroupExitEvent, type ZApiWebhookPayload } from "@/lib/zapi/client"
 import { processarEntradaGrupo } from "@/lib/services/entradas.service"
+import { processarSaidaGrupo } from "@/lib/services/saidas.service"
 
 // Always return 200 to Z-API — never 4xx/5xx to avoid retry storms
 function ok() {
@@ -192,10 +193,17 @@ export async function POST(
     }
   }
 
-  // 4. Existing GROUP_PARTICIPANT_ADD logic — always runs
+  // 4. GROUP_PARTICIPANT_ADD — track entry
   if (isGroupJoinEvent(payload)) {
     processarEntradaGrupo(instancia.id, payload).catch((err) => {
       console.error("[ZApi Webhook] processarEntradaGrupo error:", err)
+    })
+  }
+
+  // 5. GROUP_PARTICIPANT_REMOVE — track exit
+  if (isGroupExitEvent(payload)) {
+    processarSaidaGrupo(instancia.id, payload).catch((err) => {
+      console.error("[ZApi Webhook] processarSaidaGrupo error:", err)
     })
   }
 
