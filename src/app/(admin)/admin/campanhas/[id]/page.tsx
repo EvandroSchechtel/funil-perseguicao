@@ -229,7 +229,7 @@ export default function CampanhaDetailPage() {
       })
       if (!res.ok) return
       const data = await res.json()
-      setLeads(data.data || [])
+      setLeads(data.leads || [])
       setLeadsTotal(data.pagination?.total || 0)
     } catch {
       toast.error("Erro ao carregar leads.")
