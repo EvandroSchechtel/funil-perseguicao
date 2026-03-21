@@ -12,6 +12,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext"
 import { Header } from "@/components/layout/Header"
 import { ClienteForm } from "@/components/admin/ClienteForm"
+import { NovaCampanhaDialog } from "@/components/admin/NovaCampanhaDialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -123,6 +124,7 @@ export default function ClienteDetailPage() {
   // ── Campanhas tab ────────────────────────────────────────────────────────────
   const [campanhas, setCampanhas] = useState<CampanhaItem[]>([])
   const [loadingCampanhas, setLoadingCampanhas] = useState(false)
+  const [showNovaCampanha, setShowNovaCampanha] = useState(false)
 
   // ── Contatos tab ─────────────────────────────────────────────────────────────
   const [contatos, setContatos] = useState<ContatoItem[]>([])
@@ -559,12 +561,10 @@ export default function ClienteDetailPage() {
           <div className="p-6 max-w-2xl space-y-4">
             <div className="flex items-center justify-between">
               <p className="text-[#8B8B9E] text-sm">Campanhas vinculadas a este cliente</p>
-              <Link href={`/admin/campanhas/nova?cliente_id=${id}`}>
-                <Button size="sm">
-                  <Plus className="w-4 h-4 mr-1.5" />
-                  Nova Campanha
-                </Button>
-              </Link>
+              <Button size="sm" onClick={() => setShowNovaCampanha(true)}>
+                <Plus className="w-4 h-4 mr-1.5" />
+                Nova Campanha
+              </Button>
             </div>
 
             {loadingCampanhas ? (
@@ -578,12 +578,10 @@ export default function ClienteDetailPage() {
                   <p className="text-[#C4C4D4] font-medium">Nenhuma campanha</p>
                   <p className="text-[#5A5A72] text-sm mt-1">Crie a primeira campanha para este cliente</p>
                 </div>
-                <Link href={`/admin/campanhas/nova?cliente_id=${id}`}>
-                  <Button size="sm" variant="outline">
-                    <Plus className="w-4 h-4 mr-1.5" />
-                    Nova Campanha
-                  </Button>
-                </Link>
+                <Button size="sm" variant="outline" onClick={() => setShowNovaCampanha(true)}>
+                  <Plus className="w-4 h-4 mr-1.5" />
+                  Nova Campanha
+                </Button>
               </div>
             ) : (
               <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-hidden">
@@ -928,6 +926,20 @@ export default function ClienteDetailPage() {
           </div>
         )}
       </div>
+
+      {/* ── Nova Campanha Dialog ─────────────────────────────────────────────── */}
+      {cliente && (
+        <NovaCampanhaDialog
+          open={showNovaCampanha}
+          onClose={() => {
+            setShowNovaCampanha(false)
+            fetchCampanhas()
+          }}
+          clienteId={id}
+          clienteNome={cliente.nome}
+          contasManychat={cliente.contas_manychat}
+        />
+      )}
 
       {/* ── Add Conta Dialog ─────────────────────────────────────────────────── */}
       <Dialog open={showAddConta} onOpenChange={setShowAddConta}>
