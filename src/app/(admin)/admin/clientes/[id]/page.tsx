@@ -113,6 +113,7 @@ export default function ClienteDetailPage() {
   const [newFieldId, setNewFieldId] = useState("")
   const [ensureFieldStatus, setEnsureFieldStatus] = useState<"idle" | "loading" | "ok" | "error">("idle")
   const [ensureFieldMsg, setEnsureFieldMsg] = useState("")
+  const [fetchFieldStatus, setFetchFieldStatus] = useState<"idle" | "fetching" | "found" | "not-found">("idle")
 
   // Delete conta dialog
   const [deleteContaDialog, setDeleteContaDialog] = useState<Conta | null>(null)
@@ -266,6 +267,23 @@ export default function ClienteDetailPage() {
       if (res.ok && data.ok) {
         setTesteStatus("ok"); setTesteMsg(`Conectado: ${data.page_name}`)
         if (!contaNome.trim() && data.page_name) setContaNome(data.page_name)
+        // Auto-lookup existing [esc]whatsapp-id field
+        setFetchFieldStatus("fetching")
+        fetch("/api/admin/contas/lookup-field", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ api_key: apiKey.trim() }),
+        })
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.data?.ok && d.data.field_id) {
+              setFetchFieldStatus("found")
+              setNewFieldId(String(d.data.field_id))
+            } else {
+              setFetchFieldStatus("not-found")
+            }
+          })
+          .catch(() => setFetchFieldStatus("not-found"))
       } else {
         setTesteStatus("error"); setTesteMsg(data.message || "Falha na conexão")
       }
@@ -278,6 +296,7 @@ export default function ClienteDetailPage() {
     setShowAddConta(true); setContaNome(""); setApiKey(""); setShowKey(false)
     setTesteStatus("idle"); setTesteMsg(""); setAddErrors({})
     setNewFieldId(""); setEnsureFieldStatus("idle"); setEnsureFieldMsg("")
+    setFetchFieldStatus("idle")
   }
 
   async function handleEnsureField() {
@@ -293,7 +312,7 @@ export default function ClienteDetailPage() {
       if (res.ok && data.data?.ok) {
         setEnsureFieldStatus("ok")
         setEnsureFieldMsg(data.data.message)
-        if (data.data.field_id) setNewFieldId(String(data.data.field_id))
+        if (data.data.field_id) { setNewFieldId(String(data.data.field_id)); setFetchFieldStatus("found") }
       } else {
         setEnsureFieldStatus("error")
         setEnsureFieldMsg(data.data?.message || "Erro ao criar o campo.")
@@ -1048,6 +1067,21 @@ export default function ClienteDetailPage() {
               <label className="text-sm font-medium text-[#C4C4D4]">
                 ID do Custom Field <span className="text-[#5A5A72] font-normal text-xs">(whatsapp-id)</span>
               </label>
+              {fetchFieldStatus === "fetching" && (
+                <div className="flex items-center gap-1.5 text-xs text-[#8B8B9E]">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Buscando campo automaticamente...
+                </div>
+              )}
+              {fetchFieldStatus === "found" && ensureFieldStatus !== "ok" && (
+                <div className="flex items-center gap-1.5 text-xs text-[#25D366]">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Campo encontrado e pré-preenchido automaticamente
+                </div>
+              )}
+              {fetchFieldStatus === "not-found" && (
+                <div className="flex items-center gap-1.5 text-xs text-[#F59E0B]">
+                  <AlertCircle className="w-3.5 h-3.5" /> Campo não encontrado — informe o ID ou clique em &quot;Criar campo&quot;
+                </div>
+              )}
               <div className="flex gap-2">
                 <input
                   type="number"

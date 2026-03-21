@@ -1,8 +1,8 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Eye, EyeOff, Zap, Hash } from "lucide-react"
+import { Eye, EyeOff, Zap, Hash, Loader2, CheckCircle2, AlertCircle } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -47,6 +47,38 @@ export function ContaForm({ mode, initialData }: ContaFormProps) {
   const [whatsappFieldId, setWhatsappFieldId] = useState(
     initialData?.whatsapp_field_id ? String(initialData.whatsapp_field_id) : ""
   )
+  type FieldLookupState = "idle" | "fetching" | "found" | "not-found"
+  const [fieldLookupState, setFieldLookupState] = useState<FieldLookupState>("idle")
+
+  // Auto-lookup [esc]whatsapp-id field when API key is entered
+  useEffect(() => {
+    if (!changeApiKey || !apiKey.trim()) {
+      setFieldLookupState("idle")
+      return
+    }
+    setFieldLookupState("fetching")
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/admin/contas/lookup-field", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ api_key: apiKey.trim() }),
+        })
+        const data = await res.json()
+        if (res.ok && data.data?.ok && data.data.field_id) {
+          setFieldLookupState("found")
+          setWhatsappFieldId(String(data.data.field_id))
+          setHasCustomField(true)
+        } else {
+          setFieldLookupState("not-found")
+          setHasCustomField((prev) => (prev === null ? false : prev))
+        }
+      } catch {
+        setFieldLookupState("idle")
+      }
+    }, 800)
+    return () => clearTimeout(timer)
+  }, [apiKey, changeApiKey, accessToken]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -189,6 +221,23 @@ export function ContaForm({ mode, initialData }: ContaFormProps) {
             Usado para localizar subscribers no Manychat pelo número de telefone
           </p>
         </div>
+
+        {/* Auto-lookup status */}
+        {fieldLookupState === "fetching" && (
+          <div className="flex items-center gap-1.5 text-xs text-[#8B8B9E]">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Buscando campo automaticamente...
+          </div>
+        )}
+        {fieldLookupState === "found" && (
+          <div className="flex items-center gap-1.5 text-xs text-[#25D366]">
+            <CheckCircle2 className="w-3.5 h-3.5" /> Campo encontrado e pré-preenchido automaticamente
+          </div>
+        )}
+        {fieldLookupState === "not-found" && (
+          <div className="flex items-center gap-1.5 text-xs text-[#F59E0B]">
+            <AlertCircle className="w-3.5 h-3.5" /> Campo não encontrado — será criado automaticamente ao conectar
+          </div>
+        )}
 
         {initialData?.whatsapp_field_id && hasCustomField !== false ? (
           // Already configured — show current ID with option to change
