@@ -184,8 +184,9 @@ export async function sendTextMessage(
 export interface ZApiWebhookPayload {
   type: string
   isGroup?: boolean
-  notification?: string           // "GROUP_PARTICIPANT_ADD" | "GROUP_PARTICIPANT_REMOVE" |
-                                  // "GROUP_PARTICIPANT_LEAVE" | "MEMBERSHIP_APPROVAL_REQUEST" | ...
+  notification?: string           // "GROUP_PARTICIPANT_ADD" | "GROUP_PARTICIPANT_INVITE" |
+                                  // "GROUP_PARTICIPANT_REMOVE" | "GROUP_PARTICIPANT_LEAVE" |
+                                  // "MEMBERSHIP_APPROVAL_REQUEST" | ...
   notificationParameters?: string[] // phones involved in the event (Z-API official docs)
   phone?: string                  // group ID (e.g. "120363019502650977-group") or sender phone
   chatId?: string                 // group/chat ID (e.g. "120363019502650977@g.us")
@@ -205,11 +206,13 @@ export interface ZApiWebhookPayload {
 
 /**
  * Returns true if the payload represents a participant joining a group.
+ * Covers GROUP_PARTICIPANT_ADD (added by admin) and GROUP_PARTICIPANT_INVITE (joined via link).
  * Note: isGroup may not always be set by Z-API, so we don't require it.
  */
 export function isGroupJoinEvent(payload: ZApiWebhookPayload): boolean {
   return (
-    payload.notification === "GROUP_PARTICIPANT_ADD" &&
+    (payload.notification === "GROUP_PARTICIPANT_ADD" ||
+      payload.notification === "GROUP_PARTICIPANT_INVITE") &&
     typeof payload.participantPhone === "string" &&
     payload.participantPhone.length > 0
   )

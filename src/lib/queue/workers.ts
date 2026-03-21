@@ -31,7 +31,8 @@ export function startWebhookWorker(): Worker {
       })
 
       if (!conta) {
-        const errMsg = "Conta Manychat não encontrada ou inativa."
+        const errMsg = `Conta Manychat não encontrada ou inativa (id=${contaId}).`
+        console.error(`[Worker] ${errMsg} lead=${leadId}`)
         await prisma.lead.update({
           where: { id: leadId },
           data: { status: "falha", erro_msg: errMsg },
@@ -39,7 +40,8 @@ export function startWebhookWorker(): Worker {
         await prisma.leadTentativa.create({
           data: { lead_id: leadId, numero: numeroTentativa, status: "falha", erro_msg: errMsg, flow_ns: flowNs },
         })
-        throw new Error(errMsg)
+        // Don't throw — retrying won't fix a missing conta; just discard the job
+        return { leadId, ok: false, error: errMsg }
       }
 
       // 2b. Safety check — if daily limit was reached between enqueue and now, delay until midnight
