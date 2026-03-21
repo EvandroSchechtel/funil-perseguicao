@@ -342,7 +342,7 @@ export const WHATSAPP_ID_FIELD = "[esc]whatsapp-id"
 export async function getWhatsappIdFieldId(apiKey: string): Promise<number | null> {
   const { signal, clear } = withTimeout(10000)
   try {
-    const res = await fetch(`${MANYCHAT_API_BASE}/fb/subscriber/getCustomFields`, {
+    const res = await fetch(`${MANYCHAT_API_BASE}/fb/page/getCustomFields`, {
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       signal,
     })
@@ -375,7 +375,7 @@ export async function verifyCustomFieldId(
 ): Promise<VerifyFieldResult> {
   const { signal, clear } = withTimeout(10000)
   try {
-    const res = await fetch(`${MANYCHAT_API_BASE}/fb/subscriber/getCustomFields`, {
+    const res = await fetch(`${MANYCHAT_API_BASE}/fb/page/getCustomFields`, {
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       signal,
     })
@@ -410,7 +410,7 @@ export async function ensureWhatsappIdField(apiKey: string): Promise<EnsureField
   const { signal: s1, clear: c1 } = withTimeout(10000)
   try {
     // 1. Fetch existing custom fields
-    const res = await fetch(`${MANYCHAT_API_BASE}/fb/subscriber/getCustomFields`, {
+    const res = await fetch(`${MANYCHAT_API_BASE}/fb/page/getCustomFields`, {
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       signal: s1,
     })
@@ -429,7 +429,7 @@ export async function ensureWhatsappIdField(apiKey: string): Promise<EnsureField
 
     // 3. Create the field and capture the returned ID
     const { signal: s2, clear: c2 } = withTimeout(10000)
-    const createRes = await fetch(`${MANYCHAT_API_BASE}/fb/subscriber/createCustomField`, {
+    const createRes = await fetch(`${MANYCHAT_API_BASE}/fb/page/createCustomField`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ name: WHATSAPP_ID_FIELD, type: "text" }),
