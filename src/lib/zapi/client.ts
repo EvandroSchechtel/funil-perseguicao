@@ -215,10 +215,10 @@ export function isGroupJoinEvent(payload: ZApiWebhookPayload): boolean {
 
 /**
  * Returns true if the payload represents a participant leaving a group.
+ * Note: isGroup may not be set by Z-API for REMOVE events, so we don't require it.
  */
 export function isGroupExitEvent(payload: ZApiWebhookPayload): boolean {
   return (
-    payload.isGroup === true &&
     payload.notification === "GROUP_PARTICIPANT_REMOVE" &&
     typeof payload.participantPhone === "string" &&
     payload.participantPhone.length > 0

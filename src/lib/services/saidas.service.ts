@@ -15,11 +15,15 @@ export async function processarSaidaGrupo(
   payload: ZApiWebhookPayload
 ): Promise<void> {
   const {
-    phone: groupWaId = "",
+    phone,
+    chatId,
     chatName = "",
     participantPhone = "",
     senderName,
   } = payload
+
+  // Z-API may send the group ID in either `phone` or `chatId`
+  const groupWaId = phone || chatId || ""
 
   const telefoneNorm = normalizePhone(participantPhone)
   if (!telefoneNorm) {
