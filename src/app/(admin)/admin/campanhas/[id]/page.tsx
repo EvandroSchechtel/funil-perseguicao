@@ -7,7 +7,7 @@ import {
   Pencil, Webhook, Users2, Copy, CheckCircle2, XCircle, Loader2,
   Plus, Trash2, ToggleLeft, ToggleRight, Info, GripVertical, FlaskConical,
   Building2, Calendar, ChevronDown, ChevronRight, PauseCircle, PlayCircle,
-  ListOrdered, ChevronsRight, DoorOpen, Tag,
+  ListOrdered, ChevronsRight, DoorOpen, Tag, ExternalLink,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
@@ -328,6 +328,7 @@ export default function CampanhaDetailPage() {
       if (res.ok && data.ok) {
         setTesteResultado({ ok: true, lead_id: data.lead_id })
         fetchWebhooks()
+        fetchLeads()
       } else {
         setTesteResultado({ ok: false, message: data.message || "Erro ao processar." })
       }
@@ -587,6 +588,9 @@ export default function CampanhaDetailPage() {
                         <span>{activeFlows.length} flows</span>
                         <span>{w.leads_count} leads</span>
                       </div>
+                      <Link href={`/admin/webhooks/${w.id}`} onClick={(e) => e.stopPropagation()} className="p-1.5 text-[#5A5A72] hover:text-[#A78BFA] transition-colors shrink-0" title="Ver detalhes e fila">
+                        <ExternalLink className="w-4 h-4" />
+                      </Link>
                       <button onClick={(e) => { e.stopPropagation(); handleCopy(w.url_publica, w.id) }} className="p-1.5 text-[#5A5A72] hover:text-[#25D366] transition-colors shrink-0" title="Copiar URL">
                         {copiedId === w.id ? <CheckCircle2 className="w-4 h-4 text-[#25D366]" /> : <Copy className="w-4 h-4" />}
                       </button>
@@ -630,7 +634,7 @@ export default function CampanhaDetailPage() {
                                   )}
                                 </div>
                                 <Badge variant={flow.status === "ativo" ? "ativo" : "inativo"}>{flow.status === "ativo" ? "Ativo" : "Inativo"}</Badge>
-                                <span className="text-[#8B8B9E] text-xs shrink-0">{flow.total_enviados} enviados</span>
+                                <span className="text-[#8B8B9E] text-xs shrink-0">{flow.total_enviados} na fila</span>
                                 <div className="flex gap-1 shrink-0">
                                   <button onClick={() => handleToggleFlow(flow, w.id)} disabled={actionLoading === flow.id + "-toggle"} className="p-1.5 text-[#5A5A72] hover:text-[#25D366] transition-colors disabled:opacity-50">
                                     {flow.status === "ativo" ? <ToggleRight className="w-4 h-4 text-[#25D366]" /> : <ToggleLeft className="w-4 h-4" />}
