@@ -8,13 +8,15 @@ export interface ListContasParams {
   perPage?: number
   search?: string
   status?: string
+  clienteId?: string
 }
 
 export async function listarContas(params: ListContasParams = {}) {
-  const { page = 1, perPage = 20, search = "", status } = params
+  const { page = 1, perPage = 20, search = "", status, clienteId } = params
 
   const where = {
     deleted_at: null,
+    ...(clienteId && { cliente_id: clienteId }),
     ...(status === "ativo" || status === "inativo" ? { status: status as "ativo" | "inativo" } : {}),
     ...(search && {
       OR: [

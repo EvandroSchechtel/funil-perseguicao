@@ -232,6 +232,18 @@ export default function InstanciaDetailPage() {
       const data = await res.json()
       setInst(data.instancia)
       setWebhookUrl(data.webhook_url || "")
+
+      // Fetch campanhas and contas filtered by this instance's client
+      const clienteId = data.instancia?.cliente?.id
+      const clienteParam = clienteId ? `&cliente_id=${clienteId}` : ""
+      const [cr, conr] = await Promise.all([
+        fetch(`/api/admin/campanhas?per_page=200${clienteParam}`, { headers: { Authorization: `Bearer ${accessToken}` } }),
+        fetch(`/api/admin/contas?per_page=200${clienteParam}`, { headers: { Authorization: `Bearer ${accessToken}` } }),
+      ])
+      const cd = await cr.json()
+      const cond = await conr.json()
+      setCampanhas(cd.data || [])
+      setContas(cond.contas || [])
     } catch (err) {
       toast.error((err as Error).message)
     } finally {
@@ -240,19 +252,6 @@ export default function InstanciaDetailPage() {
   }, [accessToken, id])
 
   useEffect(() => { fetchInst() }, [fetchInst])
-
-  useEffect(() => {
-    if (!accessToken) return
-    Promise.all([
-      fetch("/api/admin/campanhas?per_page=200", { headers: { Authorization: `Bearer ${accessToken}` } }),
-      fetch("/api/admin/contas?per_page=200", { headers: { Authorization: `Bearer ${accessToken}` } }),
-    ]).then(async ([cr, conr]) => {
-      const cd = await cr.json()
-      const cond = await conr.json()
-      setCampanhas(cd.data || [])
-      setContas(cond.contas || [])
-    }).catch(() => {})
-  }, [accessToken])
 
   async function fetchZapiGroups() {
     setZapiGroupsLoading(true)
@@ -656,6 +655,18 @@ export default function InstanciaDetailPage() {
                     <p className="text-[#3F3F58] text-xs mt-0.5">
                       Vincule um grupo WA a uma campanha e conta Manychat
                     </p>
+                    {inst.cliente ? (
+                      <p className="text-xs text-[#7F7F9E] mt-1 flex items-center gap-1">
+                        <Building2 className="w-3 h-3 shrink-0" />
+                        Cliente: <span className="text-[#EEEEF5] font-medium ml-0.5">{inst.cliente.nome}</span>
+                        <span className="text-[#3F3F58] ml-1">— campanhas e contas filtradas para este cliente</span>
+                      </p>
+                    ) : (
+                      <p className="text-xs text-[#F59E0B] mt-1 flex items-center gap-1">
+                        <Lock className="w-3 h-3 shrink-0" />
+                        Instância sem cliente vinculado — exibindo todas as campanhas e contas
+                      </p>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -763,7 +774,7 @@ export default function InstanciaDetailPage() {
                   </div>
 
                   <p className="text-[11px] text-[#3F3F58]">
-                    O nome do grupo será usado como filtro (match parcial) nos webhooks recebidos.
+                    O nome selecionado é usado como filtro de correspondência parcial: qualquer grupo cujo nome <span className="text-[#7F7F9E]">contenha</span> esse texto será monitorado automaticamente.
                   </p>
                 </div>
 

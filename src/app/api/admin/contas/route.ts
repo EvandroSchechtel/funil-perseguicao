@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
       perPage: parseInt(searchParams.get("per_page") || "20", 10),
       search: searchParams.get("q") || "",
       status: searchParams.get("status") || undefined,
+      clienteId: searchParams.get("cliente_id") || undefined,
     })
 
     return ok(result)
