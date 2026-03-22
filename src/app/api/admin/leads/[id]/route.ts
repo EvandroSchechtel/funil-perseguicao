@@ -43,9 +43,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const lead = await prisma.lead.findUnique({
       where: { id },
-      include: {
+      select: {
+        contato_id: true,
+        telefone: true,
         webhook_flow: {
-          include: { conta: { select: { id: true, api_key: true, whatsapp_field_id: true } } },
+          select: {
+            conta_id: true,
+            conta: { select: { id: true, api_key: true, whatsapp_field_id: true } },
+          },
         },
       },
     })
@@ -57,6 +62,20 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       where: { id },
       data: { subscriber_id: subscriber_id.trim() },
     })
+
+    // Also upsert ContatoConta — so the worker uses the correct subscriber_id on next processing
+    // (worker reads from ContatoConta, not Lead.subscriber_id, to enforce account-specific lookup)
+    if (lead.contato_id && lead.webhook_flow?.conta_id) {
+      await prisma.contatoConta.upsert({
+        where: { contato_id_conta_id: { contato_id: lead.contato_id, conta_id: lead.webhook_flow.conta_id } },
+        update: { subscriber_id: subscriber_id.trim() },
+        create: {
+          contato_id: lead.contato_id,
+          conta_id: lead.webhook_flow.conta_id,
+          subscriber_id: subscriber_id.trim(),
+        },
+      }).catch((e) => console.warn("[PATCH lead] contatoConta.upsert failed:", e))
+    }
 
     // Best-effort: write phone to [esc]whatsapp-id custom field in Manychat
     if (lead.webhook_flow?.conta) {

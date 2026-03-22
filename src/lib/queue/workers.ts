@@ -55,8 +55,15 @@ export function startWebhookWorker(): Worker {
         return { leadId, delayed: true }
       }
 
-      // 3. Process in Manychat — if subscriber_id already known, skip lookup
-      const knownSubscriberId = updated.subscriber_id ?? undefined
+      // 3. Process in Manychat — look up account-specific subscriber_id from ContatoConta.
+      // NEVER use Lead.subscriber_id directly: it may be from a different Manychat account.
+      // ContatoConta is keyed by (contato_id, conta_id) — always account-specific.
+      const contatoConta = updated.contato_id
+        ? await prisma.contatoConta.findUnique({
+            where: { contato_id_conta_id: { contato_id: updated.contato_id, conta_id: contaId } },
+          })
+        : null
+      const knownSubscriberId = contatoConta?.subscriber_id ?? undefined
       const result = await processLeadInManychat(
         conta.api_key,
         { nome, telefone, email },

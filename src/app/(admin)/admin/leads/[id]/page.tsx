@@ -43,6 +43,13 @@ interface LeadDetail {
   processado_at: string | null
   created_at: string
   updated_at: string
+  contato_id: string | null
+  contato: {
+    contas_vinculadas: Array<{
+      subscriber_id: string | null
+      conta: { id: string; nome: string }
+    }>
+  } | null
   webhook: { id: string; nome: string }
   campanha: { id: string; nome: string } | null
   webhook_flow: {
@@ -409,6 +416,33 @@ export default function LeadDetailPage() {
                 }
               />
             </div>
+
+            {/* ── Subscriber IDs por Conta Manychat ── */}
+            {lead.contato?.contas_vinculadas && lead.contato.contas_vinculadas.length > 0 && (
+              <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-5">
+                <h2 className="text-[#F1F1F3] font-semibold mb-1">Subscriber IDs por Conta Manychat</h2>
+                <p className="text-[#5A5A72] text-xs mb-4">
+                  Um mesmo contato pode ter IDs diferentes em cada conta Manychat
+                </p>
+                <div className="space-y-2">
+                  {lead.contato.contas_vinculadas.map((cc) => (
+                    <div key={cc.conta.id} className="flex items-center justify-between text-sm py-1.5 border-b border-[#1E1E2A] last:border-0">
+                      <span className="text-[#C4C4D4]">{cc.conta.nome}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs text-[#25D366]">
+                          {cc.subscriber_id ?? "—"}
+                        </span>
+                        {cc.conta.id === lead.webhook_flow?.conta.id && (
+                          <span className="text-[10px] bg-[#25D366]/15 text-[#25D366] border border-[#25D366]/30 px-1.5 py-0.5 rounded">
+                            conta atual
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* ── Origem & Flow ── */}
             <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-5">

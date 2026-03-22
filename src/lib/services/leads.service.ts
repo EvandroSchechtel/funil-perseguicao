@@ -81,6 +81,18 @@ export async function buscarLead(id: string) {
       processado_at: true,
       created_at: true,
       updated_at: true,
+      contato_id: true,
+      contato: {
+        select: {
+          contas_vinculadas: {
+            orderBy: { updated_at: "desc" },
+            select: {
+              subscriber_id: true,
+              conta: { select: { id: true, nome: true } },
+            },
+          },
+        },
+      },
       webhook: { select: { id: true, nome: true } },
       campanha: { select: { id: true, nome: true } },
       webhook_flow: {

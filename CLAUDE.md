@@ -69,6 +69,31 @@ if (result.sem_optin) → status = "sem_optin", não throw
 else                  → status = "falha", throw new Error(result.error) // BullMQ retry
 ```
 
+#### Invariantes Multi-Conta Manychat — NUNCA podem quebrar
+
+Um mesmo contato (telefone) pode existir em múltiplas contas Manychat com subscriber_ids diferentes.
+
+| # | Invariante | Por que é crítica |
+|---|-----------|-------------------|
+| A | `knownSubscriberId` SEMPRE vem de `ContatoConta` filtrado por `(contato_id, conta_id)` — **nunca** de `Lead.subscriber_id` diretamente | `Lead.subscriber_id` pode ser de outra conta Manychat |
+| B | Após sendFlow bem-sucedido: atualizar AMBOS `Lead.subscriber_id` E `ContatoConta.subscriber_id` | `ContatoConta` é a fonte autoritativa; `Lead` é snapshot |
+| C | Override manual (PATCH /leads/[id]) deve upsert AMBOS `Lead.subscriber_id` E `ContatoConta` | Sem isso, worker ignora o override e usa ID antigo |
+| D | A tela de lead exibe subscriber_ids de `ContatoConta` por conta | Um contato tem IDs diferentes por conta — UI deve refletir |
+
+**Lookup correto no worker:**
+```typescript
+// CORRETO — account-specific:
+const contatoConta = updated.contato_id
+  ? await prisma.contatoConta.findUnique({
+      where: { contato_id_conta_id: { contato_id: updated.contato_id, conta_id: contaId } },
+    })
+  : null
+const knownSubscriberId = contatoConta?.subscriber_id ?? undefined
+
+// ERRADO — cross-conta, nunca usar:
+// const knownSubscriberId = updated.subscriber_id ?? undefined
+```
+
 ---
 
 ### `src/lib/queue/queues.ts` — `addWebhookJob`
