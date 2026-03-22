@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { addWebhookJob } from "@/lib/queue/queues"
 import { ok, badRequest, forbidden, notFound, serverError } from "@/lib/api/response"
 import { getTodayUsageMap, msUntilMidnightBRT } from "@/lib/services/uso-diario.service"
+import { parseWebhookPayload } from "@/lib/webhook/payload-parser"
 
 const leadSchema = z.object({
   nome: z.string().min(1, "Nome é obrigatório").max(200),
@@ -46,29 +47,8 @@ export async function POST(
     if (!webhook) return notFound("Webhook não encontrado.")
     if (webhook.status === "inativo") return forbidden("Webhook desativado.")
 
-    // 2. Parse body — accepts JSON or ActiveCampaign form-encoded (contact[field] notation)
-    let body: unknown
-    const contentType = request.headers.get("content-type") || ""
-    try {
-      if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
-        const form = await request.formData()
-        // ActiveCampaign sends: contact[first_name], contact[last_name], contact[email], contact[phone]
-        const firstName = form.get("contact[first_name]") as string | null
-        const lastName  = form.get("contact[last_name]")  as string | null
-        const phone     = form.get("contact[phone]")      as string | null
-        const email     = form.get("contact[email]")      as string | null
-        const nomeAC    = [firstName, lastName].filter(Boolean).join(" ").trim() || (form.get("contact[email]") as string | null) || ""
-        body = {
-          nome:     form.get("nome") as string | null || nomeAC || undefined,
-          telefone: form.get("telefone") as string | null || phone || undefined,
-          email:    form.get("email") as string | null || email || undefined,
-        }
-      } else {
-        body = await request.json()
-      }
-    } catch {
-      return badRequest("Body inválido.")
-    }
+    // 2. Parse body — suporta JSON, form-encoded, ActiveCampaign, RD Station, Hotmart, Kiwify, Eduzz
+    const body = await parseWebhookPayload(request)
 
     const parsed = leadSchema.safeParse(body)
     if (!parsed.success) {
