@@ -45,6 +45,13 @@ export async function adicionarFlow(webhookId: string, params: AdicionarFlowPara
   })
   if (!conta) throw new ServiceError("bad_request", "Conta Manychat não encontrada ou inativa.")
 
+  // Prevent duplicate: same conta + same flow_ns on the same webhook
+  const duplicate = await prisma.webhookFlow.findFirst({
+    where: { webhook_id: webhookId, conta_id: params.conta_id, flow_ns: params.flow_ns, deleted_at: null },
+    select: { id: true },
+  })
+  if (duplicate) throw new ServiceError("conflict", "Este flow já está adicionado a este webhook nesta conta.")
+
   let ordem = params.ordem
   if (ordem === undefined) {
     const last = await prisma.webhookFlow.findFirst({

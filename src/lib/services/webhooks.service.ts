@@ -88,12 +88,20 @@ export async function buscarWebhook(id: string) {
 
   if (!webhook) throw new ServiceError("not_found", "Webhook não encontrado.")
 
+  const leadStatusCounts = await prisma.lead.groupBy({
+    by: ["status"],
+    where: { webhook_id: id },
+    _count: true,
+  })
+  const leads_status = Object.fromEntries(leadStatusCounts.map((r) => [r.status, r._count]))
+
   const appUrl = process.env.NEXT_PUBLIC_WEBHOOK_URL || process.env.NEXT_PUBLIC_APP_URL || ""
   return {
     webhook: {
       ...webhook,
       url_publica: `${appUrl}/api/webhook/${webhook.token}`,
       leads_count: webhook._count.leads,
+      leads_status,
       _count: undefined,
     },
   }

@@ -58,6 +58,7 @@ interface WebhookItem {
   status: "ativo" | "inativo"
   url_publica: string
   leads_count: number
+  leads_status: Record<string, number>
   webhook_flows: Flow[]
 }
 
@@ -645,6 +646,28 @@ export default function CampanhaDetailPage() {
                                 </div>
                               </div>
                             ))}
+                          </div>
+                        )}
+                        {/* Lead status summary */}
+                        {w.leads_count > 0 && (
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-3 pt-3 border-t border-[#1E1E2A]">
+                            <span className="text-[10px] text-[#5A5A72] uppercase tracking-wider font-semibold shrink-0">Leads:</span>
+                            {[
+                              { key: "sucesso",    label: "Sucesso",    color: "text-[#25D366] bg-[#25D366]/10" },
+                              { key: "falha",      label: "Falha",      color: "text-[#F87171] bg-[#F87171]/10" },
+                              { key: "sem_optin",  label: "Sem optin",  color: "text-[#F59E0B] bg-[#F59E0B]/10" },
+                              { key: "pendente",   label: "Pendente",   color: "text-[#8B8B9E] bg-[#8B8B9E]/10" },
+                              { key: "processando",label: "Processando",color: "text-[#60A5FA] bg-[#60A5FA]/10" },
+                            ].map(({ key, label, color }) =>
+                              (w.leads_status?.[key] ?? 0) > 0 ? (
+                                <span key={key} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${color}`}>
+                                  {label}: {w.leads_status[key]}
+                                </span>
+                              ) : null
+                            )}
+                            <Link href={`/admin/webhooks/${w.id}`} className="ml-auto text-[10px] text-[#5A5A72] hover:text-[#A78BFA] transition-colors flex items-center gap-1">
+                              <ExternalLink className="w-3 h-3" />Ver fila completa
+                            </Link>
                           </div>
                         )}
                       </div>
