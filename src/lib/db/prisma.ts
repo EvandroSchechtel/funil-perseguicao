@@ -2,9 +2,6 @@ import { PrismaClient } from "@/generated/prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
 import { Pool } from "pg"
 
-// Supabase uses self-signed certs; disable verification for direct connections
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
-
 function createPrismaClient() {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL!,
