@@ -152,7 +152,12 @@ describe("INVARIANT: has_opt_in_whatsapp=true ensured for all subscribers", () =
   })
 
   it("processLeadInManychat — found via system field: updateSubscriber called with has_opt_in_whatsapp=true", async () => {
+    // In Option C, system field is only reached after createSubscriber returns alreadyExists
     const { calls } = setupFetch({
+      "/fb/subscriber/createSubscriber": {
+        status: 409,
+        body: { status: "error", message: "already exists" },
+      },
       "/fb/subscriber/findBySystemField": {
         body: { status: "success", data: { id: SUB_ID } },
       },
@@ -268,7 +273,12 @@ describe("INVARIANT: opt-in upsert (updateSubscriber) runs before sendFlow", () 
   })
 
   it("found by system field: updateSubscriber index < sendFlow index", async () => {
+    // In Option C, system field is only reached after createSubscriber returns alreadyExists
     const { calls } = setupFetch({
+      "/fb/subscriber/createSubscriber": {
+        status: 409,
+        body: { status: "error", message: "already exists" },
+      },
       "/fb/subscriber/findBySystemField": {
         body: { status: "success", data: { id: SUB_ID } },
       },
@@ -334,9 +344,9 @@ describe("INVARIANT: sem_optin returned when subscriber cannot be found", () => 
 // INVARIANT 5 — alreadyExists fallback: lookups retried, sendFlow still called
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe("INVARIANT: alreadyExists → retry lookup → sendFlow", () => {
-  it("retries lookups after alreadyExists and still sends flow", async () => {
-    let customFieldCallCount = 0
+describe("INVARIANT: alreadyExists → findBySystemField → sendFlow", () => {
+  it("falls back to system field after alreadyExists and still sends flow", async () => {
+    // Option C: findByCustomField miss → createSubscriber alreadyExists → findBySystemField found
     const { calls } = setupFetch()
 
     vi.stubGlobal(
@@ -348,23 +358,16 @@ describe("INVARIANT: alreadyExists → retry lookup → sendFlow", () => {
         calls.push({ url, method: init?.method ?? "GET", body })
 
         if (url.includes("/fb/subscriber/findByCustomField")) {
-          customFieldCallCount++
-          if (customFieldCallCount === 1) {
-            // First call: not found
-            return new Response(JSON.stringify({ status: "success", data: [] }), { status: 200 })
-          }
-          // Retry call: found
-          return new Response(JSON.stringify({ status: "success", data: [{ id: SUB_ID }] }), { status: 200 })
-        }
-        if (url.includes("/fb/subscriber/findBySystemField")) {
-          return new Response(JSON.stringify({ status: "error" }), { status: 404 })
+          return new Response(JSON.stringify({ status: "success", data: [] }), { status: 200 })
         }
         if (url.includes("/fb/subscriber/createSubscriber")) {
-          // Subscriber already exists
           return new Response(
             JSON.stringify({ status: "error", message: "already exists" }),
             { status: 409 }
           )
+        }
+        if (url.includes("/fb/subscriber/findBySystemField")) {
+          return new Response(JSON.stringify({ status: "success", data: { id: SUB_ID } }), { status: 200 })
         }
         if (url.includes("/fb/sending/sendFlow")) {
           return new Response(JSON.stringify({ status: "success" }), { status: 200 })
