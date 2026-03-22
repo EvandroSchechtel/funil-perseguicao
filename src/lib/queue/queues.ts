@@ -36,9 +36,20 @@ export function getWebhookQueue(): Queue {
 export async function addWebhookJob(data: WebhookJobData, opts?: { forceNew?: boolean; delay?: number }) {
   const queue = getWebhookQueue()
   if (opts?.forceNew) {
-    // Remove existing job (any state) so we can re-enqueue without dedup blocking it
+    // Remove the canonical job (initial enqueue uses leadId as jobId)
     try { await queue.remove(data.leadId) } catch { /* ignore if not found */ }
-    return queue.add("process-lead", data, { jobId: `${data.leadId}-${Date.now()}`, delay: opts.delay })
+    // Also scan delayed jobs: moveToDelayed keeps the original timestamped jobId,
+    // so previous forceNew jobs that got delayed won't be found by plain remove().
+    try {
+      const delayed = await queue.getDelayed(0, 200)
+      for (const j of delayed) {
+        if ((j.data as WebhookJobData)?.leadId === data.leadId && j.id !== data.leadId) {
+          try { await queue.remove(j.id!) } catch { /* ignore */ }
+        }
+      }
+    } catch { /* ignore Redis errors */ }
+    // Use canonical leadId as jobId (no timestamp) to prevent job accumulation
+    return queue.add("process-lead", data, { jobId: data.leadId, delay: opts.delay })
   }
   return queue.add("process-lead", data, { jobId: data.leadId, delay: opts?.delay })
 }
