@@ -26,8 +26,10 @@ const FLOW_NS = "content20260319193116_225492"
 const FIELD_ID = 12345
 const LEAD = { nome: "João Silva", telefone: "5542998234664" }
 const PHONE_E164 = "+5542998234664"
-const SUB_ID = "subscriber_existing_789"
-const SUB_ID_NEW = "subscriber_new_456"
+const SUB_ID = "789"
+const SUB_ID_NUM = 789     // integer sent in API request bodies (Manychat requires integer)
+const SUB_ID_NEW = "456"
+const SUB_ID_NEW_NUM = 456 // integer sent in API request bodies
 
 // ── Fetch call recorder ───────────────────────────────────────────────────────
 
@@ -147,7 +149,7 @@ describe("INVARIANT: has_opt_in_whatsapp=true ensured for all subscribers", () =
     expect(updateCalls.length, "updateSubscriber must be called to set opt-in on existing subscriber").toBeGreaterThan(0)
     for (const c of updateCalls) {
       expect(c.body?.has_opt_in_whatsapp).toBe(true)
-      expect(c.body?.subscriber_id).toBe(SUB_ID)
+      expect(c.body?.subscriber_id).toBe(SUB_ID_NUM) // integer per Manychat API spec
     }
   })
 
@@ -168,7 +170,7 @@ describe("INVARIANT: has_opt_in_whatsapp=true ensured for all subscribers", () =
     expect(updateCalls.length, "updateSubscriber must be called for existing subscriber found via system field").toBeGreaterThan(0)
     for (const c of updateCalls) {
       expect(c.body?.has_opt_in_whatsapp).toBe(true)
-      expect(c.body?.subscriber_id).toBe(SUB_ID)
+      expect(c.body?.subscriber_id).toBe(SUB_ID_NUM) // integer per Manychat API spec
     }
   })
 
@@ -180,7 +182,7 @@ describe("INVARIANT: has_opt_in_whatsapp=true ensured for all subscribers", () =
     expect(updateCalls.length, "updateSubscriber must run even for known subscriber_id").toBeGreaterThan(0)
     for (const c of updateCalls) {
       expect(c.body?.has_opt_in_whatsapp).toBe(true)
-      expect(c.body?.subscriber_id).toBe(SUB_ID)
+      expect(c.body?.subscriber_id).toBe(SUB_ID_NUM) // integer per Manychat API spec
     }
   })
 })
@@ -210,7 +212,7 @@ describe("INVARIANT: sendFlowToSubscriber called with correct subscriber_id", ()
     expect(result.subscriber_id).toBe(SUB_ID_NEW)
 
     const sendCall = callsTo(calls, "/fb/sending/sendFlow")[0]
-    expect(sendCall?.body?.subscriber_id).toBe(SUB_ID_NEW)
+    expect(sendCall?.body?.subscriber_id).toBe(SUB_ID_NEW_NUM) // integer per Manychat API spec
     expect(sendCall?.body?.flow_ns).toBe(FLOW_NS)
   })
 
@@ -222,7 +224,7 @@ describe("INVARIANT: sendFlowToSubscriber called with correct subscriber_id", ()
     expect(result.subscriber_id).toBe(SUB_ID)
 
     const sendCall = callsTo(calls, "/fb/sending/sendFlow")[0]
-    expect(sendCall?.body?.subscriber_id).toBe(SUB_ID)
+    expect(sendCall?.body?.subscriber_id).toBe(SUB_ID_NUM) // integer per Manychat API spec
     expect(sendCall?.body?.flow_ns).toBe(FLOW_NS)
   })
 
@@ -381,7 +383,7 @@ describe("INVARIANT: alreadyExists → findBySystemField → sendFlow", () => {
     expect(result.ok).toBe(true)
     expect(result.subscriber_id).toBe(SUB_ID)
     const sendCall = callsTo(calls, "/fb/sending/sendFlow")[0]
-    expect(sendCall?.body?.subscriber_id).toBe(SUB_ID)
+    expect(sendCall?.body?.subscriber_id).toBe(SUB_ID_NUM) // integer per Manychat API spec
   })
 })
 

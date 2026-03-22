@@ -272,7 +272,7 @@ export async function sendFlowToSubscriber(
     const res = await fetch(`${MANYCHAT_API_BASE}/fb/sending/sendFlow`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ subscriber_id: subscriberId, flow_ns: flowNs }),
+      body: JSON.stringify({ subscriber_id: Number(subscriberId), flow_ns: flowNs }),
       signal,
     })
     clear()
@@ -314,7 +314,7 @@ async function updateManychatSubscriberOptIn(
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        subscriber_id: subscriberId,
+        subscriber_id: Number(subscriberId),
         whatsapp_phone: normalizePhone(phone),
         has_opt_in_whatsapp: true,
       }),
@@ -322,7 +322,11 @@ async function updateManychatSubscriberOptIn(
     })
     const body = await res.text()
     clear()
-    console.log(`[Manychat] updateSubscriber opt-in → HTTP ${res.status} ${body.slice(0, 300)}`)
+    if (!res.ok) {
+      console.warn(`[Manychat] updateSubscriber opt-in FALHOU HTTP ${res.status}: ${body.slice(0, 300)}`)
+    } else {
+      console.log(`[Manychat] updateSubscriber opt-in OK → HTTP ${res.status}`)
+    }
   } catch (err) {
     clear()
     console.warn(`[Manychat] updateSubscriber opt-in failed:`, err)
@@ -383,11 +387,7 @@ export async function processLeadInManychat(
 
     if (found) {
       if (found.unsubscribed) {
-        console.warn(`[Manychat] subscriber ${found.id} is unsubscribed — cannot send flow`)
-        return {
-          ok: false, sem_optin: true, subscriber_id: found.id,
-          error: `Subscriber desinscrito do bot Manychat (id: ${found.id}). O contato precisa se re-inscrever enviando uma mensagem para o número WhatsApp do bot.`,
-        }
+        console.warn(`[Manychat] subscriber ${found.id} is unsubscribed — attempting updateSubscriber opt-in re-enable before sendFlow`)
       }
       await updateManychatSubscriberOptIn(apiKey, found.id, lead.telefone)
       setWhatsappIdField(apiKey, found.id, phone, whatsappFieldId).catch(() => {})
@@ -433,11 +433,7 @@ export async function processLeadInManychat(
   }
 
   if (found.unsubscribed) {
-    console.warn(`[Manychat] subscriber ${found.id} is unsubscribed — cannot send flow`)
-    return {
-      ok: false, sem_optin: true, subscriber_id: found.id,
-      error: `Subscriber desinscrito do bot Manychat (id: ${found.id}). O contato precisa se re-inscrever enviando uma mensagem para o número WhatsApp do bot.`,
-    }
+    console.warn(`[Manychat] subscriber ${found.id} is unsubscribed — attempting updateSubscriber opt-in re-enable before sendFlow`)
   }
 
   await updateManychatSubscriberOptIn(apiKey, found.id, lead.telefone)
@@ -589,8 +585,8 @@ export async function setWhatsappIdField(
   const { signal, clear } = withTimeout(8000)
   try {
     const body = fieldId
-      ? { subscriber_id: subscriberId, field_id: fieldId, field_value: normalized }
-      : { subscriber_id: subscriberId, field_name: WHATSAPP_ID_FIELD, field_value: normalized }
+      ? { subscriber_id: Number(subscriberId), field_id: fieldId, field_value: normalized }
+      : { subscriber_id: Number(subscriberId), field_name: WHATSAPP_ID_FIELD, field_value: normalized }
 
     const endpoint = fieldId
       ? `${MANYCHAT_API_BASE}/fb/subscriber/setCustomField`
