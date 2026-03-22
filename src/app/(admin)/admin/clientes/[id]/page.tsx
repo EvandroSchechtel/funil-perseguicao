@@ -278,9 +278,9 @@ export default function ClienteDetailPage() {
         })
           .then((r) => r.json())
           .then((d) => {
-            if (d.data?.ok && d.data.field_id) {
+            if (d.ok && d.field_id) {
               setFetchFieldStatus("found")
-              setNewFieldId(String(d.data.field_id))
+              setNewFieldId(String(d.field_id))
             } else {
               setFetchFieldStatus("not-found")
             }
@@ -311,13 +311,13 @@ export default function ClienteDetailPage() {
         body: JSON.stringify({ api_key: apiKey.trim() }),
       })
       const data = await res.json()
-      if (res.ok && data.data?.ok) {
+      if (res.ok && data.ok) {
         setEnsureFieldStatus("ok")
-        setEnsureFieldMsg(data.data.message)
-        if (data.data.field_id) { setNewFieldId(String(data.data.field_id)); setFetchFieldStatus("found") }
+        setEnsureFieldMsg(data.message)
+        if (data.field_id) { setNewFieldId(String(data.field_id)); setFetchFieldStatus("found") }
       } else {
         setEnsureFieldStatus("error")
-        setEnsureFieldMsg(data.data?.message || "Erro ao criar o campo.")
+        setEnsureFieldMsg(data.message || "Erro ao criar o campo.")
       }
     } catch {
       setEnsureFieldStatus("error"); setEnsureFieldMsg("Erro de rede.")
