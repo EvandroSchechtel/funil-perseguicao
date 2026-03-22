@@ -224,8 +224,8 @@ export default function ClienteDetailPage() {
       })
       if (!res.ok) return
       const data = await res.json()
-      setContatos(data.data?.contatos || [])
-      setContatosTotal(data.data?.pagination?.total || 0)
+      setContatos(data.contatos || [])
+      setContatosTotal(data.pagination?.total || 0)
     } catch { /* silent */ } finally {
       setLoadingContatos(false)
     }
