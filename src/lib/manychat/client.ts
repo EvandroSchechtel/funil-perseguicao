@@ -357,15 +357,18 @@ function isOptInError(error?: string): boolean {
  * Full orchestration: find or create subscriber, then send flow.
  * Used by the BullMQ worker to process leads.
  *
- * Strategy (Option C — FIND CUSTOM FIELD → CREATE → FIND SYSTEM FIELD):
+ * Strategy:
  * 0. knownSubscriberId → forceWhatsappOptIn (await) → sendFlow → return
- * 1. findByCustomField([esc]whatsapp-id, phone) — primary; fastest for repeat leads
+ * 1. findByCustomField([esc]whatsapp-id, phone E.164) — primary; fastest for repeat leads
  *    → found: forceWhatsappOptIn (await) → setCustomField → sendFlow → return
- * 2. createSubscriber(has_opt_in_whatsapp: true) — new subscriber in one call
- *    → { id }: setCustomField → sendFlow → return  (already has opt-in)
+ * 2. createSubscriber(whatsapp_phone, has_opt_in_whatsapp: true)
+ *    → { id }: forceWhatsappOptIn (await) → setCustomField → sendFlow → return
  *    → alreadyExists or error → step 3
- * 3. findBySystemField(whatsapp_phone, 3 formats) — last resort fallback
- *    → found: forceWhatsappOptIn (await) → setCustomField → sendFlow → return
+ * 3. alreadyExists: subscriber exists with whatsapp_phone but phone=null (WhatsApp-only)
+ *    → findByCustomField(phone variants: E.164, without +) — the only reliable lookup
+ *       → found: forceWhatsappOptIn (await) → setCustomField → sendFlow → return
+ *    → findBySystemField fallback (works for subscribers with phone≠null)
+ *       → found: forceWhatsappOptIn (await) → setCustomField → sendFlow → return
  *    → not found: sem_optin
  */
 export async function processLeadInManychat(
@@ -426,10 +429,12 @@ export async function processLeadInManychat(
   console.log(`[Manychat] createSubscriber →`, JSON.stringify(created))
 
   if (created && "id" in created) {
-    // New subscriber — has_opt_in_whatsapp already set in createSubscriber; no updateSubscriber needed
+    // New subscriber created with whatsapp_phone — forceWhatsappOptIn to confirm opt-in
+    // (consistent with STEPs 1 and 3 which also await forceWhatsappOptIn before sendFlow)
     if (whatsappFieldId) {
       setWhatsappIdField(apiKey, created.id, phone, whatsappFieldId).catch(() => {})
     }
+    await forceWhatsappOptIn(apiKey, lead, phone)
     console.log(`[Manychat] sendFlow — subscriber_id=${created.id}, flow_ns=${flowNs}`)
     const result = await sendFlowToSubscriber(apiKey, created.id, flowNs)
     console.log(`[Manychat] sendFlow result →`, JSON.stringify(result))
@@ -439,9 +444,31 @@ export async function processLeadInManychat(
     return { ok: result.ok, subscriber_id: created.id, error: result.error }
   }
 
-  // STEP 3: alreadyExists or create error — fall back to system field lookup
+  // STEP 3: alreadyExists or create error
+  // WhatsApp-only subscribers have phone=null → findBySystemField?phone= always fails.
+  // Try findByCustomField first with phone variants (E.164 and without +).
+  if (whatsappFieldId) {
+    const phoneVariants = [...new Set([phone, phone.slice(1)])] // "+55...", "55..."
+    for (const variant of phoneVariants) {
+      const byField = await findSubscriberByCustomField(apiKey, whatsappFieldId, variant)
+      console.log(`[Manychat] findByCustomField(${whatsappFieldId}, "${variant}") →`, byField ? `found id=${byField.id}` : "not found")
+      if (byField) {
+        await forceWhatsappOptIn(apiKey, lead, phone)
+        setWhatsappIdField(apiKey, byField.id, phone, whatsappFieldId).catch(() => {})
+        console.log(`[Manychat] sendFlow — subscriber_id=${byField.id}, flow_ns=${flowNs}`)
+        const result = await sendFlowToSubscriber(apiKey, byField.id, flowNs)
+        console.log(`[Manychat] sendFlow result →`, JSON.stringify(result))
+        if (!result.ok && isOptInError(result.error)) {
+          return { ok: false, sem_optin: true, subscriber_id: byField.id, error: result.error }
+        }
+        return { ok: result.ok, subscriber_id: byField.id, error: result.error }
+      }
+    }
+  }
+
+  // Fallback: findBySystemField (works for subscribers with phone≠null)
   const found = await findSubscriberByPhone(apiKey, lead.telefone)
-  console.log(`[Manychat] findBySystemField(whatsapp_phone) →`, found ? `found id=${found.id}` : "not found")
+  console.log(`[Manychat] findBySystemField(phone) →`, found ? `found id=${found.id}` : "not found")
 
   if (!found) {
     console.warn(`[Manychat] subscriber not found for phone ${phone}`)
