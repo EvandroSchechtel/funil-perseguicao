@@ -297,39 +297,39 @@ export async function sendFlowToSubscriber(
 }
 
 /**
- * Updates an existing Manychat subscriber to ensure has_opt_in_whatsapp: true.
- * MUST be awaited before sendFlow — calling it fire-and-forget creates a race condition
- * where sendFlow executes before Manychat processes the opt-in update.
- * Uses updateSubscriber (not createSubscriber) because createSubscriber returns
- * "alreadyExists" for existing subscribers and does NOT update the opt-in flag.
+ * Forces WhatsApp opt-in for a subscriber using createSubscriber.
+ * createSubscriber is the ONLY Manychat endpoint that processes has_opt_in_whatsapp.
+ * updateSubscriber silently ignores whatsapp_phone and has_opt_in_whatsapp — they
+ * are not in the updateSubscriber request schema (confirmed via official Swagger docs).
+ * For existing subscribers, Manychat returns alreadyExists but processes the opt-in.
+ * Must be awaited before sendFlow — fire-and-forget creates a race condition.
+ * Best-effort — internal errors are caught and do not fail sendFlow.
  */
-async function updateManychatSubscriberOptIn(
+async function forceWhatsappOptIn(
   apiKey: string,
-  subscriberId: string,
-  phone: string
+  lead: { nome: string },
+  phone: string // E.164 format
 ): Promise<void> {
   const { signal, clear } = withTimeout(8000)
   try {
-    const res = await fetch(`${MANYCHAT_API_BASE}/fb/subscriber/updateSubscriber`, {
+    const [firstName, ...rest] = lead.nome.trim().split(" ")
+    const res = await fetch(`${MANYCHAT_API_BASE}/fb/subscriber/createSubscriber`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        subscriber_id: Number(subscriberId),
-        whatsapp_phone: normalizePhone(phone),
+        first_name: firstName,
+        last_name: rest.join(" ") || "",
+        whatsapp_phone: phone,
         has_opt_in_whatsapp: true,
       }),
       signal,
     })
     const body = await res.text()
     clear()
-    if (!res.ok) {
-      console.warn(`[Manychat] updateSubscriber opt-in FALHOU HTTP ${res.status}: ${body.slice(0, 300)}`)
-    } else {
-      console.log(`[Manychat] updateSubscriber opt-in OK → HTTP ${res.status}`)
-    }
+    console.log(`[Manychat] forceWhatsappOptIn createSubscriber HTTP ${res.status}: ${body.slice(0, 200)}`)
   } catch (err) {
     clear()
-    console.warn(`[Manychat] updateSubscriber opt-in failed:`, err)
+    console.warn(`[Manychat] forceWhatsappOptIn failed:`, err)
   }
 }
 
@@ -344,14 +344,14 @@ function isOptInError(error?: string): boolean {
  * Used by the BullMQ worker to process leads.
  *
  * Strategy (Option C — FIND CUSTOM FIELD → CREATE → FIND SYSTEM FIELD):
- * 0. knownSubscriberId → updateOptIn (await) → sendFlow → return
+ * 0. knownSubscriberId → forceWhatsappOptIn (await) → sendFlow → return
  * 1. findByCustomField([esc]whatsapp-id, phone) — primary; fastest for repeat leads
- *    → found: updateOptIn (await) → setCustomField → sendFlow → return
+ *    → found: forceWhatsappOptIn (await) → setCustomField → sendFlow → return
  * 2. createSubscriber(has_opt_in_whatsapp: true) — new subscriber in one call
- *    → { id }: setCustomField → sendFlow → return  (skip updateSubscriber — already has opt-in)
+ *    → { id }: setCustomField → sendFlow → return  (already has opt-in)
  *    → alreadyExists or error → step 3
  * 3. findBySystemField(whatsapp_phone, 3 formats) — last resort fallback
- *    → found: updateOptIn (await) → setCustomField → sendFlow → return
+ *    → found: forceWhatsappOptIn (await) → setCustomField → sendFlow → return
  *    → not found: sem_optin
  */
 export async function processLeadInManychat(
@@ -371,7 +371,7 @@ export async function processLeadInManychat(
       setWhatsappIdField(apiKey, knownSubscriberId, phone, whatsappFieldId).catch(() => {})
     }
     // MUST be awaited: sendFlow would race if this is fire-and-forget
-    await updateManychatSubscriberOptIn(apiKey, knownSubscriberId, lead.telefone)
+    await forceWhatsappOptIn(apiKey, lead, phone)
     const result = await sendFlowToSubscriber(apiKey, knownSubscriberId, flowNs)
     console.log(`[Manychat] sendFlow result →`, JSON.stringify(result))
     if (!result.ok && isOptInError(result.error)) {
@@ -387,9 +387,9 @@ export async function processLeadInManychat(
 
     if (found) {
       if (found.unsubscribed) {
-        console.warn(`[Manychat] subscriber ${found.id} is unsubscribed — attempting updateSubscriber opt-in re-enable before sendFlow`)
+        console.warn(`[Manychat] subscriber ${found.id} is unsubscribed — attempting forceWhatsappOptIn before sendFlow`)
       }
-      await updateManychatSubscriberOptIn(apiKey, found.id, lead.telefone)
+      await forceWhatsappOptIn(apiKey, lead, phone)
       setWhatsappIdField(apiKey, found.id, phone, whatsappFieldId).catch(() => {})
       console.log(`[Manychat] sendFlow — subscriber_id=${found.id}, flow_ns=${flowNs}`)
       const result = await sendFlowToSubscriber(apiKey, found.id, flowNs)
@@ -433,10 +433,10 @@ export async function processLeadInManychat(
   }
 
   if (found.unsubscribed) {
-    console.warn(`[Manychat] subscriber ${found.id} is unsubscribed — attempting updateSubscriber opt-in re-enable before sendFlow`)
+    console.warn(`[Manychat] subscriber ${found.id} is unsubscribed — attempting forceWhatsappOptIn before sendFlow`)
   }
 
-  await updateManychatSubscriberOptIn(apiKey, found.id, lead.telefone)
+  await forceWhatsappOptIn(apiKey, lead, phone)
   if (whatsappFieldId) {
     setWhatsappIdField(apiKey, found.id, phone, whatsappFieldId).catch(() => {})
   }

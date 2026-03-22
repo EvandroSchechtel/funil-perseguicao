@@ -893,7 +893,7 @@ function TabOperacional({ data }: { data: MetricasOperacional }) {
                   key={lead.id}
                   className="border-b border-[#1E1E2A] last:border-0 hover:bg-[#1C1C28] transition-colors"
                 >
-                  <td className="px-5 py-3 text-[#F1F1F3] text-sm">{lead.nome}</td>
+                  <td className="px-5 py-3 text-sm"><Link href={`/admin/leads/${lead.id}`} className="text-[#F1F1F3] hover:text-[#25D366] transition-colors">{lead.nome}</Link></td>
                   <td className="px-5 py-3 text-[#C4C4D4] text-sm tabular-nums">{lead.telefone}</td>
                   <td className="px-5 py-3 text-[#F87171] text-sm max-w-xs truncate">
                     {lead.erro_msg ?? "—"}

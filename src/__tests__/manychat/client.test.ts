@@ -108,11 +108,12 @@ function indexOfFirst(calls: FetchCall[], endpoint: string): number {
 // INVARIANT 1 — has_opt_in_whatsapp: true MUST be ensured for every subscriber.
 //
 // Strategy:
-//   NEW subscriber  → createSubscriber with has_opt_in_whatsapp: true
-//   EXISTING subscriber → updateSubscriber with has_opt_in_whatsapp: true
+//   ALL subscribers → createSubscriber with has_opt_in_whatsapp: true
 //
-// Rationale: createSubscriber returns "alreadyExists" for existing subscribers
-// WITHOUT updating opt-in. updateSubscriber actually sets the flag.
+// Rationale: createSubscriber is the ONLY Manychat endpoint that processes
+// has_opt_in_whatsapp. updateSubscriber ignores whatsapp_phone and
+// has_opt_in_whatsapp — they are not in the updateSubscriber request schema
+// (confirmed via official Swagger docs at api.manychat.com/swagger).
 // ═════════════════════════════════════════════════════════════════════════════
 
 describe("INVARIANT: has_opt_in_whatsapp=true ensured for all subscribers", () => {
@@ -137,7 +138,7 @@ describe("INVARIANT: has_opt_in_whatsapp=true ensured for all subscribers", () =
     }
   })
 
-  it("processLeadInManychat — found via custom field: updateSubscriber called with has_opt_in_whatsapp=true", async () => {
+  it("processLeadInManychat — found via custom field: createSubscriber called with has_opt_in_whatsapp=true", async () => {
     const { calls } = setupFetch({
       "/fb/subscriber/findByCustomField": {
         body: { status: "success", data: [{ id: SUB_ID }] },
@@ -145,15 +146,14 @@ describe("INVARIANT: has_opt_in_whatsapp=true ensured for all subscribers", () =
     })
     await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
 
-    const updateCalls = callsTo(calls, "/fb/subscriber/updateSubscriber")
-    expect(updateCalls.length, "updateSubscriber must be called to set opt-in on existing subscriber").toBeGreaterThan(0)
-    for (const c of updateCalls) {
+    const createCalls = callsTo(calls, "/fb/subscriber/createSubscriber")
+    expect(createCalls.length, "createSubscriber must be called to force WhatsApp opt-in on existing subscriber").toBeGreaterThan(0)
+    for (const c of createCalls) {
       expect(c.body?.has_opt_in_whatsapp).toBe(true)
-      expect(c.body?.subscriber_id).toBe(SUB_ID_NUM) // integer per Manychat API spec
     }
   })
 
-  it("processLeadInManychat — found via system field: updateSubscriber called with has_opt_in_whatsapp=true", async () => {
+  it("processLeadInManychat — found via system field: createSubscriber called with has_opt_in_whatsapp=true", async () => {
     // In Option C, system field is only reached after createSubscriber returns alreadyExists
     const { calls } = setupFetch({
       "/fb/subscriber/createSubscriber": {
@@ -166,23 +166,21 @@ describe("INVARIANT: has_opt_in_whatsapp=true ensured for all subscribers", () =
     })
     await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null)
 
-    const updateCalls = callsTo(calls, "/fb/subscriber/updateSubscriber")
-    expect(updateCalls.length, "updateSubscriber must be called for existing subscriber found via system field").toBeGreaterThan(0)
-    for (const c of updateCalls) {
+    const createCalls = callsTo(calls, "/fb/subscriber/createSubscriber")
+    expect(createCalls.length, "createSubscriber must be called to force WhatsApp opt-in on existing subscriber found via system field").toBeGreaterThan(0)
+    for (const c of createCalls) {
       expect(c.body?.has_opt_in_whatsapp).toBe(true)
-      expect(c.body?.subscriber_id).toBe(SUB_ID_NUM) // integer per Manychat API spec
     }
   })
 
-  it("processLeadInManychat — knownSubscriberId path: updateSubscriber called with has_opt_in_whatsapp=true", async () => {
+  it("processLeadInManychat — knownSubscriberId path: createSubscriber called with has_opt_in_whatsapp=true", async () => {
     const { calls } = setupFetch()
     await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null, SUB_ID)
 
-    const updateCalls = callsTo(calls, "/fb/subscriber/updateSubscriber")
-    expect(updateCalls.length, "updateSubscriber must run even for known subscriber_id").toBeGreaterThan(0)
-    for (const c of updateCalls) {
+    const createCalls = callsTo(calls, "/fb/subscriber/createSubscriber")
+    expect(createCalls.length, "createSubscriber must run even for known subscriber_id to force WhatsApp opt-in").toBeGreaterThan(0)
+    for (const c of createCalls) {
       expect(c.body?.has_opt_in_whatsapp).toBe(true)
-      expect(c.body?.subscriber_id).toBe(SUB_ID_NUM) // integer per Manychat API spec
     }
   })
 })
@@ -257,8 +255,8 @@ describe("INVARIANT: sendFlowToSubscriber called with correct subscriber_id", ()
 // INVARIANT 3 — opt-in upsert happens BEFORE sendFlow (order matters)
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe("INVARIANT: opt-in upsert (updateSubscriber) runs before sendFlow", () => {
-  it("found by custom field: updateSubscriber index < sendFlow index", async () => {
+describe("INVARIANT: opt-in upsert (createSubscriber) runs before sendFlow", () => {
+  it("found by custom field: createSubscriber(opt-in) index < sendFlow index", async () => {
     const { calls } = setupFetch({
       "/fb/subscriber/findByCustomField": {
         body: { status: "success", data: [{ id: SUB_ID }] },
@@ -266,15 +264,15 @@ describe("INVARIANT: opt-in upsert (updateSubscriber) runs before sendFlow", () 
     })
     await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
 
-    const updateIdx = indexOfFirst(calls, "/fb/subscriber/updateSubscriber")
+    const createIdx = indexOfFirst(calls, "/fb/subscriber/createSubscriber")
     const sendIdx = indexOfFirst(calls, "/fb/sending/sendFlow")
 
-    expect(updateIdx, "updateSubscriber must be called").toBeGreaterThanOrEqual(0)
+    expect(createIdx, "createSubscriber must be called").toBeGreaterThanOrEqual(0)
     expect(sendIdx, "sendFlow must be called").toBeGreaterThanOrEqual(0)
-    expect(updateIdx).toBeLessThan(sendIdx)
+    expect(createIdx).toBeLessThan(sendIdx)
   })
 
-  it("found by system field: updateSubscriber index < sendFlow index", async () => {
+  it("found by system field: createSubscriber(opt-in) index < sendFlow index", async () => {
     // In Option C, system field is only reached after createSubscriber returns alreadyExists
     const { calls } = setupFetch({
       "/fb/subscriber/createSubscriber": {
@@ -287,12 +285,12 @@ describe("INVARIANT: opt-in upsert (updateSubscriber) runs before sendFlow", () 
     })
     await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null)
 
-    const updateIdx = indexOfFirst(calls, "/fb/subscriber/updateSubscriber")
+    const createIdx = indexOfFirst(calls, "/fb/subscriber/createSubscriber")
     const sendIdx = indexOfFirst(calls, "/fb/sending/sendFlow")
 
-    expect(updateIdx).toBeGreaterThanOrEqual(0)
+    expect(createIdx).toBeGreaterThanOrEqual(0)
     expect(sendIdx).toBeGreaterThanOrEqual(0)
-    expect(updateIdx).toBeLessThan(sendIdx)
+    expect(createIdx).toBeLessThan(sendIdx)
   })
 })
 
@@ -497,7 +495,7 @@ describe("INVARIANT: phone normalization — smart E.164 with BR DDD detection",
     expect(lookupCall?.url).toContain(encodeURIComponent(PHONE_E164))
   })
 
-  it("updateSubscriber opt-in upsert uses E.164 format", async () => {
+  it("createSubscriber opt-in upsert uses E.164 format", async () => {
     const { calls } = setupFetch({
       "/fb/subscriber/findByCustomField": {
         body: { status: "success", data: [{ id: SUB_ID }] },
@@ -505,9 +503,9 @@ describe("INVARIANT: phone normalization — smart E.164 with BR DDD detection",
     })
     await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
 
-    const updateCalls = callsTo(calls, "/fb/subscriber/updateSubscriber")
-    expect(updateCalls.length).toBeGreaterThan(0)
-    for (const c of updateCalls) {
+    const createCalls = callsTo(calls, "/fb/subscriber/createSubscriber")
+    expect(createCalls.length).toBeGreaterThan(0)
+    for (const c of createCalls) {
       expect(c.body?.whatsapp_phone).toBe(PHONE_E164)
     }
   })

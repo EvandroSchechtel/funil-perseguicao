@@ -575,7 +575,7 @@ export default function WebhookDetailPage() {
                         <div className="flex items-start gap-3">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                              <span className="text-[#C4C4D4] text-sm font-medium">{lead.nome}</span>
+                              <Link href={`/admin/leads/${lead.id}`} className="text-[#C4C4D4] text-sm font-medium hover:text-[#25D366] transition-colors">{lead.nome}</Link>
                               <span className="text-[#5A5A72] text-xs">{lead.telefone}</span>
                               <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${badge.className}`}>{badge.label}</span>
                             </div>
