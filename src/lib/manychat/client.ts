@@ -305,11 +305,16 @@ export async function sendFlowToSubscriber(
  * Must be awaited before sendFlow — fire-and-forget creates a race condition.
  * Best-effort — internal errors are caught and do not fail sendFlow.
  */
+/**
+ * Returns the subscriber ID from a successful createSubscriber response, or null.
+ * When the phone is linked to a DIFFERENT subscriber than knownSubscriberId, the
+ * returned ID is the correct one to use for sendFlow (prevents stale-ID failures).
+ */
 async function forceWhatsappOptIn(
   apiKey: string,
   lead: { nome: string },
   phone: string // E.164 format
-): Promise<void> {
+): Promise<string | null> {
   const { signal, clear } = withTimeout(8000)
   try {
     const [firstName, ...rest] = lead.nome.trim().split(" ")
@@ -327,9 +332,18 @@ async function forceWhatsappOptIn(
     const body = await res.text()
     clear()
     console.log(`[Manychat] forceWhatsappOptIn createSubscriber HTTP ${res.status}: ${body.slice(0, 200)}`)
+    if (res.ok) {
+      try {
+        const data = JSON.parse(body)
+        const id = (data?.data as Record<string, unknown>)?.id
+        if (id) return String(id)
+      } catch { /* ignore */ }
+    }
+    return null
   } catch (err) {
     clear()
     console.warn(`[Manychat] forceWhatsappOptIn failed:`, err)
+    return null
   }
 }
 
@@ -370,14 +384,20 @@ export async function processLeadInManychat(
     if (whatsappFieldId) {
       setWhatsappIdField(apiKey, knownSubscriberId, phone, whatsappFieldId).catch(() => {})
     }
-    // MUST be awaited: sendFlow would race if this is fire-and-forget
-    await forceWhatsappOptIn(apiKey, lead, phone)
-    const result = await sendFlowToSubscriber(apiKey, knownSubscriberId, flowNs)
+    // MUST be awaited: sendFlow would race if this is fire-and-forget.
+    // Returns the subscriber ID from Manychat — may differ from knownSubscriberId
+    // when the phone is linked to a different subscriber (stale stored ID).
+    const optInId = await forceWhatsappOptIn(apiKey, lead, phone)
+    const effectiveId = optInId ?? knownSubscriberId
+    if (effectiveId !== knownSubscriberId) {
+      console.log(`[Manychat] forceWhatsappOptIn returned different id=${effectiveId} — using it for sendFlow (stored id=${knownSubscriberId} was stale)`)
+    }
+    const result = await sendFlowToSubscriber(apiKey, effectiveId, flowNs)
     console.log(`[Manychat] sendFlow result →`, JSON.stringify(result))
     if (!result.ok && isOptInError(result.error)) {
-      return { ok: false, sem_optin: true, subscriber_id: knownSubscriberId, error: result.error }
+      return { ok: false, sem_optin: true, subscriber_id: effectiveId, error: result.error }
     }
-    return { ok: result.ok, subscriber_id: knownSubscriberId, error: result.error }
+    return { ok: result.ok, subscriber_id: effectiveId, error: result.error }
   }
 
   // STEP 1: custom field lookup — primary (efficient for repeat leads & retries)

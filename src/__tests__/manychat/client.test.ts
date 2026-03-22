@@ -174,7 +174,11 @@ describe("INVARIANT: has_opt_in_whatsapp=true ensured for all subscribers", () =
   })
 
   it("processLeadInManychat — knownSubscriberId path: createSubscriber called with has_opt_in_whatsapp=true", async () => {
-    const { calls } = setupFetch()
+    const { calls } = setupFetch({
+      "/fb/subscriber/createSubscriber": {
+        body: { status: "success", data: { id: SUB_ID } },
+      },
+    })
     await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null, SUB_ID)
 
     const createCalls = callsTo(calls, "/fb/subscriber/createSubscriber")
@@ -214,8 +218,13 @@ describe("INVARIANT: sendFlowToSubscriber called with correct subscriber_id", ()
     expect(sendCall?.body?.flow_ns).toBe(FLOW_NS)
   })
 
-  it("knownSubscriberId path: sendFlow uses the provided subscriber_id", async () => {
-    const { calls } = setupFetch()
+  it("knownSubscriberId path: sendFlow uses the provided subscriber_id when phone matches", async () => {
+    // forceWhatsappOptIn returns SUB_ID (phone correctly linked to known subscriber)
+    const { calls } = setupFetch({
+      "/fb/subscriber/createSubscriber": {
+        body: { status: "success", data: { id: SUB_ID } },
+      },
+    })
     const result = await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null, SUB_ID)
 
     expect(result.ok).toBe(true)
@@ -224,6 +233,22 @@ describe("INVARIANT: sendFlowToSubscriber called with correct subscriber_id", ()
     const sendCall = callsTo(calls, "/fb/sending/sendFlow")[0]
     expect(sendCall?.body?.subscriber_id).toBe(SUB_ID_NUM) // integer per Manychat API spec
     expect(sendCall?.body?.flow_ns).toBe(FLOW_NS)
+  })
+
+  it("knownSubscriberId path: sendFlow uses NEW id when forceWhatsappOptIn returns different subscriber", async () => {
+    // Simulates stale stored subscriber_id — Manychat links phone to a different subscriber
+    const { calls } = setupFetch({
+      "/fb/subscriber/createSubscriber": {
+        body: { status: "success", data: { id: SUB_ID_NEW } }, // different from SUB_ID
+      },
+    })
+    const result = await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null, SUB_ID)
+
+    expect(result.ok).toBe(true)
+    expect(result.subscriber_id).toBe(SUB_ID_NEW) // uses the fresh ID
+
+    const sendCall = callsTo(calls, "/fb/sending/sendFlow")[0]
+    expect(sendCall?.body?.subscriber_id).toBe(SUB_ID_NEW_NUM) // integer per Manychat API spec
   })
 
   it("sendFlowToSubscriber: returns ok=true on HTTP 200", async () => {
@@ -438,6 +463,9 @@ describe("INVARIANT: Validation error from sendFlow → sem_optin=true", () => {
 
   it("knownSubscriberId path: Validation error → sem_optin=true with subscriber_id", async () => {
     setupFetch({
+      "/fb/subscriber/createSubscriber": {
+        body: { status: "success", data: { id: SUB_ID } }, // phone correctly linked to known subscriber
+      },
       "/fb/sending/sendFlow": {
         status: 400,
         body: { message: "Validation error" },
