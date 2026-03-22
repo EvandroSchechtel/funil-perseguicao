@@ -120,7 +120,7 @@ function normalizePhone(raw: string): string {
 export async function findSubscriberByPhone(
   apiKey: string,
   phone: string
-): Promise<{ id: string } | null> {
+): Promise<{ id: string; unsubscribed: boolean } | null> {
   const normalized = normalizePhone(phone)    // e.g. "+5542998234664"
   const withoutPlus = normalized.slice(1)     // e.g. "5542998234664"
   const rawDigits = phone.replace(/\D/g, "")  // e.g. "42998234664" (original digits)
@@ -146,9 +146,10 @@ export async function findSubscriberByPhone(
       if (!res.ok) continue
       let data: Record<string, unknown>
       try { data = JSON.parse(body) } catch { continue }
-      if (data.status !== "success" || !(data.data as Record<string, unknown>)?.id) continue
-      console.log(`[Manychat] findBySystemField found phone="${value}"`)
-      return { id: String((data.data as Record<string, unknown>).id) }
+      const d = data.data as Record<string, unknown>
+      if (data.status !== "success" || !d?.id) continue
+      console.log(`[Manychat] findBySystemField found phone="${value}" status="${d.status}"`)
+      return { id: String(d.id), unsubscribed: d.status === "unsubscribed" }
     } catch {
       clear()
     }
@@ -165,7 +166,7 @@ export async function findSubscriberByCustomField(
   apiKey: string,
   fieldId: number,
   value: string
-): Promise<{ id: string } | null> {
+): Promise<{ id: string; unsubscribed: boolean } | null> {
   const { signal, clear } = withTimeout(10000)
   try {
     // field_value is required — must be URL-encoded with %2B for + prefix
@@ -189,7 +190,11 @@ export async function findSubscriberByCustomField(
     const list = Array.isArray(data.data) ? data.data as Array<Record<string, unknown>> : []
     console.log(`[Manychat] findByCustomField returned ${list.length} result(s)`)
     if (list.length === 0) return null
-    if (list[0]?.id) return { id: String(list[0].id) }
+    if (list[0]?.id) {
+      const sub = { id: String(list[0].id), unsubscribed: list[0].status === "unsubscribed" }
+      console.log(`[Manychat] findByCustomField found id=${sub.id} status="${list[0].status}"`)
+      return sub
+    }
     return null
   } catch (err) {
     clear()
@@ -293,8 +298,8 @@ export async function sendFlowToSubscriber(
 
 /**
  * Updates an existing Manychat subscriber to ensure has_opt_in_whatsapp: true.
- * Fire-and-forget — must be called (not awaited) whenever an existing subscriber is found,
- * so that future sendFlow calls succeed even if the subscriber was created without opt-in.
+ * MUST be awaited before sendFlow — calling it fire-and-forget creates a race condition
+ * where sendFlow executes before Manychat processes the opt-in update.
  * Uses updateSubscriber (not createSubscriber) because createSubscriber returns
  * "alreadyExists" for existing subscribers and does NOT update the opt-in flag.
  */
@@ -305,7 +310,7 @@ async function updateManychatSubscriberOptIn(
 ): Promise<void> {
   const { signal, clear } = withTimeout(8000)
   try {
-    await fetch(`${MANYCHAT_API_BASE}/fb/subscriber/updateSubscriber`, {
+    const res = await fetch(`${MANYCHAT_API_BASE}/fb/subscriber/updateSubscriber`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -315,10 +320,12 @@ async function updateManychatSubscriberOptIn(
       }),
       signal,
     })
+    const body = await res.text()
     clear()
-  } catch {
+    console.log(`[Manychat] updateSubscriber opt-in → HTTP ${res.status} ${body.slice(0, 300)}`)
+  } catch (err) {
     clear()
-    // best-effort — swallow errors
+    console.warn(`[Manychat] updateSubscriber opt-in failed:`, err)
   }
 }
 
@@ -355,8 +362,9 @@ export async function processLeadInManychat(
     if (whatsappFieldId) {
       setWhatsappIdField(apiKey, knownSubscriberId, phone, whatsappFieldId).catch(() => {})
     }
-    // Ensure WhatsApp opt-in on existing subscriber — fire-and-forget, never blocks sendFlow
-    updateManychatSubscriberOptIn(apiKey, knownSubscriberId, lead.telefone).catch(() => {})
+    // Ensure WhatsApp opt-in on existing subscriber — AWAITED before sendFlow
+    // Must not be fire-and-forget: sendFlow would race and Manychat might not see the opt-in yet
+    await updateManychatSubscriberOptIn(apiKey, knownSubscriberId, lead.telefone)
     const result = await sendFlowToSubscriber(apiKey, knownSubscriberId, flowNs)
     console.log(`[Manychat] sendFlow result →`, JSON.stringify(result))
     if (!result.ok && isOptInError(result.error)) {
@@ -365,7 +373,7 @@ export async function processLeadInManychat(
     return { ok: result.ok, subscriber_id: knownSubscriberId, error: result.error }
   }
 
-  let subscriber: { id: string } | null = null
+  let subscriber: { id: string; unsubscribed?: boolean } | null = null
 
   // 1. Custom field lookup — value stored as "+55..." (E.164 with +)
   if (whatsappFieldId) {
@@ -408,10 +416,22 @@ export async function processLeadInManychat(
     }
   }
 
-  // 4. Ensure WhatsApp opt-in on existing subscriber — fire-and-forget, never blocks sendFlow
+  // 4a. If subscriber is unsubscribed from the bot, sendFlow will always fail — skip it
+  if (subscriber.unsubscribed) {
+    console.warn(`[Manychat] subscriber ${subscriber.id} is unsubscribed — cannot send flow`)
+    return {
+      ok: false,
+      sem_optin: true,
+      subscriber_id: subscriber.id,
+      error: `Subscriber desinscrito do bot Manychat (id: ${subscriber.id}). O contato precisa se re-inscrever enviando uma mensagem para o número WhatsApp do bot.`,
+    }
+  }
+
+  // 4. Ensure WhatsApp opt-in on existing subscriber — AWAITED before sendFlow
+  // Must not be fire-and-forget: sendFlow would race and Manychat might not see the opt-in yet.
   // Uses updateSubscriber (not createSubscriber) — createSubscriber returns "alreadyExists"
   // for existing subscribers without updating the opt-in flag.
-  updateManychatSubscriberOptIn(apiKey, subscriber.id, lead.telefone).catch(() => {})
+  await updateManychatSubscriberOptIn(apiKey, subscriber.id, lead.telefone)
 
   // 5. Ensure custom field is set with "+phone" format (best-effort, so future lookups work)
   if (whatsappFieldId && subscriber) {
