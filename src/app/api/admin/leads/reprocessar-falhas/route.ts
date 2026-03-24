@@ -14,7 +14,8 @@ export async function POST(request: NextRequest) {
     if (!hasPermission(user.role as Role, "leads:reprocess")) return forbidden("Sem permissão.")
 
     const webhookId = request.nextUrl.searchParams.get("webhook_id") || undefined
-    const result = await reprocessarFalhas(webhookId)
+    const contaId = request.nextUrl.searchParams.get("conta_id") || undefined
+    const result = await reprocessarFalhas(webhookId, contaId)
     return ok(result)
   } catch (error) {
     console.error("[POST /api/admin/leads/reprocessar-falhas]", error)

@@ -13,17 +13,20 @@ export function todayBRT(): Date {
 }
 
 /**
- * Returns milliseconds until next midnight BRT.
+ * Returns milliseconds until next 08:00 BRT (= 11:00 UTC).
  * Used to delay BullMQ jobs when all accounts are at their daily limit.
+ * Jobs fire at 8am BRT so the lead receives the flow at a reasonable hour.
  */
 export function msUntilMidnightBRT(): number {
   const now = new Date()
-  const brtNow = new Date(now.getTime() - 3 * 60 * 60 * 1000)
-  const nextMidnight = new Date(brtNow)
-  nextMidnight.setUTCHours(24, 0, 0, 0) // next midnight BRT (= UTC+00 of next BRT day)
-  // convert back to UTC wall clock
-  const nextMidnightUTC = new Date(nextMidnight.getTime() + 3 * 60 * 60 * 1000)
-  return Math.max(0, nextMidnightUTC.getTime() - now.getTime()) + 60_000 // +1min buffer
+  // 08:00 BRT = 11:00 UTC
+  const target = new Date(now)
+  target.setUTCHours(11, 0, 0, 0)
+  // If 11:00 UTC already passed today, schedule for tomorrow
+  if (target.getTime() <= now.getTime()) {
+    target.setUTCDate(target.getUTCDate() + 1)
+  }
+  return Math.max(0, target.getTime() - now.getTime()) + 60_000 // +1min buffer
 }
 
 /**

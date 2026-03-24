@@ -113,51 +113,6 @@ function normalizePhone(raw: string): string {
 }
 
 /**
- * Finds a Manychat subscriber by WhatsApp phone number using the
- * findBySystemField endpoint with system_field=whatsapp_phone.
- * Returns { id } or null if not found.
- */
-export async function findSubscriberByPhone(
-  apiKey: string,
-  phone: string
-): Promise<{ id: string; unsubscribed: boolean } | null> {
-  const normalized = normalizePhone(phone)    // e.g. "+5542998234664"
-  const withoutPlus = normalized.slice(1)     // e.g. "5542998234664"
-  const rawDigits = phone.replace(/\D/g, "")  // e.g. "42998234664" (original digits)
-
-  // Try 3 candidates (deduplicated): E.164, digits-only-normalized, raw-digits
-  // This covers: Manychat storing "+55...", "55...", or the number as received
-  const candidates = [...new Set([normalized, withoutPlus, rawDigits])]
-
-  for (const value of candidates) {
-    const { signal, clear } = withTimeout(10000)
-    try {
-      const url = `${MANYCHAT_API_BASE}/fb/subscriber/findBySystemField?phone=${encodeURIComponent(value)}`
-      console.log(`[Manychat] findBySystemField phone="${value}"`)
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        signal,
-      })
-      clear()
-
-      const body = await res.text()
-      console.log(`[Manychat] findBySystemField HTTP ${res.status} → ${body.slice(0, 200)}`)
-
-      if (!res.ok) continue
-      let data: Record<string, unknown>
-      try { data = JSON.parse(body) } catch { continue }
-      const d = data.data as Record<string, unknown>
-      if (data.status !== "success" || !d?.id) continue
-      console.log(`[Manychat] findBySystemField found phone="${value}" status="${d.status}"`)
-      return { id: String(d.id), unsubscribed: d.status === "unsubscribed" }
-    } catch {
-      clear()
-    }
-  }
-  return null
-}
-
-/**
  * Finds a Manychat subscriber by the value stored in a custom field.
  * Used to look up subscribers via the [esc]whatsapp-id custom field.
  * Returns { id } or null if not found.
@@ -211,7 +166,7 @@ export async function findSubscriberByCustomField(
 export async function createManychatSubscriber(
   apiKey: string,
   lead: { nome: string; telefone: string; email?: string }
-): Promise<{ id: string } | { alreadyExists: true } | null> {
+): Promise<{ id: string } | { alreadyExists: true } | { createError: string } | null> {
   const { signal, clear } = withTimeout(10000)
   try {
     const [firstName, ...rest] = lead.nome.trim().split(" ")
@@ -223,8 +178,10 @@ export async function createManychatSubscriber(
       body: JSON.stringify({
         first_name: firstName,
         last_name: lastName,
-        whatsapp_phone: normalizePhone(lead.telefone),
+        phone: normalizePhone(lead.telefone),        // set phone so findBySystemField works as fallback
+        whatsapp_phone: normalizePhone(lead.telefone), // primary: enables WhatsApp sends + optin_whatsapp
         has_opt_in_whatsapp: true, // required to allow programmatic WhatsApp flow sends via sendFlow
+        has_opt_in_sms: false,
         ...(lead.email && { email: lead.email, has_opt_in_email: false }),
       }),
       signal,
@@ -248,7 +205,20 @@ export async function createManychatSubscriber(
       ) {
         return { alreadyExists: true }
       }
-      return null
+      // Return the actual Manychat error instead of swallowing it (401, 403, 422, etc.)
+      // Also extract nested details (e.g. "Permission denied to import phone, wa_id")
+      const details = data?.details as Record<string, unknown> | undefined
+      const warning = (details?.messages as Record<string, unknown> | undefined)?.warning as Record<string, unknown> | undefined
+      const warningMsg = String(warning?.message ?? "")
+      const baseMsg = String(data?.message || data?.error || `HTTP ${res.status}`)
+
+      // Detect trial/permission restriction: Manychat trial accounts cannot create subscribers via phone/WaId API
+      if (warningMsg.toLowerCase().includes("permission denied to import phone")) {
+        return { createError: "Conta Manychat sem permissão para criar subscribers via API (phone/WhatsApp). Verifique se a conta está em período de trial — contas trial não suportam importação de contatos por API. Acesse o painel do Manychat e faça o upgrade para um plano pago." }
+      }
+
+      const errorMsg = warningMsg && !baseMsg.includes(warningMsg) ? `${baseMsg}: ${warningMsg}` : baseMsg
+      return { createError: errorMsg }
     }
 
     if (data.status !== "success" || !(data.data as Record<string, unknown>)?.id) return null
@@ -324,8 +294,10 @@ async function forceWhatsappOptIn(
       body: JSON.stringify({
         first_name: firstName,
         last_name: rest.join(" ") || "",
+        phone: phone,        // set phone alongside whatsapp_phone for consistent lookup
         whatsapp_phone: phone,
         has_opt_in_whatsapp: true,
+        has_opt_in_sms: false,
       }),
       signal,
     })
@@ -428,6 +400,13 @@ export async function processLeadInManychat(
   const created = await createManychatSubscriber(apiKey, lead)
   console.log(`[Manychat] createSubscriber →`, JSON.stringify(created))
 
+  // Capture createSubscriber error for propagation to final sem_optin message
+  let createSubscriberError: string | undefined
+  if (created && "createError" in created) {
+    createSubscriberError = created.createError
+    console.error(`[Manychat] createSubscriber failed (conta may have invalid api_key or insufficient plan): ${createSubscriberError}`)
+  }
+
   if (created && "id" in created) {
     // New subscriber created with whatsapp_phone — forceWhatsappOptIn to confirm opt-in
     // (consistent with STEPs 1 and 3 which also await forceWhatsappOptIn before sendFlow)
@@ -466,34 +445,15 @@ export async function processLeadInManychat(
     }
   }
 
-  // Fallback: findBySystemField (works for subscribers with phone≠null)
-  const found = await findSubscriberByPhone(apiKey, lead.telefone)
-  console.log(`[Manychat] findBySystemField(phone) →`, found ? `found id=${found.id}` : "not found")
-
-  if (!found) {
-    console.warn(`[Manychat] subscriber not found for phone ${phone}`)
-    return {
-      ok: false,
-      sem_optin: true,
-      error: `Subscriber não encontrado no Manychat para o número ${phone}. Verifique se o contato existe e se o custom field [esc]whatsapp-id (id: ${whatsappFieldId ?? "não configurado"}) está corretamente configurado na conta.`,
-    }
+  // All lookups exhausted — subscriber not found
+  console.warn(`[Manychat] subscriber not found for phone ${phone}`)
+  return {
+    ok: false,
+    sem_optin: true,
+    error: createSubscriberError
+      ? `Erro ao criar subscriber no Manychat (api_key inválida ou plano insuficiente na conta): ${createSubscriberError}`
+      : `Subscriber não encontrado no Manychat para o número ${phone}. Verifique se o contato existe e se o custom field [esc]whatsapp-id (id: ${whatsappFieldId ?? "não configurado"}) está corretamente configurado na conta.`,
   }
-
-  if (found.unsubscribed) {
-    console.warn(`[Manychat] subscriber ${found.id} is unsubscribed — attempting forceWhatsappOptIn before sendFlow`)
-  }
-
-  await forceWhatsappOptIn(apiKey, lead, phone)
-  if (whatsappFieldId) {
-    setWhatsappIdField(apiKey, found.id, phone, whatsappFieldId).catch(() => {})
-  }
-  console.log(`[Manychat] sendFlow — subscriber_id=${found.id}, flow_ns=${flowNs}`)
-  const result = await sendFlowToSubscriber(apiKey, found.id, flowNs)
-  console.log(`[Manychat] sendFlow result →`, JSON.stringify(result))
-  if (!result.ok && isOptInError(result.error)) {
-    return { ok: false, sem_optin: true, subscriber_id: found.id, error: result.error }
-  }
-  return { ok: result.ok, subscriber_id: found.id, error: result.error }
 }
 
 export const WHATSAPP_ID_FIELD = "[esc]whatsapp-id"

@@ -12,6 +12,7 @@ const updateCampanhaSchema = z.object({
   data_fim: z.coerce.date().nullable().optional(),
   status: z.enum(["ativo", "inativo"]).optional(),
   cliente_id: z.string().uuid().nullable().optional(),
+  instancia_zapi_id: z.string().nullable().optional(),
 })
 
 // GET /api/admin/campanhas/[id]

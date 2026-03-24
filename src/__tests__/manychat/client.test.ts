@@ -67,10 +67,6 @@ function setupFetch(
         // Default: not found (empty list)
         return new Response(JSON.stringify({ status: "success", data: [] }), { status: 200 })
       }
-      if (url.includes("/fb/subscriber/findBySystemField")) {
-        // Default: not found
-        return new Response(JSON.stringify({ status: "error", data: null }), { status: 404 })
-      }
       if (url.includes("/fb/subscriber/createSubscriber")) {
         // Default: created successfully
         return new Response(
@@ -153,21 +149,49 @@ describe("INVARIANT: has_opt_in_whatsapp=true ensured for all subscribers", () =
     }
   })
 
-  it("processLeadInManychat — found via system field: createSubscriber called with has_opt_in_whatsapp=true", async () => {
-    // In Option C, system field is only reached after createSubscriber returns alreadyExists
+  it("processLeadInManychat — found via findByCustomField after alreadyExists: createSubscriber called with has_opt_in_whatsapp=true", async () => {
+    // STEP 2: createSubscriber → alreadyExists
+    // STEP 3: findByCustomField with phone without "+" variant → found
+    // Then forceWhatsappOptIn calls createSubscriber again with has_opt_in_whatsapp=true
     const { calls } = setupFetch({
+      // STEP 1 findByCustomField with E.164 "+55..." returns not found (default)
+      // STEP 2 createSubscriber → alreadyExists
       "/fb/subscriber/createSubscriber": {
         status: 409,
         body: { status: "error", message: "already exists" },
       },
-      "/fb/subscriber/findBySystemField": {
-        body: { status: "success", data: { id: SUB_ID } },
-      },
     })
-    await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null)
+
+    // Override: findByCustomField without "+" (STEP 3 variant) → found
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const url = String(input)
+        let body: Record<string, unknown> | null = null
+        try { body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : null } catch { /* ignore */ }
+        calls.push({ url, method: init?.method ?? "GET", body })
+
+        if (url.includes("/fb/subscriber/findByCustomField")) {
+          // STEP 3: variant without "+" → found; E.164 with "+" → not found
+          if (url.includes("field_value=5542998234664") && !url.includes("%2B")) {
+            return new Response(JSON.stringify({ status: "success", data: [{ id: SUB_ID }] }), { status: 200 })
+          }
+          return new Response(JSON.stringify({ status: "success", data: [] }), { status: 200 })
+        }
+        if (url.includes("/fb/subscriber/createSubscriber")) {
+          return new Response(JSON.stringify({ status: "error", message: "already exists" }), { status: 409 })
+        }
+        if (url.includes("/fb/sending/sendFlow")) {
+          return new Response(JSON.stringify({ status: "success" }), { status: 200 })
+        }
+        return new Response(JSON.stringify({ status: "success" }), { status: 200 })
+      }
+    )
+
+    await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
 
     const createCalls = callsTo(calls, "/fb/subscriber/createSubscriber")
-    expect(createCalls.length, "createSubscriber must be called to force WhatsApp opt-in on existing subscriber found via system field").toBeGreaterThan(0)
+    expect(createCalls.length, "createSubscriber must be called to force WhatsApp opt-in on existing subscriber found via findByCustomField").toBeGreaterThan(0)
     for (const c of createCalls) {
       expect(c.body?.has_opt_in_whatsapp).toBe(true)
     }
@@ -297,18 +321,37 @@ describe("INVARIANT: opt-in upsert (createSubscriber) runs before sendFlow", () 
     expect(createIdx).toBeLessThan(sendIdx)
   })
 
-  it("found by system field: createSubscriber(opt-in) index < sendFlow index", async () => {
-    // In Option C, system field is only reached after createSubscriber returns alreadyExists
-    const { calls } = setupFetch({
-      "/fb/subscriber/createSubscriber": {
-        status: 409,
-        body: { status: "error", message: "already exists" },
-      },
-      "/fb/subscriber/findBySystemField": {
-        body: { status: "success", data: { id: SUB_ID } },
-      },
-    })
-    await processLeadInManychat(API_KEY, LEAD, FLOW_NS, null)
+  it("found by findByCustomField after alreadyExists: createSubscriber(opt-in) index < sendFlow index", async () => {
+    // STEP 2: createSubscriber → alreadyExists
+    // STEP 3: findByCustomField with phone without "+" variant → found
+    // forceWhatsappOptIn (createSubscriber) must be called BEFORE sendFlow
+    const calls: FetchCall[] = []
+
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const url = String(input)
+        let body: Record<string, unknown> | null = null
+        try { body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : null } catch { /* ignore */ }
+        calls.push({ url, method: init?.method ?? "GET", body })
+
+        if (url.includes("/fb/subscriber/findByCustomField")) {
+          if (url.includes("field_value=5542998234664") && !url.includes("%2B")) {
+            return new Response(JSON.stringify({ status: "success", data: [{ id: SUB_ID }] }), { status: 200 })
+          }
+          return new Response(JSON.stringify({ status: "success", data: [] }), { status: 200 })
+        }
+        if (url.includes("/fb/subscriber/createSubscriber")) {
+          return new Response(JSON.stringify({ status: "error", message: "already exists" }), { status: 409 })
+        }
+        if (url.includes("/fb/sending/sendFlow")) {
+          return new Response(JSON.stringify({ status: "success" }), { status: 200 })
+        }
+        return new Response(JSON.stringify({ status: "success" }), { status: 200 })
+      }
+    )
+
+    await processLeadInManychat(API_KEY, LEAD, FLOW_NS, FIELD_ID)
 
     const createIdx = indexOfFirst(calls, "/fb/subscriber/createSubscriber")
     const sendIdx = indexOfFirst(calls, "/fb/sending/sendFlow")
@@ -369,10 +412,12 @@ describe("INVARIANT: sem_optin returned when subscriber cannot be found", () => 
 // INVARIANT 5 — alreadyExists fallback: lookups retried, sendFlow still called
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe("INVARIANT: alreadyExists → findBySystemField → sendFlow", () => {
-  it("falls back to system field after alreadyExists and still sends flow", async () => {
-    // Option C: findByCustomField miss → createSubscriber alreadyExists → findBySystemField found
-    const { calls } = setupFetch()
+describe("INVARIANT: alreadyExists → findByCustomField (phone variants) → sendFlow", () => {
+  it("falls back to findByCustomField with phone without '+' after alreadyExists and still sends flow", async () => {
+    // STEP 1: findByCustomField(E.164) → not found
+    // STEP 2: createSubscriber → alreadyExists (WhatsApp-only subscriber, phone=null in Manychat)
+    // STEP 3: findByCustomField(E.164 without "+") → found → sendFlow
+    const calls: FetchCall[] = []
 
     vi.stubGlobal(
       "fetch",
@@ -383,6 +428,11 @@ describe("INVARIANT: alreadyExists → findBySystemField → sendFlow", () => {
         calls.push({ url, method: init?.method ?? "GET", body })
 
         if (url.includes("/fb/subscriber/findByCustomField")) {
+          // STEP 3 variant: phone without "+" → found
+          if (url.includes("field_value=5542998234664") && !url.includes("%2B")) {
+            return new Response(JSON.stringify({ status: "success", data: [{ id: SUB_ID }] }), { status: 200 })
+          }
+          // STEP 1 and STEP 3 variant 1 (E.164 with "+") → not found
           return new Response(JSON.stringify({ status: "success", data: [] }), { status: 200 })
         }
         if (url.includes("/fb/subscriber/createSubscriber")) {
@@ -390,9 +440,6 @@ describe("INVARIANT: alreadyExists → findBySystemField → sendFlow", () => {
             JSON.stringify({ status: "error", message: "already exists" }),
             { status: 409 }
           )
-        }
-        if (url.includes("/fb/subscriber/findBySystemField")) {
-          return new Response(JSON.stringify({ status: "success", data: { id: SUB_ID } }), { status: 200 })
         }
         if (url.includes("/fb/sending/sendFlow")) {
           return new Response(JSON.stringify({ status: "success" }), { status: 200 })
