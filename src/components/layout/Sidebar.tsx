@@ -37,6 +37,12 @@ const navItemsOperacional: NavItem[] = [
     requiredRoles: ["super_admin", "admin", "operador"],
   },
   {
+    label: "Webhooks",
+    href: "/admin/webhooks",
+    icon: <Webhook className="w-5 h-5" />,
+    requiredRoles: ["super_admin", "admin", "operador"],
+  },
+  {
     label: "Demandas",
     href: "/admin/demandas",
     icon: <FileText className="w-5 h-5" />,
