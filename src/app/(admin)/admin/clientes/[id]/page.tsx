@@ -61,7 +61,17 @@ interface ClienteData {
 }
 
 type TesteStatus = "idle" | "testing" | "ok" | "error"
-type Tab = "dados" | "campanhas" | "contatos" | "manychat" | "zapi" | "notif-wa"
+type Tab = "dados" | "campanhas" | "contatos" | "manychat" | "zapi" | "webhooks" | "notif-wa"
+
+interface WebhookItem {
+  id: string
+  nome: string
+  status: "ativo" | "inativo"
+  url_publica: string
+  leads_count: number
+  flows_count: number
+  campanha: { id: string; nome: string } | null
+}
 
 interface ContatoItem {
   id: string
@@ -139,6 +149,11 @@ export default function ClienteDetailPage() {
   const [loadingContatos, setLoadingContatos] = useState(false)
   const [contatosTotal, setContatosTotal] = useState(0)
   const [contatosSearch, setContatosSearch] = useState("")
+
+  // ── Webhooks tab ─────────────────────────────────────────────────────────────
+  const [webhooks, setWebhooks] = useState<WebhookItem[]>([])
+  const [loadingWebhooks, setLoadingWebhooks] = useState(false)
+  const [webhooksTotal, setWebhooksTotal] = useState(0)
 
   // ── Z-API tab ────────────────────────────────────────────────────────────────
   const [instancias, setInstancias] = useState<InstanciaZApi[]>([])
@@ -248,10 +263,27 @@ export default function ClienteDetailPage() {
     }
   }, [accessToken, id])
 
+  const fetchWebhooks = useCallback(async () => {
+    if (!accessToken || !id) return
+    setLoadingWebhooks(true)
+    try {
+      const res = await fetch(`/api/admin/webhooks?cliente_id=${id}&per_page=50`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      setWebhooks(data.webhooks || [])
+      setWebhooksTotal(data.pagination?.total || 0)
+    } catch { /* silent */ } finally {
+      setLoadingWebhooks(false)
+    }
+  }, [accessToken, id])
+
   useEffect(() => {
     if (tab === "campanhas" && campanhas.length === 0) fetchCampanhas()
     if (tab === "contatos" && contatos.length === 0) fetchContatos()
     if (tab === "zapi" && instancias.length === 0) fetchInstancias()
+    if (tab === "webhooks" && webhooks.length === 0) fetchWebhooks()
   }, [tab])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Manychat handlers ────────────────────────────────────────────────────────
@@ -578,6 +610,7 @@ export default function ClienteDetailPage() {
     { id: "contatos", label: `Contatos${contatosTotal > 0 ? ` (${contatosTotal})` : ""}` },
     { id: "manychat", label: `Manychat${cliente.contas_manychat.length > 0 ? ` (${cliente.contas_manychat.length})` : ""}` },
     { id: "zapi", label: "Z-API" },
+    { id: "webhooks", label: `Webhooks${webhooksTotal > 0 ? ` (${webhooksTotal})` : ""}` },
     { id: "notif-wa", label: "Notificações WA" },
   ]
 
@@ -959,6 +992,51 @@ export default function ClienteDetailPage() {
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Tab: Webhooks ─────────────────────────────────────────────────── */}
+        {tab === "webhooks" && (
+          <div className="p-6 max-w-2xl space-y-4">
+            <p className="text-[#8B8B9E] text-sm">Webhooks vinculados às campanhas deste cliente</p>
+
+            {loadingWebhooks ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin w-5 h-5 border-2 border-[#25D366] border-t-transparent rounded-full" />
+              </div>
+            ) : webhooks.length === 0 ? (
+              <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl flex flex-col items-center justify-center py-14 gap-4">
+                <Webhook className="w-10 h-10 text-[#5A5A72]" />
+                <div className="text-center">
+                  <p className="text-[#C4C4D4] font-medium">Nenhum webhook configurado</p>
+                  <p className="text-[#5A5A72] text-sm mt-1">Crie uma campanha e adicione um webhook a ela</p>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-hidden">
+                {webhooks.map((w, idx) => (
+                  <Link key={w.id} href={`/admin/webhooks/${w.id}`}>
+                    <div className={`flex items-center gap-4 px-5 py-4 hover:bg-[#1C1C28] transition-colors ${idx !== webhooks.length - 1 ? "border-b border-[#1E1E2A]" : ""}`}>
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${w.status === "ativo" ? "bg-[#25D366]" : "bg-[#3F3F58]"}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[#F1F1F3] font-medium text-sm">{w.nome}</p>
+                        {w.campanha && (
+                          <p className="text-[#5A5A72] text-xs mt-0.5">{w.campanha.nome}</p>
+                        )}
+                      </div>
+                      <Badge variant={w.status === "ativo" ? "ativo" : "inativo"}>
+                        {w.status === "ativo" ? "Ativo" : "Inativo"}
+                      </Badge>
+                      <div className="flex items-center gap-3 text-xs text-[#8B8B9E] shrink-0">
+                        <span className="flex items-center gap-1"><Users2 className="w-3.5 h-3.5" />{w.leads_count}</span>
+                        <span className="flex items-center gap-1"><Webhook className="w-3.5 h-3.5" />{w.flows_count} flows</span>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-[#3F3F58]" />
+                    </div>
+                  </Link>
                 ))}
               </div>
             )}

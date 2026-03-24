@@ -203,8 +203,10 @@ async function processarEntradaParaGrupo({
           await addWebhookJob({
             leadId: lead.id,
             webhookId: webhook.id,
-            contaId: flow.conta_id,
-            flowNs: flow.flow_ns,
+            flowTipo: (flow.tipo as "manychat" | "webhook") ?? "manychat",
+            contaId: flow.conta_id ?? undefined,
+            flowNs: flow.flow_ns ?? undefined,
+            webhookUrl: flow.webhook_url ?? undefined,
             nome: senderName || telefoneNorm,
             telefone: telefoneNorm,
           }).catch((err) => console.error("[Entradas] Erro ao enfileirar lead não-rastreado:", err))
@@ -278,5 +280,43 @@ async function processarEntradaParaGrupo({
       data: { grupo_entrou_at: new Date() },
     })
     console.log(`[Entradas] Lead ${lead.id} marcado como entrou_grupo`)
+  }
+
+  // 8. Notify external webhook flow (best-effort)
+  //    For leads whose flow is tipo="webhook", POST the group entry event to the webhook URL.
+  //    This is the counterpart of applying a Manychat tag for Manychat flows.
+  if (lead?.id) {
+    const leadWithFlow = await prisma.lead.findUnique({
+      where: { id: lead.id },
+      select: {
+        email: true,
+        nome: true,
+        webhook_flow: { select: { tipo: true, webhook_url: true } },
+      },
+    }).catch(() => null)
+
+    const extUrl = leadWithFlow?.webhook_flow?.tipo === "webhook"
+      ? leadWithFlow.webhook_flow.webhook_url
+      : null
+
+    if (extUrl) {
+      fetch(extUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          evento: "entrou_grupo",
+          lead_id: lead.id,
+          nome: leadWithFlow?.nome ?? senderName ?? telefoneNorm,
+          telefone: telefoneNorm,
+          email: leadWithFlow?.email ?? null,
+          grupo_nome: groupWaName,
+          grupo_wa_id: groupWaId,
+          entrou_at: new Date().toISOString(),
+        }),
+        signal: AbortSignal.timeout(10_000),
+      })
+        .then((r) => console.log(`[Entradas] Webhook externo entrou_grupo → ${extUrl} (${r.status})`))
+        .catch((err) => console.error(`[Entradas] Webhook externo entrou_grupo falhou → ${extUrl}:`, err))
+    }
   }
 }

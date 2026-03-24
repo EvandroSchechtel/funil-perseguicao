@@ -32,8 +32,10 @@ export async function POST(
           where: { status: "ativo", deleted_at: null },
           select: {
             id: true,
+            tipo: true,
             flow_ns: true,
             flow_nome: true,
+            webhook_url: true,
             ordem: true,
             total_enviados: true,
             conta_id: true,
@@ -59,21 +61,28 @@ export async function POST(
 
     const campanhaPausada = !!(webhook.campanha && webhook.campanha.pausado_at)
 
-    // 3. Round-robin: pick flow with fewest sends, skipping accounts at daily limit
+    // 3. Round-robin: pick flow with fewest sends, skipping manychat accounts at daily limit
+    //    Webhook-type flows have no daily limit and are always available
     const allFlows = webhook.webhook_flows
-    const contaIds = [...new Set(allFlows.map((f) => f.conta_id))]
+    const contaIds = [...new Set(allFlows.filter((f) => f.conta_id).map((f) => f.conta_id!))]
     const usageMap = campanhaPausada ? new Map<string, number>() : await getTodayUsageMap(contaIds)
 
     const availableFlows = campanhaPausada
       ? allFlows // when paused, assign round-robin without daily limit check
       : allFlows.filter((f) => {
-          const limite = f.conta.limite_diario
+          if (!f.conta_id) return true // webhook-type flow — no daily limit
+          const limite = f.conta?.limite_diario
           if (!limite) return true
           return (usageMap.get(f.conta_id) ?? 0) < limite
         })
 
     const flow = availableFlows[0] ?? null
     const allAtLimit = !campanhaPausada && allFlows.length > 0 && availableFlows.length === 0
+
+    // Display name for the lead's conta_nome field
+    const flowDisplayName = flow
+      ? (flow.flow_nome ?? flow.conta?.nome ?? "Webhook externo")
+      : null
 
     // 4. Upsert Contato by telefone (pessoa = número de celular)
     const contato = await prisma.contato.upsert({
@@ -107,8 +116,8 @@ export async function POST(
           nome,
           email: email || null,
           webhook_flow_id: flow?.id ?? null,
-          flow_executado: flow?.flow_ns ?? null,
-          conta_nome: flow?.conta.nome ?? null,
+          flow_executado: flow?.flow_ns ?? flow?.webhook_url ?? null,
+          conta_nome: flowDisplayName,
           status: targetStatus,
           erro_msg: null,
         },
@@ -121,8 +130,8 @@ export async function POST(
           webhook_id: webhook.id,
           campanha_id: webhook.campanha_id || null,
           webhook_flow_id: flow?.id || null,
-          flow_executado: flow?.flow_ns || null,
-          conta_nome: flow?.conta.nome || null,
+          flow_executado: flow?.flow_ns || flow?.webhook_url || null,
+          conta_nome: flowDisplayName,
           nome,
           telefone,
           email: email || null,
@@ -146,19 +155,31 @@ export async function POST(
         addWebhookJob({
           leadId,
           webhookId: webhook.id,
-          contaId: flow.conta_id,
-          flowNs: flow.flow_ns,
+          flowTipo: (flow.tipo as "manychat" | "webhook") ?? "manychat",
+          contaId: flow.conta_id ?? undefined,
+          flowNs: flow.flow_ns ?? undefined,
+          webhookUrl: flow.webhook_url ?? undefined,
           nome,
           telefone,
           email: email || undefined,
         }).catch((err) => console.error("[addWebhookJob] Redis unavailable:", err))
       } else if (allAtLimit) {
-        // All accounts at daily limit — schedule for next midnight BRT
+        // All manychat accounts at daily limit — schedule for next 8am BRT
         const delay = msUntilMidnightBRT()
         const firstFlow = allFlows[0]
         if (firstFlow) {
           addWebhookJob(
-            { leadId, webhookId: webhook.id, contaId: firstFlow.conta_id, flowNs: firstFlow.flow_ns, nome, telefone, email: email || undefined },
+            {
+              leadId,
+              webhookId: webhook.id,
+              flowTipo: (firstFlow.tipo as "manychat" | "webhook") ?? "manychat",
+              contaId: firstFlow.conta_id ?? undefined,
+              flowNs: firstFlow.flow_ns ?? undefined,
+              webhookUrl: firstFlow.webhook_url ?? undefined,
+              nome,
+              telefone,
+              email: email || undefined,
+            },
             { delay }
           ).catch((err) => console.error("[addWebhookJob] Redis unavailable:", err))
           console.log(`[Webhook] All accounts at daily limit — job delayed ${Math.round(delay / 60000)}min`)

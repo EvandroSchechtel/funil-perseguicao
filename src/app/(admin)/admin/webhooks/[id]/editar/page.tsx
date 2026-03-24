@@ -18,14 +18,16 @@ import { toast } from "sonner"
 
 interface Flow {
   id: string
-  flow_ns: string
+  tipo: string
+  flow_ns: string | null
   flow_nome: string | null
+  webhook_url: string | null
   ordem: number
   total_enviados: number
   status: "ativo" | "inativo"
   tag_manychat_id: number | null
   tag_manychat_nome: string | null
-  conta: { id: string; nome: string; page_name: string | null }
+  conta: { id: string; nome: string; page_name: string | null } | null
 }
 
 interface WebhookData {
@@ -208,9 +210,9 @@ export default function EditarWebhookPage() {
           <div>
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-[#F1F1F3] text-lg font-semibold">Flows Manychat</h2>
+                <h2 className="text-[#F1F1F3] text-lg font-semibold">Flows</h2>
                 <p className="text-[#8B8B9E] text-sm mt-0.5">
-                  Leads distribuídos em round-robin entre os flows ativos
+                  Leads distribuídos em round-robin entre os flows ativos (Manychat ou Webhook externo)
                 </p>
               </div>
               <div className="flex gap-2">
@@ -261,9 +263,13 @@ export default function EditarWebhookPage() {
                           <div className="flex items-center gap-2">
                             <GripVertical className="w-4 h-4 text-[#2A2A3A] shrink-0" />
                             <div>
-                              <p className="text-[#C4C4D4] text-sm font-medium">{flow.conta.nome}</p>
+                              <p className="text-[#C4C4D4] text-sm font-medium">
+                                {flow.conta?.nome ?? "Webhook externo"}
+                              </p>
                               <p className="text-[#5A5A72] text-xs font-mono mt-0.5">
-                                {flow.flow_nome || flow.flow_ns.slice(0, 30) + (flow.flow_ns.length > 30 ? "…" : "")}
+                                {flow.tipo === "webhook"
+                                  ? (flow.webhook_url ? flow.webhook_url.slice(0, 40) + (flow.webhook_url.length > 40 ? "…" : "") : "—")
+                                  : (flow.flow_nome || (flow.flow_ns ? flow.flow_ns.slice(0, 30) + (flow.flow_ns.length > 30 ? "…" : "") : "—"))}
                               </p>
                               {flow.tag_manychat_nome && (
                                 <span className="inline-flex items-center gap-1 text-[10px] text-[#A78BFA] mt-0.5">
@@ -333,10 +339,11 @@ export default function EditarWebhookPage() {
           <p className="text-[#8B8B9E] text-sm">
             Tem certeza que deseja remover o flow{" "}
             <span className="text-[#F1F1F3] font-semibold">
-              {deleteFlowDialog?.flow_nome || deleteFlowDialog?.flow_ns}
+              {deleteFlowDialog?.flow_nome || deleteFlowDialog?.webhook_url || deleteFlowDialog?.flow_ns || "—"}
             </span>{" "}
-            da conta{" "}
-            <span className="text-[#F1F1F3] font-semibold">{deleteFlowDialog?.conta.nome}</span>?
+            {deleteFlowDialog?.conta && (
+              <>da conta <span className="text-[#F1F1F3] font-semibold">{deleteFlowDialog.conta.nome}</span></>
+            )}?
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteFlowDialog(null)}>Cancelar</Button>
@@ -407,9 +414,11 @@ export default function EditarWebhookPage() {
               {activeFlows.length > 0 && (
                 <div className="bg-[#111118] border border-[#1E1E2A] rounded-lg px-4 py-3">
                   <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold mb-1">Flow que receberá</p>
-                  <p className="text-[#C4C4D4] text-sm font-medium">{activeFlows[0].conta.nome}</p>
+                  <p className="text-[#C4C4D4] text-sm font-medium">
+                    {activeFlows[0].conta?.nome ?? "Webhook externo"}
+                  </p>
                   <p className="text-[#5A5A72] text-xs font-mono mt-0.5">
-                    {activeFlows[0].flow_nome || activeFlows[0].flow_ns}
+                    {activeFlows[0].flow_nome || activeFlows[0].webhook_url || activeFlows[0].flow_ns || "—"}
                   </p>
                   {activeFlows.length > 1 && (
                     <p className="text-[#5A5A72] text-xs mt-1">

@@ -78,6 +78,7 @@ export async function buscarCampanha(id: string) {
         updated_at: true,
         usuario: { select: { nome: true } },
         cliente: { select: { id: true, nome: true } },
+        instancia_zapi: { select: { id: true, nome: true, status: true } },
         _count: { select: { webhooks: true, leads: true } },
       },
     }),
@@ -163,13 +164,14 @@ export interface AtualizarCampanhaParams {
   data_fim?: Date | null
   status?: "ativo" | "inativo"
   cliente_id?: string | null
+  instancia_zapi_id?: string | null
 }
 
 export async function atualizarCampanha(id: string, params: AtualizarCampanhaParams) {
   const existing = await prisma.campanha.findFirst({ where: { id, deleted_at: null } })
   if (!existing) throw new ServiceError("not_found", "Campanha não encontrada.")
 
-  const { nome, descricao, data_inicio, data_fim, status, cliente_id } = params
+  const { nome, descricao, data_inicio, data_fim, status, cliente_id, instancia_zapi_id } = params
 
   const campanha = await prisma.campanha.update({
     where: { id },
@@ -180,6 +182,7 @@ export async function atualizarCampanha(id: string, params: AtualizarCampanhaPar
       ...(data_fim !== undefined && { data_fim }),
       ...(status !== undefined && { status }),
       ...(cliente_id !== undefined && { cliente_id }),
+      ...(instancia_zapi_id !== undefined && { instancia_zapi_id }),
     },
     select: {
       id: true,
@@ -259,8 +262,10 @@ export async function retomarCampanha(id: string) {
       email: true,
       webhook_flow: {
         select: {
+          tipo: true,
           conta_id: true,
           flow_ns: true,
+          webhook_url: true,
           conta: { select: { limite_diario: true } },
         },
       },
@@ -274,18 +279,26 @@ export async function retomarCampanha(id: string) {
   ])
 
   // 3. Enqueue snapshot leads (DB already committed — worker sees pendente status)
-  const contaIds = [...new Set(leads.filter((l) => l.webhook_flow).map((l) => l.webhook_flow!.conta_id))]
+  const contaIds = [...new Set(
+    leads.filter((l) => l.webhook_flow?.conta_id).map((l) => l.webhook_flow!.conta_id!)
+  )]
   const usageMap = await getTodayUsageMap(contaIds)
 
   let enqueued = 0
   for (const lead of leads) {
     if (!lead.webhook_flow) continue
-    const { conta_id, flow_ns, conta } = lead.webhook_flow
-    const atLimit = conta.limite_diario !== null && (usageMap.get(conta_id) ?? 0) >= conta.limite_diario
+    const { tipo, conta_id, flow_ns, webhook_url, conta } = lead.webhook_flow
+    const isWebhookFlow = tipo === "webhook"
+    const atLimit = !isWebhookFlow && (conta?.limite_diario ?? null) !== null && (usageMap.get(conta_id ?? "") ?? 0) >= (conta?.limite_diario ?? 0)
     const delay = atLimit ? msUntilMidnightBRT() : undefined
 
     addWebhookJob(
-      { leadId: lead.id, webhookId: lead.webhook_id, contaId: conta_id, flowNs: flow_ns, nome: lead.nome, telefone: lead.telefone, email: lead.email ?? undefined },
+      {
+        leadId: lead.id, webhookId: lead.webhook_id,
+        flowTipo: tipo as "manychat" | "webhook",
+        contaId: conta_id ?? undefined, flowNs: flow_ns ?? undefined, webhookUrl: webhook_url ?? undefined,
+        nome: lead.nome, telefone: lead.telefone, email: lead.email ?? undefined,
+      },
       { forceNew: true, delay }
     ).catch((err) => console.error("[retomarCampanha] addWebhookJob:", err))
     enqueued++
@@ -316,8 +329,10 @@ export async function soltarUmDaFila(id: string) {
       email: true,
       webhook_flow: {
         select: {
+          tipo: true,
           conta_id: true,
           flow_ns: true,
+          webhook_url: true,
           conta: { select: { limite_diario: true } },
         },
       },
@@ -327,15 +342,21 @@ export async function soltarUmDaFila(id: string) {
   if (!lead) throw new ServiceError("not_found", "Nenhum lead aguardando na fila.")
   if (!lead.webhook_flow) throw new ServiceError("bad_request", "Lead sem flow atribuído.")
 
-  const { conta_id, flow_ns, conta } = lead.webhook_flow
-  const usageMap = await getTodayUsageMap([conta_id])
-  const atLimit = conta.limite_diario !== null && (usageMap.get(conta_id) ?? 0) >= conta.limite_diario
+  const { tipo, conta_id, flow_ns, webhook_url, conta } = lead.webhook_flow
+  const isWebhookFlow = tipo === "webhook"
+  const usageMap = conta_id ? await getTodayUsageMap([conta_id]) : new Map<string, number>()
+  const atLimit = !isWebhookFlow && (conta?.limite_diario ?? null) !== null && (usageMap.get(conta_id ?? "") ?? 0) >= (conta?.limite_diario ?? 0)
   const delay = atLimit ? msUntilMidnightBRT() : undefined
 
   await prisma.lead.update({ where: { id: lead.id }, data: { status: "pendente" } })
 
   addWebhookJob(
-    { leadId: lead.id, webhookId: lead.webhook_id, contaId: conta_id, flowNs: flow_ns, nome: lead.nome, telefone: lead.telefone, email: lead.email ?? undefined },
+    {
+      leadId: lead.id, webhookId: lead.webhook_id,
+      flowTipo: tipo as "manychat" | "webhook",
+      contaId: conta_id ?? undefined, flowNs: flow_ns ?? undefined, webhookUrl: webhook_url ?? undefined,
+      nome: lead.nome, telefone: lead.telefone, email: lead.email ?? undefined,
+    },
     { forceNew: true, delay }
   ).catch((err) => console.error("[soltarUmDaFila] addWebhookJob:", err))
 
@@ -353,26 +374,38 @@ async function _enfileirarAguardando(campanhaId: string): Promise<number> {
       email: true,
       webhook_flow: {
         select: {
+          tipo: true,
           conta_id: true,
           flow_ns: true,
+          webhook_url: true,
           conta: { select: { limite_diario: true } },
         },
       },
     },
   })
 
-  const contaIds = [...new Set(leads.filter((l) => l.webhook_flow).map((l) => l.webhook_flow!.conta_id))]
+  const contaIds = [...new Set(
+    leads
+      .filter((l) => l.webhook_flow?.conta_id)
+      .map((l) => l.webhook_flow!.conta_id!)
+  )]
   const usageMap = await getTodayUsageMap(contaIds)
 
   let enqueued = 0
   for (const lead of leads) {
     if (!lead.webhook_flow) continue
-    const { conta_id, flow_ns, conta } = lead.webhook_flow
-    const atLimit = conta.limite_diario !== null && (usageMap.get(conta_id) ?? 0) >= conta.limite_diario
+    const { tipo, conta_id, flow_ns, webhook_url, conta } = lead.webhook_flow
+    const isWebhookFlow = tipo === "webhook"
+    const atLimit = !isWebhookFlow && (conta?.limite_diario ?? null) !== null && (usageMap.get(conta_id ?? "") ?? 0) >= (conta?.limite_diario ?? 0)
     const delay = atLimit ? msUntilMidnightBRT() : undefined
 
     addWebhookJob(
-      { leadId: lead.id, webhookId: lead.webhook_id, contaId: conta_id, flowNs: flow_ns, nome: lead.nome, telefone: lead.telefone, email: lead.email ?? undefined },
+      {
+        leadId: lead.id, webhookId: lead.webhook_id,
+        flowTipo: tipo as "manychat" | "webhook",
+        contaId: conta_id ?? undefined, flowNs: flow_ns ?? undefined, webhookUrl: webhook_url ?? undefined,
+        nome: lead.nome, telefone: lead.telefone, email: lead.email ?? undefined,
+      },
       { forceNew: true, delay }
     ).catch((err) => console.error("[_enfileirarAguardando] addWebhookJob:", err))
     enqueued++

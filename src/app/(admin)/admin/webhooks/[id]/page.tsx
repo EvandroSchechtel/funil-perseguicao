@@ -21,14 +21,16 @@ import { toast } from "sonner"
 
 interface Flow {
   id: string
-  flow_ns: string
+  tipo: string
+  flow_ns: string | null
   flow_nome: string | null
+  webhook_url: string | null
   ordem: number
   total_enviados: number
   status: "ativo" | "inativo"
   tag_manychat_id: number | null
   tag_manychat_nome: string | null
-  conta: { id: string; nome: string; page_name: string | null }
+  conta: { id: string; nome: string; page_name: string | null } | null
 }
 
 interface WebhookData {
@@ -71,7 +73,7 @@ interface QueueLead {
   grupo_entrou_at: string | null
   processado_at: string | null
   created_at: string
-  webhook_flow: { flow_nome: string | null; flow_ns: string; conta: { nome: string } } | null
+  webhook_flow: { flow_nome: string | null; flow_ns: string | null; conta: { nome: string } | null } | null
 }
 
 interface QueueData {
@@ -380,10 +382,10 @@ export default function WebhookDetailPage() {
             </div>
           </section>
 
-          {/* ── Seção 2: Flows Manychat ────────────────────────────────────── */}
+          {/* ── Seção 2: Flows ──────────────────────────────────────────────── */}
           <section className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3 border-b border-[#1E1E2A]">
-              <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold">Flows Manychat</p>
+              <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold">Flows</p>
               {canWrite && (
                 <Button size="sm" onClick={() => setShowAddFlow(true)}>
                   <Plus className="w-3.5 h-3.5 mr-1" />Adicionar Flow
@@ -402,8 +404,12 @@ export default function WebhookDetailPage() {
                   <div key={flow.id} className="flex items-center gap-3 px-5 py-3">
                     <GripVertical className="w-4 h-4 text-[#2A2A3A] shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-[#C4C4D4] text-sm font-medium">{flow.conta.nome}</p>
-                      <p className="text-[#5A5A72] text-xs font-mono">{flow.flow_nome || truncate(flow.flow_ns, 50)}</p>
+                      <p className="text-[#C4C4D4] text-sm font-medium">{flow.conta?.nome ?? "Webhook externo"}</p>
+                      <p className="text-[#5A5A72] text-xs font-mono">
+                        {flow.tipo === "webhook"
+                          ? (flow.webhook_url ? truncate(flow.webhook_url, 50) : "—")
+                          : (flow.flow_nome || truncate(flow.flow_ns ?? "", 50))}
+                      </p>
                       {flow.tag_manychat_nome && (
                         <span className="inline-flex items-center gap-1 text-[10px] text-[#A78BFA] mt-0.5">
                           <Tag className="w-2.5 h-2.5" />{flow.tag_manychat_nome}
@@ -583,7 +589,7 @@ export default function WebhookDetailPage() {
                             {/* Flow / Conta */}
                             {lead.webhook_flow && (
                               <p className="text-[#5A5A72] text-xs">
-                                {lead.webhook_flow.conta.nome}
+                                {lead.webhook_flow.conta?.nome ?? "Webhook externo"}
                                 {lead.webhook_flow.flow_nome && <span className="text-[#3F3F58]"> · {lead.webhook_flow.flow_nome}</span>}
                               </p>
                             )}
@@ -674,7 +680,7 @@ export default function WebhookDetailPage() {
             <DialogTitle>Remover Flow</DialogTitle>
           </DialogHeader>
           <p className="text-[#C4C4D4] text-sm">
-            Tem certeza que deseja remover o flow <strong>{deleteFlowDialog?.flow_nome || deleteFlowDialog?.flow_ns}</strong>?
+            Tem certeza que deseja remover o flow <strong>{deleteFlowDialog?.flow_nome || deleteFlowDialog?.webhook_url || deleteFlowDialog?.flow_ns || "—"}</strong>?
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteFlowDialog(null)}>Cancelar</Button>

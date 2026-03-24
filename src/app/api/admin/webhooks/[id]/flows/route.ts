@@ -6,12 +6,14 @@ import { ok, created, badRequest, forbidden, serverError, handleServiceError } f
 import { listarWebhookFlows, adicionarFlow } from "@/lib/services/webhook_flows.service"
 
 const addFlowSchema = z.object({
-  conta_id: z.string().uuid("Conta inválida"),
-  flow_ns: z.string().min(1, "Flow NS é obrigatório"),
+  tipo: z.enum(["manychat", "webhook"]).default("manychat"),
+  conta_id: z.string().uuid("Conta inválida").optional(),
+  flow_ns: z.string().min(1).optional(),
   flow_nome: z.string().max(200).optional(),
   ordem: z.number().int().min(0).optional(),
   tag_manychat_id: z.number().int().positive().optional(),
   tag_manychat_nome: z.string().max(200).optional(),
+  webhook_url: z.string().url("URL inválida").optional(),
 })
 
 // GET /api/admin/webhooks/[id]/flows

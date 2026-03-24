@@ -202,6 +202,8 @@ model Campanha {
   usuario     Usuario   @relation(fields: [created_by], references: [id])
   cliente_id  String?   @db.Uuid
   cliente     Cliente?  @relation(fields: [cliente_id], references: [id])
+  instancia_zapi_id String?
+  instancia_zapi    InstanciaZApi? @relation(fields: [instancia_zapi_id], references: [id])
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
   deleted_at  DateTime?
@@ -234,22 +236,24 @@ model Webhook {
   @@map("webhooks")
 }
 
-// Cada item do rodízio: um flow em uma conta Manychat específica
+// Cada item do rodízio: um flow Manychat ou um webhook externo (HTTP POST)
 model WebhookFlow {
-  id             String        @id @default(uuid())
-  webhook_id     String
-  webhook        Webhook       @relation(fields: [webhook_id], references: [id])
-  conta_id       String
-  conta          ContaManychat @relation(fields: [conta_id], references: [id])
-  flow_ns        String
+  id                String         @id @default(uuid())
+  webhook_id        String
+  webhook           Webhook        @relation(fields: [webhook_id], references: [id])
+  tipo              String         @default("manychat") // "manychat" | "webhook"
+  conta_id          String?        // null quando tipo = "webhook"
+  conta             ContaManychat? @relation(fields: [conta_id], references: [id])
+  flow_ns           String?        // null quando tipo = "webhook"
+  webhook_url       String?        // usado quando tipo = "webhook"
   flow_nome         String?
-  ordem             Int           @default(0)
-  total_enviados    Int           @default(0)
-  status            Status        @default(ativo)
+  ordem             Int            @default(0)
+  total_enviados    Int            @default(0)
+  status            Status         @default(ativo)
   tag_manychat_id   Int?
   tag_manychat_nome String?
-  created_at        DateTime      @default(now())
-  updated_at        DateTime      @updatedAt
+  created_at        DateTime       @default(now())
+  updated_at        DateTime       @updatedAt
   deleted_at        DateTime?
 
   leads Lead[]
@@ -361,6 +365,7 @@ model InstanciaZApi {
 
   grupos          GrupoMonitoramento[]
   clientes_notif  Cliente[]            @relation("ClienteInstanciaNotif")
+  campanhas       Campanha[]
 
   @@map("instancias_zapi")
 }

@@ -7,7 +7,7 @@ import {
   Pencil, Webhook, Users2, Copy, CheckCircle2, XCircle, Loader2,
   Plus, Trash2, ToggleLeft, ToggleRight, Info, GripVertical, FlaskConical,
   Building2, Calendar, ChevronDown, ChevronRight, PauseCircle, PlayCircle,
-  ListOrdered, ChevronsRight, DoorOpen, Tag, ExternalLink,
+  ListOrdered, ChevronsRight, DoorOpen, Tag, ExternalLink, Smartphone, Save,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
@@ -37,18 +37,27 @@ interface CampanhaData {
   grupos_entrados_count: number
   usuario: { nome: string }
   cliente: { id: string; nome: string } | null
+  instancia_zapi: { id: string; nome: string; status: string } | null
+}
+
+interface InstanciaOption {
+  id: string
+  nome: string
+  status: string
 }
 
 interface Flow {
   id: string
-  flow_ns: string
+  tipo: string
+  flow_ns: string | null
   flow_nome: string | null
+  webhook_url: string | null
   ordem: number
   total_enviados: number
   status: "ativo" | "inativo"
   tag_manychat_id: number | null
   tag_manychat_nome: string | null
-  conta: { id: string; nome: string; page_name: string | null }
+  conta: { id: string; nome: string; page_name: string | null } | null
 }
 
 interface WebhookItem {
@@ -156,6 +165,11 @@ export default function CampanhaDetailPage() {
   // Pause actions
   const [pauseLoading, setPauseLoading] = useState<string | null>(null)
 
+  // Z-API instance linking
+  const [instancias, setInstancias] = useState<InstanciaOption[]>([])
+  const [instanciaId, setInstanciaId] = useState<string | null>(null)
+  const [savingInstancia, setSavingInstancia] = useState(false)
+
   const canWrite = user ? hasPermission(user.role, "webhooks:write") : false
 
   // ── Fetch campanha ──────────────────────────────────────────────────────────
@@ -178,6 +192,39 @@ export default function CampanhaDetailPage() {
   }, [accessToken, id])
 
   useEffect(() => { fetchCampanha() }, [fetchCampanha])
+
+  // ── Sync instanciaId and fetch client's instances when campanha loads ────────
+
+  useEffect(() => {
+    if (!campanha || !accessToken) return
+    setInstanciaId(campanha.instancia_zapi?.id ?? null)
+    if (!campanha.cliente?.id) return
+    fetch(`/api/admin/zapi/instancias?cliente_id=${campanha.cliente.id}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+      .then((r) => r.json())
+      .then((d) => setInstancias(d.instancias ?? []))
+      .catch(() => {})
+  }, [campanha, accessToken])
+
+  const handleSaveInstancia = async () => {
+    if (!accessToken || !id) return
+    setSavingInstancia(true)
+    try {
+      const res = await fetch(`/api/admin/campanhas/${id}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ instancia_zapi_id: instanciaId }),
+      })
+      if (!res.ok) throw new Error("Erro ao salvar")
+      toast.success("Instância Z-API vinculada com sucesso.")
+      fetchCampanha()
+    } catch {
+      toast.error("Erro ao vincular instância Z-API.")
+    } finally {
+      setSavingInstancia(false)
+    }
+  }
 
   // ── Fetch webhooks (lazy, on tab switch) ────────────────────────────────────
 
@@ -558,6 +605,52 @@ export default function CampanhaDetailPage() {
             </div>
           </section>
 
+          {/* ── Seção: Instância Z-API ──────────────────────────────────────── */}
+          <section className="space-y-3">
+            <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold flex items-center gap-1.5">
+              <Smartphone className="w-3.5 h-3.5" />
+              Instância Z-API
+            </p>
+            <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-5">
+              {!campanha?.cliente ? (
+                <p className="text-[#5A5A72] text-sm">Vincule um cliente à campanha para selecionar uma instância Z-API.</p>
+              ) : instancias.length === 0 ? (
+                <p className="text-[#5A5A72] text-sm">Nenhuma instância Z-API encontrada para o cliente <span className="text-[#C4C4D4]">{campanha.cliente.nome}</span>.</p>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <select
+                    value={instanciaId ?? ""}
+                    onChange={(e) => setInstanciaId(e.target.value || null)}
+                    className="flex-1 bg-[#0F0F1A] border border-[#2E2E3E] text-[#EEEEF5] text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#25D366]"
+                  >
+                    <option value="">— Nenhuma instância —</option>
+                    {instancias.map((inst) => (
+                      <option key={inst.id} value={inst.id} disabled={inst.status !== "ativo"}>
+                        {inst.nome}{inst.status !== "ativo" ? " (inativa)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {canWrite && (
+                    <Button
+                      size="sm"
+                      onClick={handleSaveInstancia}
+                      disabled={savingInstancia || instanciaId === (campanha?.instancia_zapi?.id ?? null)}
+                    >
+                      {savingInstancia ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                      <span className="ml-1">Salvar</span>
+                    </Button>
+                  )}
+                </div>
+              )}
+              {campanha?.instancia_zapi && (
+                <p className="text-xs text-[#5A5A72] mt-2">
+                  Vinculada: <span className="text-[#25D366]">{campanha.instancia_zapi.nome}</span>
+                  {campanha.instancia_zapi.status !== "ativo" && <span className="text-[#F87171] ml-1">(inativa)</span>}
+                </p>
+              )}
+            </div>
+          </section>
+
           {/* ── Seção: Webhooks ─────────────────────────────────────────────── */}
           <section className="space-y-3">
             <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold">
@@ -600,7 +693,7 @@ export default function CampanhaDetailPage() {
                     {expanded && (
                       <div className="border-t border-[#1E1E2A] px-5 py-3">
                         <div className="flex items-center justify-between mb-3">
-                          <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold">Flows Manychat</p>
+                          <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold">Flows</p>
                           <div className="flex gap-2">
                             {activeFlows.length > 0 && (
                               <Button size="sm" variant="outline" onClick={() => handleOpenTeste(w)}>
@@ -626,8 +719,12 @@ export default function CampanhaDetailPage() {
                               <div key={flow.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[#111118] border border-[#1E1E2A]">
                                 <GripVertical className="w-4 h-4 text-[#2A2A3A] shrink-0" />
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-[#C4C4D4] text-sm font-medium">{flow.conta.nome}</p>
-                                  <p className="text-[#5A5A72] text-xs font-mono">{flow.flow_nome || flow.flow_ns.slice(0, 40) + (flow.flow_ns.length > 40 ? "…" : "")}</p>
+                                  <p className="text-[#C4C4D4] text-sm font-medium">{flow.conta?.nome ?? "Webhook externo"}</p>
+                                  <p className="text-[#5A5A72] text-xs font-mono">
+                                    {flow.tipo === "webhook"
+                                      ? (flow.webhook_url ? (flow.webhook_url.length > 40 ? flow.webhook_url.slice(0, 40) + "…" : flow.webhook_url) : "—")
+                                      : (flow.flow_nome || (flow.flow_ns ? (flow.flow_ns.length > 40 ? flow.flow_ns.slice(0, 40) + "…" : flow.flow_ns) : "—"))}
+                                  </p>
                                   {flow.tag_manychat_nome && (
                                     <span className="inline-flex items-center gap-1 text-[10px] text-[#A78BFA] mt-0.5">
                                       <Tag className="w-2.5 h-2.5" />{flow.tag_manychat_nome}

@@ -10,8 +10,10 @@ export async function listarWebhookFlows(webhookId: string) {
     select: {
       id: true,
       webhook_id: true,
+      tipo: true,
       flow_ns: true,
       flow_nome: true,
+      webhook_url: true,
       ordem: true,
       total_enviados: true,
       status: true,
@@ -28,29 +30,21 @@ export async function listarWebhookFlows(webhookId: string) {
 }
 
 export interface AdicionarFlowParams {
-  conta_id: string
-  flow_ns: string
+  tipo?: "manychat" | "webhook" // default "manychat"
+  conta_id?: string
+  flow_ns?: string
   flow_nome?: string
   ordem?: number
   tag_manychat_id?: number
   tag_manychat_nome?: string
+  webhook_url?: string
 }
 
 export async function adicionarFlow(webhookId: string, params: AdicionarFlowParams) {
   const webhook = await prisma.webhook.findFirst({ where: { id: webhookId, deleted_at: null } })
   if (!webhook) throw new ServiceError("not_found", "Webhook não encontrado.")
 
-  const conta = await prisma.contaManychat.findFirst({
-    where: { id: params.conta_id, status: "ativo", deleted_at: null },
-  })
-  if (!conta) throw new ServiceError("bad_request", "Conta Manychat não encontrada ou inativa.")
-
-  // Prevent duplicate: same conta + same flow_ns on the same webhook
-  const duplicate = await prisma.webhookFlow.findFirst({
-    where: { webhook_id: webhookId, conta_id: params.conta_id, flow_ns: params.flow_ns, deleted_at: null },
-    select: { id: true },
-  })
-  if (duplicate) throw new ServiceError("conflict", "Este flow já está adicionado a este webhook nesta conta.")
+  const tipo = params.tipo ?? "manychat"
 
   let ordem = params.ordem
   if (ordem === undefined) {
@@ -62,21 +56,78 @@ export async function adicionarFlow(webhookId: string, params: AdicionarFlowPara
     ordem = last ? last.ordem + 1 : 0
   }
 
+  if (tipo === "manychat") {
+    if (!params.conta_id) throw new ServiceError("bad_request", "conta_id é obrigatório para flows Manychat.")
+    if (!params.flow_ns) throw new ServiceError("bad_request", "flow_ns é obrigatório para flows Manychat.")
+
+    const conta = await prisma.contaManychat.findFirst({
+      where: { id: params.conta_id, status: "ativo", deleted_at: null },
+    })
+    if (!conta) throw new ServiceError("bad_request", "Conta Manychat não encontrada ou inativa.")
+
+    // Prevent duplicate: same conta + same flow_ns on the same webhook
+    const duplicate = await prisma.webhookFlow.findFirst({
+      where: { webhook_id: webhookId, conta_id: params.conta_id, flow_ns: params.flow_ns, deleted_at: null },
+      select: { id: true },
+    })
+    if (duplicate) throw new ServiceError("conflict", "Este flow já está adicionado a este webhook nesta conta.")
+
+    const flow = await prisma.webhookFlow.create({
+      data: {
+        webhook_id: webhookId,
+        tipo: "manychat",
+        conta_id: params.conta_id,
+        flow_ns: params.flow_ns,
+        flow_nome: params.flow_nome || null,
+        ordem,
+        tag_manychat_id: params.tag_manychat_id ?? null,
+        tag_manychat_nome: params.tag_manychat_nome ?? null,
+      },
+      select: {
+        id: true,
+        webhook_id: true,
+        tipo: true,
+        flow_ns: true,
+        flow_nome: true,
+        webhook_url: true,
+        ordem: true,
+        total_enviados: true,
+        status: true,
+        tag_manychat_id: true,
+        tag_manychat_nome: true,
+        created_at: true,
+        conta: { select: { id: true, nome: true, page_name: true } },
+      },
+    })
+
+    return { data: flow, message: "Flow adicionado com sucesso." }
+  }
+
+  // tipo === "webhook"
+  if (!params.webhook_url) throw new ServiceError("bad_request", "webhook_url é obrigatório para flows do tipo webhook.")
+
+  // Prevent duplicate: same webhook_url on the same webhook
+  const duplicate = await prisma.webhookFlow.findFirst({
+    where: { webhook_id: webhookId, webhook_url: params.webhook_url, deleted_at: null },
+    select: { id: true },
+  })
+  if (duplicate) throw new ServiceError("conflict", "Esta URL já está adicionada a este webhook.")
+
   const flow = await prisma.webhookFlow.create({
     data: {
       webhook_id: webhookId,
-      conta_id: params.conta_id,
-      flow_ns: params.flow_ns,
+      tipo: "webhook",
+      webhook_url: params.webhook_url,
       flow_nome: params.flow_nome || null,
       ordem,
-      tag_manychat_id: params.tag_manychat_id ?? null,
-      tag_manychat_nome: params.tag_manychat_nome ?? null,
     },
     select: {
       id: true,
       webhook_id: true,
+      tipo: true,
       flow_ns: true,
       flow_nome: true,
+      webhook_url: true,
       ordem: true,
       total_enviados: true,
       status: true,
@@ -114,8 +165,10 @@ export async function atualizarFlow(id: string, params: AtualizarFlowParams) {
     select: {
       id: true,
       webhook_id: true,
+      tipo: true,
       flow_ns: true,
       flow_nome: true,
+      webhook_url: true,
       ordem: true,
       total_enviados: true,
       status: true,

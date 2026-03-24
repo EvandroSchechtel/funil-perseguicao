@@ -6,10 +6,11 @@ export interface ListWebhooksParams {
   perPage?: number
   search?: string
   campanhaId?: string
+  clienteId?: string
 }
 
 export async function listarWebhooks(params: ListWebhooksParams = {}) {
-  const { page = 1, perPage = 20, search = "", campanhaId = "" } = params
+  const { page = 1, perPage = 20, search = "", campanhaId = "", clienteId } = params
 
   const where = {
     deleted_at: null,
@@ -17,6 +18,7 @@ export async function listarWebhooks(params: ListWebhooksParams = {}) {
       nome: { contains: search, mode: "insensitive" as const },
     }),
     ...(campanhaId && { campanha_id: campanhaId }),
+    ...(clienteId && { campanha: { cliente_id: clienteId } }),
   }
 
   const [total, webhooks] = await Promise.all([
@@ -71,8 +73,10 @@ export async function buscarWebhook(id: string) {
         where: { deleted_at: null },
         select: {
           id: true,
+          tipo: true,
           flow_ns: true,
           flow_nome: true,
+          webhook_url: true,
           ordem: true,
           total_enviados: true,
           status: true,

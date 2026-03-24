@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react"
 import {
-  Plus, Trash2, Loader2, CheckCircle2, RefreshCw, Tag,
+  Plus, Trash2, Loader2, CheckCircle2, RefreshCw, Tag, Link2, Send, XCircle,
 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -23,13 +23,19 @@ interface ManychatTag {
   name: string
 }
 
+type FlowTipo = "manychat" | "webhook"
+
 interface PendingFlow {
-  contaId: string
-  contaNome: string
-  flowNs: string
+  tipo: FlowTipo
+  // Manychat
+  contaId?: string
+  contaNome?: string
+  flowNs?: string
   flowNome: string
   tagId: number | null
   tagNome: string
+  // Webhook externo
+  webhookUrl?: string
 }
 
 export interface AddFlowDialogProps {
@@ -47,14 +53,20 @@ export interface AddFlowDialogProps {
 export function AddFlowDialog({
   open, webhookId, clienteId, accessToken, onClose, onSuccess,
 }: AddFlowDialogProps) {
+  // Tipo de flow
+  const [tipo, setTipo] = useState<FlowTipo>("manychat")
+
   // Contas
   const [contas, setContas] = useState<Conta[]>([])
   const [loadingContas, setLoadingContas] = useState(false)
 
-  // Form fields
+  // Manychat fields
   const [contaId, setContaId] = useState("")
   const [flowNs, setFlowNs] = useState("")
   const [flowNome, setFlowNome] = useState("")
+
+  // Webhook externo fields
+  const [webhookUrl, setWebhookUrl] = useState("")
 
   // Tags
   const [tags, setTags] = useState<ManychatTag[]>([])
@@ -69,6 +81,10 @@ export function AddFlowDialog({
 
   // Validation errors
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Webhook URL test
+  const [testingUrl, setTestingUrl] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; status: number | null; error: string | null } | null>(null)
 
   // Saving
   const [saving, setSaving] = useState(false)
@@ -97,6 +113,7 @@ export function AddFlowDialog({
       fetchContas()
       resetForm()
       setPendingFlows([])
+      setTipo("manychat")
     }
   }, [open, fetchContas])
 
@@ -152,10 +169,41 @@ export function AddFlowDialog({
     }
   }
 
+  // ── Test webhook URL ────────────────────────────────────────────────────────
+
+  async function handleTestUrl() {
+    if (!webhookUrl.trim()) return
+    try { new URL(webhookUrl.trim()) } catch { setErrors((e) => ({ ...e, webhook_url: "URL inválida" })); return }
+
+    setTestingUrl(true)
+    setTestResult(null)
+    try {
+      const res = await fetch("/api/admin/webhooks/test-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ url: webhookUrl.trim() }),
+      })
+      const data = await res.json()
+      setTestResult({ ok: data.ok, status: data.status, error: data.error })
+      if (data.ok) {
+        toast.success(`Webhook respondeu com status ${data.status} — URL válida!`)
+      } else {
+        toast.error(`Erro: ${data.error || `HTTP ${data.status}`}`)
+      }
+    } catch {
+      setTestResult({ ok: false, status: null, error: "Erro de conexão com o servidor" })
+      toast.error("Erro ao testar URL.")
+    } finally {
+      setTestingUrl(false)
+    }
+  }
+
   // ── Reset form ──────────────────────────────────────────────────────────────
 
   function resetForm() {
     setContaId(""); setFlowNs(""); setFlowNome("")
+    setWebhookUrl("")
+    setTestResult(null)
     setTags([]); setTagId(""); setTagNome(""); setNewTagName("")
     setErrors({})
   }
@@ -164,32 +212,59 @@ export function AddFlowDialog({
 
   function handleAddToPending() {
     const errs: Record<string, string> = {}
-    if (!contaId) errs.conta = "Selecione uma conta Manychat"
-    if (!flowNs.trim()) errs.flow_ns = "Flow NS é obrigatório"
-    if (!tagId) errs.tag = "Selecione a tag de entrada no grupo"
 
-    // Check for duplicates in pending list
-    if (contaId && flowNs.trim()) {
-      const dup = pendingFlows.find(
-        (p) => p.contaId === contaId && p.flowNs === flowNs.trim()
-      )
-      if (dup) errs.flow_ns = "Este Flow NS já foi adicionado para esta conta"
+    if (tipo === "manychat") {
+      if (!contaId) errs.conta = "Selecione uma conta Manychat"
+      if (!flowNs.trim()) errs.flow_ns = "Flow NS é obrigatório"
+      if (!tagId) errs.tag = "Selecione a tag de entrada no grupo"
+
+      if (contaId && flowNs.trim()) {
+        const dup = pendingFlows.find(
+          (p) => p.tipo === "manychat" && p.contaId === contaId && p.flowNs === flowNs.trim()
+        )
+        if (dup) errs.flow_ns = "Este Flow NS já foi adicionado para esta conta"
+      }
+    } else {
+      if (!webhookUrl.trim()) {
+        errs.webhook_url = "URL é obrigatória"
+      } else {
+        try { new URL(webhookUrl.trim()) } catch { errs.webhook_url = "URL inválida" }
+      }
+      if (!errs.webhook_url) {
+        const dup = pendingFlows.find((p) => p.tipo === "webhook" && p.webhookUrl === webhookUrl.trim())
+        if (dup) errs.webhook_url = "Esta URL já foi adicionada"
+      }
     }
 
     if (Object.keys(errs).length > 0) { setErrors(errs); return }
 
-    const conta = contas.find((c) => c.id === contaId)
-    setPendingFlows((prev) => [
-      ...prev,
-      {
-        contaId,
-        contaNome: conta ? `${conta.nome}${conta.page_name ? ` — ${conta.page_name}` : ""}` : contaId,
-        flowNs: flowNs.trim(),
-        flowNome: flowNome.trim(),
-        tagId: tagId ? Number(tagId) : null,
-        tagNome,
-      },
-    ])
+    if (tipo === "manychat") {
+      const conta = contas.find((c) => c.id === contaId)
+      setPendingFlows((prev) => [
+        ...prev,
+        {
+          tipo: "manychat",
+          contaId,
+          contaNome: conta ? `${conta.nome}${conta.page_name ? ` — ${conta.page_name}` : ""}` : contaId,
+          flowNs: flowNs.trim(),
+          flowNome: flowNome.trim(),
+          tagId: tagId ? Number(tagId) : null,
+          tagNome,
+        },
+      ])
+    } else {
+      setPendingFlows((prev) => [
+        ...prev,
+        {
+          tipo: "webhook",
+          flowNome: flowNome.trim(),
+          tagId: null,
+          tagNome: "",
+          webhookUrl: webhookUrl.trim(),
+        },
+      ])
+    }
+
     resetForm()
   }
 
@@ -203,26 +278,38 @@ export function AddFlowDialog({
 
     for (const flow of pendingFlows) {
       try {
+        const body =
+          flow.tipo === "manychat"
+            ? {
+                tipo: "manychat",
+                conta_id: flow.contaId,
+                flow_ns: flow.flowNs,
+                flow_nome: flow.flowNome || undefined,
+                tag_manychat_id: flow.tagId ?? undefined,
+                tag_manychat_nome: flow.tagNome || undefined,
+              }
+            : {
+                tipo: "webhook",
+                webhook_url: flow.webhookUrl,
+                flow_nome: flow.flowNome || undefined,
+              }
+
         const res = await fetch(`/api/admin/webhooks/${webhookId}/flows`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-          body: JSON.stringify({
-            conta_id: flow.contaId,
-            flow_ns: flow.flowNs,
-            flow_nome: flow.flowNome || undefined,
-            tag_manychat_id: flow.tagId ?? undefined,
-            tag_manychat_nome: flow.tagNome || undefined,
-          }),
+          body: JSON.stringify(body),
         })
         if (res.ok) {
           successCount++
         } else {
           const data = await res.json()
-          toast.error(`Erro em "${flow.flowNs}": ${data.message || "falha"}`)
+          const label = flow.tipo === "manychat" ? flow.flowNs : flow.webhookUrl
+          toast.error(`Erro em "${label}": ${data.message || "falha"}`)
           failCount++
         }
       } catch {
-        toast.error(`Erro de conexão ao salvar "${flow.flowNs}"`)
+        const label = flow.tipo === "manychat" ? flow.flowNs : flow.webhookUrl
+        toast.error(`Erro de conexão ao salvar "${label}"`)
         failCount++
       }
     }
@@ -249,113 +336,204 @@ export function AddFlowDialog({
 
         <div className="space-y-4 py-2">
 
-          {/* Conta Manychat */}
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-[#C4C4D4] flex items-center gap-1.5">
-              Conta Manychat <span className="text-[#F87171]">*</span>
-              <FieldInfo title="Conta Manychat">
-                <p>Selecione a conta Manychat vinculada a este cliente. Apenas contas ativas deste cliente são exibidas.</p>
-              </FieldInfo>
-            </label>
-            <SearchableSelect
-              options={contas}
-              value={contaId}
-              onChange={(v) => { setContaId(v); setErrors((e) => ({ ...e, conta: "" })) }}
-              getKey={(c) => c.id}
-              getLabel={(c) => `${c.nome}${c.page_name ? ` — ${c.page_name}` : ""}`}
-              placeholder={loadingContas ? "Carregando contas…" : contas.length === 0 ? "Nenhuma conta ativa" : "Selecione uma conta…"}
-              searchPlaceholder="Buscar conta…"
-              loading={loadingContas}
-              error={errors.conta}
-            />
+          {/* Tipo de flow */}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => { setTipo("manychat"); resetForm() }}
+              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium border transition-colors ${
+                tipo === "manychat"
+                  ? "bg-[#0F2318] border-[#25D366] text-[#25D366]"
+                  : "bg-[#111118] border-[#1E1E2A] text-[#5A5A72] hover:border-[#3F3F58]"
+              }`}
+            >
+              Manychat
+            </button>
+            <button
+              type="button"
+              onClick={() => { setTipo("webhook"); resetForm() }}
+              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium border transition-colors ${
+                tipo === "webhook"
+                  ? "bg-[#111827] border-[#6366F1] text-[#6366F1]"
+                  : "bg-[#111118] border-[#1E1E2A] text-[#5A5A72] hover:border-[#3F3F58]"
+              }`}
+            >
+              <span className="flex items-center justify-center gap-1.5">
+                <Link2 className="w-3.5 h-3.5" />
+                Webhook externo
+              </span>
+            </button>
           </div>
 
-          {/* Flow NS */}
-          <Input
-            label="Flow NS"
-            placeholder="Ex: content20210501abc123..."
-            value={flowNs}
-            onChange={(e) => { setFlowNs(e.target.value); setErrors((e2) => ({ ...e2, flow_ns: "" })) }}
-            error={errors.flow_ns}
-            helperText="Automação → Flows → clique no flow → copie o NS da URL"
-            required
-          />
-
-          {/* Nome do Flow */}
-          <Input
-            label="Nome do Flow (opcional)"
-            placeholder="Ex: [MAR26] PRINCESA POP - BOAS VINDAS"
-            value={flowNome}
-            onChange={(e) => setFlowNome(e.target.value)}
-          />
-
-          {/* Tag de entrada */}
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-[#C4C4D4] flex items-center gap-1.5">
-              <Tag className="w-3.5 h-3.5 text-[#A78BFA]" />
-              Tag &ldquo;entrou no grupo&rdquo; <span className="text-[#F87171]">*</span>
-              {loadingTags && <Loader2 className="w-3 h-3 animate-spin text-[#25D366]" />}
-              {contaId && !loadingTags && tags.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => fetchTags(contaId)}
-                  className="ml-auto text-[#3F3F58] hover:text-[#25D366] transition-colors"
-                  title="Atualizar tags"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                </button>
-              )}
-              <FieldInfo title="Tag de entrada no grupo">
-                <p>Esta tag Manychat será aplicada ao subscriber quando o lead entrar no grupo de WhatsApp.</p>
-                <p className="mt-1">Selecione uma tag existente ou crie uma nova abaixo. A tag é usada para criar condicionais nos flows Manychat.</p>
-              </FieldInfo>
-            </label>
-            <SearchableSelect
-              options={tags}
-              value={tagId}
-              onChange={(v) => {
-                setTagId(v)
-                setTagNome(tags.find((t) => String(t.id) === v)?.name || "")
-                setErrors((e) => ({ ...e, tag: "" }))
-              }}
-              getKey={(t) => String(t.id)}
-              getLabel={(t) => t.name}
-              placeholder={
-                !contaId ? "Selecione a conta primeiro"
-                : loadingTags ? "Buscando tags…"
-                : tags.length === 0 ? "Nenhuma tag — crie abaixo"
-                : "Selecionar tag…"
-              }
-              searchPlaceholder="Buscar tag…"
-              loading={loadingTags}
-              disabled={!contaId || loadingTags}
-              error={errors.tag}
-            />
-
-            {/* Criar tag inline */}
-            {contaId && !loadingTags && (
-              <div className="flex gap-2 mt-1">
-                <input
-                  value={newTagName}
-                  onChange={(e) => setNewTagName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleCreateTag() } }}
-                  placeholder="Nome da nova tag…"
-                  className="flex-1 h-8 px-3 rounded-lg border border-[#1E1E2A] bg-[#111118] text-xs text-[#F1F1F3] placeholder-[#5A5A72] focus:outline-none focus:border-[#25D366] transition-colors"
+          {tipo === "manychat" ? (
+            <>
+              {/* Conta Manychat */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-[#C4C4D4] flex items-center gap-1.5">
+                  Conta Manychat <span className="text-[#F87171]">*</span>
+                  <FieldInfo title="Conta Manychat">
+                    <p>Selecione a conta Manychat vinculada a este cliente. Apenas contas ativas deste cliente são exibidas.</p>
+                  </FieldInfo>
+                </label>
+                <SearchableSelect
+                  options={contas}
+                  value={contaId}
+                  onChange={(v) => { setContaId(v); setErrors((e) => ({ ...e, conta: "" })) }}
+                  getKey={(c) => c.id}
+                  getLabel={(c) => `${c.nome}${c.page_name ? ` — ${c.page_name}` : ""}`}
+                  placeholder={loadingContas ? "Carregando contas…" : contas.length === 0 ? "Nenhuma conta ativa" : "Selecione uma conta…"}
+                  searchPlaceholder="Buscar conta…"
+                  loading={loadingContas}
+                  error={errors.conta}
                 />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8 px-3 text-xs shrink-0"
-                  disabled={!newTagName.trim() || creatingTag}
-                  onClick={handleCreateTag}
-                >
-                  {creatingTag ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
-                  Criar tag
-                </Button>
               </div>
-            )}
-          </div>
+
+              {/* Flow NS */}
+              <Input
+                label="Flow NS"
+                placeholder="Ex: content20210501abc123..."
+                value={flowNs}
+                onChange={(e) => { setFlowNs(e.target.value); setErrors((e2) => ({ ...e2, flow_ns: "" })) }}
+                error={errors.flow_ns}
+                helperText="Automação → Flows → clique no flow → copie o NS da URL"
+                required
+              />
+
+              {/* Nome do Flow */}
+              <Input
+                label="Nome do Flow (opcional)"
+                placeholder="Ex: [MAR26] PRINCESA POP - BOAS VINDAS"
+                value={flowNome}
+                onChange={(e) => setFlowNome(e.target.value)}
+              />
+
+              {/* Tag de entrada */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-[#C4C4D4] flex items-center gap-1.5">
+                  <Tag className="w-3.5 h-3.5 text-[#A78BFA]" />
+                  Tag &ldquo;entrou no grupo&rdquo; <span className="text-[#F87171]">*</span>
+                  {loadingTags && <Loader2 className="w-3 h-3 animate-spin text-[#25D366]" />}
+                  {contaId && !loadingTags && tags.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => fetchTags(contaId)}
+                      className="ml-auto text-[#3F3F58] hover:text-[#25D366] transition-colors"
+                      title="Atualizar tags"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                    </button>
+                  )}
+                  <FieldInfo title="Tag de entrada no grupo">
+                    <p>Esta tag Manychat será aplicada ao subscriber quando o lead entrar no grupo de WhatsApp.</p>
+                    <p className="mt-1">Selecione uma tag existente ou crie uma nova abaixo. A tag é usada para criar condicionais nos flows Manychat.</p>
+                  </FieldInfo>
+                </label>
+                <SearchableSelect
+                  options={tags}
+                  value={tagId}
+                  onChange={(v) => {
+                    setTagId(v)
+                    setTagNome(tags.find((t) => String(t.id) === v)?.name || "")
+                    setErrors((e) => ({ ...e, tag: "" }))
+                  }}
+                  getKey={(t) => String(t.id)}
+                  getLabel={(t) => t.name}
+                  placeholder={
+                    !contaId ? "Selecione a conta primeiro"
+                    : loadingTags ? "Buscando tags…"
+                    : tags.length === 0 ? "Nenhuma tag — crie abaixo"
+                    : "Selecionar tag…"
+                  }
+                  searchPlaceholder="Buscar tag…"
+                  loading={loadingTags}
+                  disabled={!contaId || loadingTags}
+                  error={errors.tag}
+                />
+
+                {/* Criar tag inline */}
+                {contaId && !loadingTags && (
+                  <div className="flex gap-2 mt-1">
+                    <input
+                      value={newTagName}
+                      onChange={(e) => setNewTagName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleCreateTag() } }}
+                      placeholder="Nome da nova tag…"
+                      className="flex-1 h-8 px-3 rounded-lg border border-[#1E1E2A] bg-[#111118] text-xs text-[#F1F1F3] placeholder-[#5A5A72] focus:outline-none focus:border-[#25D366] transition-colors"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 px-3 text-xs shrink-0"
+                      disabled={!newTagName.trim() || creatingTag}
+                      onClick={handleCreateTag}
+                    >
+                      {creatingTag ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                      Criar tag
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Webhook URL */}
+              <Input
+                label="URL do Webhook externo"
+                placeholder="https://seu-sistema.com/webhook/lead"
+                value={webhookUrl}
+                onChange={(e) => { setWebhookUrl(e.target.value); setErrors((e2) => ({ ...e2, webhook_url: "" })); setTestResult(null) }}
+                error={errors.webhook_url}
+                helperText="Será feito um HTTP POST com JSON: { lead_id, nome, telefone, email, campanha_id }"
+                required
+              />
+
+              {/* Test URL button + result */}
+              {webhookUrl.trim() && (
+                <div className="space-y-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-xs"
+                    onClick={handleTestUrl}
+                    disabled={testingUrl}
+                  >
+                    {testingUrl
+                      ? <><Loader2 className="w-3 h-3 animate-spin" /> Testando…</>
+                      : <><Send className="w-3 h-3" /> Enviar Teste</>
+                    }
+                  </Button>
+                  {testResult && (
+                    <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs ${
+                      testResult.ok
+                        ? "bg-[#0F2318] border border-[#25D366] text-[#25D366]"
+                        : "bg-[#1C0E0E] border border-[#F87171] text-[#F87171]"
+                    }`}>
+                      {testResult.ok
+                        ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        : <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      }
+                      <span>
+                        {testResult.ok
+                          ? `Sucesso (HTTP ${testResult.status}) — URL ativa e respondendo.`
+                          : testResult.error || `Erro HTTP ${testResult.status}`
+                        }
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Nome do Flow (opcional) */}
+              <Input
+                label="Nome do destino (opcional)"
+                placeholder="Ex: ActiveCampaign, RD Station, Make..."
+                value={flowNome}
+                onChange={(e) => setFlowNome(e.target.value)}
+              />
+            </>
+          )}
 
           {/* Add to list button */}
           <Button
@@ -381,22 +559,34 @@ export function AddFlowDialog({
                   className="flex items-start gap-3 p-3 bg-[#111118] border border-[#1E1E2A] rounded-lg"
                 >
                   <div className="flex-1 min-w-0 space-y-0.5">
-                    <p className="text-sm text-[#F1F1F3] font-medium truncate">{f.flowNome || f.flowNs}</p>
-                    {f.flowNome && (
-                      <p className="text-xs text-[#5A5A72] font-mono truncate">{f.flowNs}</p>
+                    {f.tipo === "manychat" ? (
+                      <>
+                        <p className="text-sm text-[#F1F1F3] font-medium truncate">{f.flowNome || f.flowNs}</p>
+                        {f.flowNome && (
+                          <p className="text-xs text-[#5A5A72] font-mono truncate">{f.flowNs}</p>
+                        )}
+                        <div className="flex items-center gap-3 text-xs text-[#8B8B9E] flex-wrap">
+                          <span className="truncate">{f.contaNome}</span>
+                          {f.tagNome && (
+                            <>
+                              <span>·</span>
+                              <span className="flex items-center gap-1 text-[#A78BFA]">
+                                <Tag className="w-3 h-3" />
+                                {f.tagNome}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm text-[#F1F1F3] font-medium truncate flex items-center gap-1.5">
+                          <Link2 className="w-3.5 h-3.5 text-[#6366F1] shrink-0" />
+                          {f.flowNome || "Webhook externo"}
+                        </p>
+                        <p className="text-xs text-[#5A5A72] font-mono truncate">{f.webhookUrl}</p>
+                      </>
                     )}
-                    <div className="flex items-center gap-3 text-xs text-[#8B8B9E] flex-wrap">
-                      <span className="truncate">{f.contaNome}</span>
-                      {f.tagNome && (
-                        <>
-                          <span>·</span>
-                          <span className="flex items-center gap-1 text-[#A78BFA]">
-                            <Tag className="w-3 h-3" />
-                            {f.tagNome}
-                          </span>
-                        </>
-                      )}
-                    </div>
                   </div>
                   <button
                     type="button"
@@ -411,7 +601,7 @@ export function AddFlowDialog({
           )}
 
           {/* Validation summary when list is empty */}
-          {pendingFlows.length === 0 && selectedConta && (
+          {pendingFlows.length === 0 && (tipo === "manychat" ? selectedConta : webhookUrl) && (
             <div className="flex items-center gap-2 text-xs text-[#5A5A72] bg-[#111118] border border-[#1E1E2A] rounded-lg px-3 py-2">
               <CheckCircle2 className="w-3.5 h-3.5 text-[#25D366]" />
               Preencha os campos e clique em &ldquo;Adicionar à lista&rdquo; para continuar

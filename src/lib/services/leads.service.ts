@@ -146,7 +146,7 @@ export async function reprocessarLead(id: string) {
     include: {
       webhook: { select: { id: true, status: true, deleted_at: true } },
       webhook_flow: {
-        include: { conta: { select: { id: true, api_key: true, status: true } } },
+        select: { id: true, tipo: true, conta_id: true, flow_ns: true, webhook_url: true, conta: { select: { id: true, api_key: true, status: true } } },
       },
     },
   })
@@ -170,8 +170,10 @@ export async function reprocessarLead(id: string) {
   await addWebhookJob({
     leadId: lead.id,
     webhookId: lead.webhook_id,
-    contaId: lead.webhook_flow.conta_id,
-    flowNs: lead.webhook_flow.flow_ns,
+    flowTipo: (lead.webhook_flow.tipo as "manychat" | "webhook") ?? "manychat",
+    contaId: lead.webhook_flow.conta_id ?? undefined,
+    flowNs: lead.webhook_flow.flow_ns ?? undefined,
+    webhookUrl: lead.webhook_flow.webhook_url ?? undefined,
     nome: lead.nome,
     telefone: lead.telefone,
     email: lead.email || undefined,
@@ -189,7 +191,7 @@ export async function reprocessarSelecionados(leadIds: string[]) {
       webhook_flow_id: { not: null },
     },
     include: {
-      webhook_flow: { select: { id: true, conta_id: true, flow_ns: true } },
+      webhook_flow: { select: { id: true, tipo: true, conta_id: true, flow_ns: true, webhook_url: true } },
     },
   })
 
@@ -208,8 +210,10 @@ export async function reprocessarSelecionados(leadIds: string[]) {
     addWebhookJob({
       leadId: lead.id,
       webhookId: lead.webhook_id,
-      contaId: lead.webhook_flow.conta_id,
-      flowNs: lead.webhook_flow.flow_ns,
+      flowTipo: (lead.webhook_flow.tipo as "manychat" | "webhook") ?? "manychat",
+      contaId: lead.webhook_flow.conta_id ?? undefined,
+      flowNs: lead.webhook_flow.flow_ns ?? undefined,
+      webhookUrl: lead.webhook_flow.webhook_url ?? undefined,
       nome: lead.nome,
       telefone: lead.telefone,
       email: lead.email || undefined,
@@ -223,16 +227,17 @@ export async function reprocessarSelecionados(leadIds: string[]) {
   }
 }
 
-export async function reprocessarFalhas(webhookId?: string) {
+export async function reprocessarFalhas(webhookId?: string, contaId?: string) {
   const leads = await prisma.lead.findMany({
     where: {
       status: { in: ["falha", "sem_optin"] },
       ...(webhookId ? { webhook_id: webhookId } : {}),
+      ...(contaId ? { webhook_flow: { conta_id: contaId } } : {}),
       webhook: { deleted_at: null },
       webhook_flow_id: { not: null },
     },
     include: {
-      webhook_flow: { select: { id: true, conta_id: true, flow_ns: true } },
+      webhook_flow: { select: { id: true, tipo: true, conta_id: true, flow_ns: true, webhook_url: true } },
     },
     take: 500,
   })
@@ -252,8 +257,10 @@ export async function reprocessarFalhas(webhookId?: string) {
     addWebhookJob({
       leadId: lead.id,
       webhookId: lead.webhook_id,
-      contaId: lead.webhook_flow.conta_id,
-      flowNs: lead.webhook_flow.flow_ns,
+      flowTipo: (lead.webhook_flow.tipo as "manychat" | "webhook") ?? "manychat",
+      contaId: lead.webhook_flow.conta_id ?? undefined,
+      flowNs: lead.webhook_flow.flow_ns ?? undefined,
+      webhookUrl: lead.webhook_flow.webhook_url ?? undefined,
       nome: lead.nome,
       telefone: lead.telefone,
       email: lead.email || undefined,

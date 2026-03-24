@@ -103,6 +103,42 @@ export async function processarSaidaGrupo(
         console.log(`[Saidas] Lead ${leadId} marcado como saiu_grupo`)
       }
 
+      // 7. Notify external webhook flow (best-effort)
+      if (leadId) {
+        const leadWithFlow = await prisma.lead.findUnique({
+          where: { id: leadId },
+          select: {
+            email: true,
+            nome: true,
+            webhook_flow: { select: { tipo: true, webhook_url: true } },
+          },
+        }).catch(() => null)
+
+        const extUrl = leadWithFlow?.webhook_flow?.tipo === "webhook"
+          ? leadWithFlow.webhook_flow.webhook_url
+          : null
+
+        if (extUrl) {
+          fetch(extUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              evento: "saiu_grupo",
+              lead_id: leadId,
+              nome: leadWithFlow?.nome ?? senderName ?? telefoneNorm,
+              telefone: telefoneNorm,
+              email: leadWithFlow?.email ?? null,
+              grupo_nome: chatName,
+              grupo_wa_id: groupWaId,
+              saiu_at: new Date().toISOString(),
+            }),
+            signal: AbortSignal.timeout(10_000),
+          })
+            .then((r) => console.log(`[Saidas] Webhook externo saiu_grupo → ${extUrl} (${r.status})`))
+            .catch((err) => console.error(`[Saidas] Webhook externo saiu_grupo falhou → ${extUrl}:`, err))
+        }
+      }
+
       console.log(`[Saidas] Saída registrada grupo=${grupo.id} telefone=${telefoneNorm}`)
     } catch (err) {
       console.error(`[Saidas] Erro processando grupo ${grupo.id}:`, err)

@@ -8,13 +8,35 @@ import { processarSaidaGrupo } from "@/lib/services/saidas.service"
 import { executarMonitoramento } from "@/lib/services/monitor.service"
 import type { WebhookJobData, GrupoEventoJobData } from "./queues"
 
+async function sendWebhookOutput(
+  url: string,
+  data: { lead_id: string; nome: string; telefone: string; email?: string; campanha_id?: string | null }
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => "")
+      return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}` }
+    }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: String(err) }
+  }
+}
+
 export function startWebhookWorker(): Worker {
   const worker = new Worker(
     "webhooks",
     async (job: Job<WebhookJobData>) => {
-      const { leadId, contaId, flowNs, nome, telefone, email } = job.data
+      const { leadId, flowTipo, contaId, flowNs, webhookUrl, nome, telefone, email } = job.data
+      const isWebhookFlow = flowTipo === "webhook"
 
-      console.log(`[Worker] Processing lead ${leadId} (job ${job.id})`)
+      console.log(`[Worker] Processing lead ${leadId} (job ${job.id}, tipo=${flowTipo ?? "manychat"})`)
 
       // 1. Mark lead as processando, increment tentativas
       const updated = await prisma.lead.update({
@@ -23,6 +45,60 @@ export function startWebhookWorker(): Worker {
         select: { tentativas: true, contato_id: true, campanha_id: true, subscriber_id: true },
       })
       const numeroTentativa = updated.tentativas
+
+      // ── Webhook externo ──────────────────────────────────────────────────────
+      if (isWebhookFlow) {
+        if (!webhookUrl) {
+          const errMsg = "Flow do tipo webhook sem URL configurada."
+          console.error(`[Worker] ${errMsg} lead=${leadId}`)
+          await prisma.lead.update({ where: { id: leadId }, data: { status: "falha", erro_msg: errMsg } })
+          await prisma.leadTentativa.create({
+            data: { lead_id: leadId, numero: numeroTentativa, status: "falha", erro_msg: errMsg, flow_ns: webhookUrl ?? null },
+          })
+          // Don't throw — misconfigured URL won't be fixed by retrying
+          return { leadId, ok: false, error: errMsg }
+        }
+
+        const result = await sendWebhookOutput(webhookUrl, {
+          lead_id: leadId,
+          nome,
+          telefone,
+          email,
+          campanha_id: updated.campanha_id,
+        })
+
+        if (result.ok) {
+          await prisma.lead.update({
+            where: { id: leadId },
+            data: { status: "sucesso", processado_at: new Date(), erro_msg: null },
+          })
+          await prisma.leadTentativa.create({
+            data: { lead_id: leadId, numero: numeroTentativa, status: "sucesso", flow_ns: webhookUrl },
+          }).catch((e) => console.warn("[Worker] leadTentativa.create failed:", e))
+          console.log(`[Worker] Lead ${leadId} sent to external webhook ${webhookUrl}`)
+        } else {
+          await prisma.lead.update({
+            where: { id: leadId },
+            data: { status: "falha", erro_msg: result.error },
+          })
+          await prisma.leadTentativa.create({
+            data: { lead_id: leadId, numero: numeroTentativa, status: "falha", erro_msg: result.error ?? null, flow_ns: webhookUrl },
+          }).catch((e) => console.warn("[Worker] leadTentativa.create failed:", e))
+          throw new Error(result.error) // triggers BullMQ retry
+        }
+
+        return { leadId, ok: result.ok }
+      }
+
+      // ── Manychat ─────────────────────────────────────────────────────────────
+
+      // Guard: contaId and flowNs must be present for Manychat flows
+      if (!contaId || !flowNs) {
+        const errMsg = "contaId/flowNs ausente para flow Manychat (job mal configurado)."
+        console.error(`[Worker] ${errMsg} lead=${leadId}`)
+        await prisma.lead.update({ where: { id: leadId }, data: { status: "falha", erro_msg: errMsg } })
+        return { leadId, ok: false, error: errMsg }
+      }
 
       // 2. Get API key from conta
       const conta = await prisma.contaManychat.findFirst({
@@ -44,8 +120,8 @@ export function startWebhookWorker(): Worker {
         return { leadId, ok: false, error: errMsg }
       }
 
-      // 2b. Safety check — if daily limit was reached between enqueue and now, delay until midnight
-      const limitReached = await isLimitReached(contaId, conta.limite_diario)
+      // 2b. Safety check — if daily limit was reached between enqueue and now, delay until 8am BRT
+      const limitReached = await isLimitReached(contaId!, conta.limite_diario)
       if (limitReached) {
         const delay = msUntilMidnightBRT()
         await job.moveToDelayed(Date.now() + delay)

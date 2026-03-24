@@ -8,8 +8,10 @@ let _webhookQueue: Queue | null = null
 export interface WebhookJobData {
   leadId: string
   webhookId: string
-  contaId: string
-  flowNs: string
+  flowTipo?: "manychat" | "webhook" // ausente = "manychat" (backward compat)
+  contaId?: string                  // apenas para manychat
+  flowNs?: string                   // apenas para manychat
+  webhookUrl?: string               // apenas para webhook externo
   nome: string
   telefone: string
   email?: string
