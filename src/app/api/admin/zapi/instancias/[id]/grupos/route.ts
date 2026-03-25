@@ -12,6 +12,11 @@ const criarGrupoSchema = z.object({
   nome_filtro: z.string().min(1, "Nome do grupo obrigatório"),
   tag_manychat_id: z.number().int().positive("ID da tag deve ser um número positivo"),
   tag_manychat_nome: z.string().min(1, "Nome da tag obrigatório"),
+  contas_adicionais: z.array(z.object({
+    conta_id: z.string().min(1),
+    tag_id: z.number().int().positive(),
+    tag_nome: z.string().min(1),
+  })).optional(),
 })
 
 export async function POST(request: NextRequest, { params }: Ctx) {
@@ -28,7 +33,12 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       return badRequest("Dados inválidos", parsed.error.flatten().fieldErrors as Record<string, string[]>)
     }
 
-    const result = await criarGrupo({ instancia_id, ...parsed.data })
+    const { contas_adicionais, ...rest } = parsed.data
+    const result = await criarGrupo({
+      instancia_id,
+      ...rest,
+      ...(contas_adicionais && { contas: contas_adicionais }),
+    })
     return created(result)
   } catch (error) {
     return handleServiceError(error) ?? serverError()

@@ -182,10 +182,17 @@ export function NovaCampanhaDialog({ open, onClose, clienteId, clienteNome, cont
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
             body: JSON.stringify({
               campanha_id: campanhaId,
-              conta_manychat_id: g.contaManychatId,
+              conta_manychat_id: g.contas[0].contaId,
               nome_filtro: g.nomeFiltro,
-              tag_manychat_id: g.tagId,
-              tag_manychat_nome: g.tagNome,
+              tag_manychat_id: g.contas[0].tagId,
+              tag_manychat_nome: g.contas[0].tagNome,
+              ...(g.contas.length > 1 && {
+                contas_adicionais: g.contas.slice(1).map((c) => ({
+                  conta_id: c.contaId,
+                  tag_id: c.tagId,
+                  tag_nome: c.tagNome,
+                })),
+              }),
             }),
           })
           if (!res.ok) gruposErrors.push(g.grupoNome)
@@ -266,7 +273,7 @@ export function NovaCampanhaDialog({ open, onClose, clienteId, clienteNome, cont
                     <Check className="w-3.5 h-3.5 text-[#22C55E]" />
                     <span className="truncate">{g.grupoNome}</span>
                     <span className="text-[#3F3F58]">→</span>
-                    <span className="text-[#25D366] truncate">{g.tagNome}</span>
+                    <span className="text-[#25D366] truncate">{g.contas.map((c) => c.contaNome).join(", ")}</span>
                   </div>
                 ))}
               </div>
@@ -405,9 +412,7 @@ export function NovaCampanhaDialog({ open, onClose, clienteId, clienteNome, cont
                               <span className="truncate">{g.instanciaNome}</span>
                               <span>·</span>
                               <Tag className="w-3 h-3" />
-                              <span className="text-[#25D366] truncate">{g.tagNome}</span>
-                              <span>·</span>
-                              <span className="truncate">{g.contaManychatNome}</span>
+                              <span className="text-[#25D366] truncate">{g.contas.map((c) => c.contaNome).join(", ")}</span>
                             </div>
                           </div>
                           <button type="button" onClick={() => setGrupos((p) => p.filter((_, j) => j !== i))}
@@ -456,7 +461,7 @@ export function NovaCampanhaDialog({ open, onClose, clienteId, clienteNome, cont
                   warn={grupos.length === 0}
                   label={grupos.length > 0 ? `${grupos.length} grupo(s) WhatsApp configurado(s)` : "Nenhum grupo — pode ser adicionado depois"}
                 />
-                {grupos.length > 0 && grupos.every((g) => g.tagId) && (
+                {grupos.length > 0 && grupos.every((g) => g.contas.length > 0) && (
                   <CheckItem ok label="Tags de entrada configuradas em todos os grupos" />
                 )}
                 <CheckItem ok label="Webhook será gerado automaticamente" />
@@ -479,7 +484,7 @@ export function NovaCampanhaDialog({ open, onClose, clienteId, clienteNome, cont
                         <span className="truncate">{g.grupoNome}</span>
                         <span className="text-[#3F3F58]">→</span>
                         <Tag className="w-3 h-3 text-[#A78BFA]" />
-                        <span className="text-[#A78BFA] truncate">{g.tagNome}</span>
+                        <span className="text-[#A78BFA] truncate">{g.contas.map((c) => c.contaNome).join(", ")}</span>
                       </div>
                     ))}
                   </div>

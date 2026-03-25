@@ -56,6 +56,9 @@ export async function processarEntradaGrupo(
     },
     include: {
       conta_manychat: { select: { id: true, api_key: true } },
+      contas_monitoramento: {
+        include: { conta_manychat: { select: { id: true, api_key: true } } },
+      },
     },
   })
 
@@ -74,7 +77,12 @@ export async function processarEntradaGrupo(
       // Reload the newly created group and process
       const novoGrupo = await prisma.grupoMonitoramento.findUnique({
         where: { id: auto.grupoId },
-        include: { conta_manychat: { select: { id: true, api_key: true } } },
+        include: {
+          conta_manychat: { select: { id: true, api_key: true } },
+          contas_monitoramento: {
+            include: { conta_manychat: { select: { id: true, api_key: true } } },
+          },
+        },
       })
       if (novoGrupo) {
         await processarEntradaParaGrupo({ grupo: novoGrupo, groupWaId, groupWaName: chatName, telefoneNorm, senderName: nomeSender ?? undefined })
@@ -115,6 +123,11 @@ async function processarEntradaParaGrupo({
     tag_manychat_id: number
     grupo_wa_id: string | null
     conta_manychat: { id: string; api_key: string }
+    contas_monitoramento: Array<{
+      conta_manychat_id: string
+      conta_manychat: { id: string; api_key: string }
+      tag_manychat_id: number
+    }>
   }
   groupWaId: string
   groupWaName: string
@@ -217,33 +230,49 @@ async function processarEntradaParaGrupo({
     }
   }
 
-  // 4. Find subscriber_id — prefer lead's own, fallback to ContatoConta
-  let subscriberId = lead?.subscriber_id ?? null
-  if (!subscriberId && contato) {
-    const cc = await prisma.contatoConta.findFirst({
-      where: {
-        contato_id: contato.id,
-        conta_id: grupo.conta_manychat.id,
-        subscriber_id: { not: null },
-      },
-      select: { subscriber_id: true },
+  // 4 & 5. Apply Manychat tag for each conta in contas_monitoramento (best-effort, parallel)
+  // Use contas_monitoramento if available (multi-conta), fallback to legacy single conta.
+  const contasToTag = grupo.contas_monitoramento.length > 0
+    ? grupo.contas_monitoramento
+    : [{ conta_manychat: grupo.conta_manychat, tag_manychat_id: grupo.tag_manychat_id }]
+
+  const tagResults = await Promise.allSettled(
+    contasToTag.map(async (entry) => {
+      // Always use ContatoConta filtered by (contato_id, conta_id) — never Lead.subscriber_id
+      const cc = contato
+        ? await prisma.contatoConta.findFirst({
+            where: {
+              contato_id: contato.id,
+              conta_id: entry.conta_manychat.id,
+              subscriber_id: { not: null },
+            },
+            select: { subscriber_id: true },
+          })
+        : null
+      const subId = cc?.subscriber_id ?? null
+      if (!subId) return { ok: false, contaId: entry.conta_manychat.id, subscriberId: null, error: "subscriber_id não encontrado" }
+
+      const result = await addTag(entry.conta_manychat.api_key, subId, entry.tag_manychat_id)
+      console.log(`[Entradas] addTag conta=${entry.conta_manychat.id} subscriber=${subId} tag=${entry.tag_manychat_id} → ${result.ok ? "ok" : result.error}`)
+      return { ok: result.ok, contaId: entry.conta_manychat.id, subscriberId: subId, error: result.error ?? null }
     })
-    subscriberId = cc?.subscriber_id ?? null
+  )
+
+  const tagAplicada = tagResults.some((r) => r.status === "fulfilled" && r.value.ok)
+  const tagErro = tagResults
+    .filter((r) => r.status === "fulfilled" && !r.value.ok)
+    .map((r) => (r as PromiseFulfilledResult<{ error: string | null }>).value.error)
+    .filter(Boolean)
+    .join("; ") || null
+
+  if (!tagAplicada) {
+    console.warn(`[Entradas] Sem subscriber_id para telefone ${telefoneNorm} em nenhuma conta`)
   }
 
-  // 5. Apply Manychat tag (best-effort)
-  let tagAplicada = false
-  let tagErro: string | null = null
-
-  if (subscriberId) {
-    const result = await addTag(grupo.conta_manychat.api_key, subscriberId, grupo.tag_manychat_id)
-    tagAplicada = result.ok
-    tagErro = result.error ?? null
-    console.log(`[Entradas] addTag subscriber=${subscriberId} tag=${grupo.tag_manychat_id} → ${result.ok ? "ok" : result.error}`)
-  } else {
-    tagErro = "subscriber_id não encontrado — tag não aplicada"
-    console.warn(`[Entradas] Sem subscriber_id para telefone ${telefoneNorm}`)
-  }
+  // Use first conta's subscriber_id for EntradaGrupo.subscriber_id (backward compat)
+  const subscriberId = tagResults
+    .map((r) => r.status === "fulfilled" ? r.value.subscriberId : null)
+    .find((id) => id != null) ?? null
 
   // 6. Upsert EntradaGrupo (re-entry updates timestamp + tag status)
   await prisma.entradaGrupo.upsert({

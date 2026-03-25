@@ -129,10 +129,15 @@ export async function deletarInstancia(id: string) {
 export interface CriarGrupoParams {
   instancia_id: string
   campanha_id: string
-  conta_manychat_id: string
+  conta_manychat_id: string           // primeira conta (backward compat — required)
   nome_filtro: string
   tag_manychat_id: number
   tag_manychat_nome: string
+  contas?: Array<{                    // contas adicionais (opcional)
+    conta_id: string
+    tag_id: number
+    tag_nome: string
+  }>
 }
 
 export async function criarGrupo(data: CriarGrupoParams) {
@@ -151,12 +156,34 @@ export async function criarGrupo(data: CriarGrupoParams) {
     throw new ServiceError("conflict", "Já existe um grupo com este nome de filtro nesta instância.")
   }
 
+  const { contas, ...grupoData } = data
+
   const grupo = await prisma.grupoMonitoramento.create({
-    data,
+    data: grupoData,
     include: {
       campanha: { select: { id: true, nome: true } },
       conta_manychat: { select: { id: true, nome: true } },
     },
+  })
+
+  // Build the full list: primary conta + additional contas, deduped by conta_id
+  const allContas = [
+    { conta_id: data.conta_manychat_id, tag_id: data.tag_manychat_id, tag_nome: data.tag_manychat_nome },
+    ...(contas ?? []),
+  ]
+  const dedupedContas = allContas.filter(
+    (c, i, arr) => arr.findIndex((x) => x.conta_id === c.conta_id) === i
+  )
+
+  await prisma.grupoMonitoramentoConta.createMany({
+    data: dedupedContas.map((c) => ({
+      id: crypto.randomUUID(),
+      grupo_id: grupo.id,
+      conta_manychat_id: c.conta_id,
+      tag_manychat_id: c.tag_id,
+      tag_manychat_nome: c.tag_nome,
+    })),
+    skipDuplicates: true,
   })
 
   return { grupo, message: "Grupo configurado com sucesso." }

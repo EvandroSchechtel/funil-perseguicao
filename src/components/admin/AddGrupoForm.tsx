@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react"
 import {
   Search, ChevronDown, CheckCircle2, AlertCircle, Plus, Loader2,
-  Wifi, Tag, Info, RefreshCw,
+  Wifi, Tag, Info, RefreshCw, X,
 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -16,11 +16,13 @@ export interface GrupoConfig {
   instanciaNome: string
   grupoId: string
   grupoNome: string
-  contaManychatId: string
-  contaManychatNome: string
-  tagId: number
-  tagNome: string
   nomeFiltro: string
+  contas: Array<{
+    contaId: string
+    contaNome: string
+    tagId: number
+    tagNome: string
+  }>
 }
 
 interface InstanciaZApi { id: string; nome: string; instance_id: string; cliente_id?: string | null }
@@ -150,6 +152,7 @@ export function AddGrupoForm({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [newTagName, setNewTagName] = useState("")
   const [creatingTag, setCreatingTag] = useState(false)
+  const [contasAdicionadas, setContasAdicionadas] = useState<GrupoConfig["contas"]>([])
 
   async function fetchGroups(id: string) {
     if (!id || !accessToken) return
@@ -209,31 +212,49 @@ export function AddGrupoForm({
     finally { setCreatingTag(false) }
   }
 
-  function handleAdd() {
+  function handleAdicionarConta() {
+    const errs: Record<string, string> = {}
+    if (!contaId) errs.conta = "Selecione uma conta Manychat"
+    if (!tagId) errs.tag = "Selecione uma tag"
+    if (Object.keys(errs).length > 0) { setErrors(errs); return }
+    // Check for duplicate conta
+    if (contasAdicionadas.some((c) => c.contaId === contaId)) {
+      setErrors({ conta: "Esta conta já foi adicionada" })
+      return
+    }
+    setErrors({})
+
+    const conta = contas.find((c) => c.id === contaId)
+    const tag = tags.find((t) => String(t.id) === tagId)
+
+    setContasAdicionadas((prev) => [
+      ...prev,
+      { contaId, contaNome: conta?.nome || "", tagId: Number(tagId), tagNome: tag?.name || tagNome },
+    ])
+    setContaId(""); setTags([]); setTagId(""); setTagNome(""); setNewTagName("")
+  }
+
+  function handleSalvarGrupo() {
     const errs: Record<string, string> = {}
     if (!instanciaId) errs.instancia = "Selecione uma instância"
     if (!grupoId) errs.grupo = "Selecione um grupo"
-    if (!contaId) errs.conta = "Selecione uma conta Manychat"
-    if (!tagId) errs.tag = "Selecione uma tag"
     if (!nomeFiltro.trim()) errs.filtro = "Informe o nome do grupo para filtro"
+    if (contasAdicionadas.length === 0) errs.contas = "Adicione pelo menos uma conta Manychat"
     if (Object.keys(errs).length > 0) { setErrors(errs); return }
     setErrors({})
 
     const instancia = instancias.find((i) => i.id === instanciaId)
-    const conta = contas.find((c) => c.id === contaId)
-    const tag = tags.find((t) => String(t.id) === tagId)
 
     onAdd({
       instanciaId, instanciaNome: instancia?.nome || "",
       grupoId, grupoNome,
-      contaManychatId: contaId, contaManychatNome: conta?.nome || "",
-      tagId: Number(tagId), tagNome: tag?.name || tagNome,
       nomeFiltro: nomeFiltro.trim(),
+      contas: contasAdicionadas,
     })
 
     setInstanciaId(""); setZapiGroups([]); setGrupoId(""); setGrupoNome("")
     setContaId(""); setTags([]); setTagId(""); setTagNome(""); setNomeFiltro("")
-    setNewTagName("")
+    setNewTagName(""); setContasAdicionadas([])
   }
 
   if (instancias.length === 0) {
@@ -402,9 +423,51 @@ export function AddGrupoForm({
         )}
       </div>
 
-      <Button type="button" onClick={handleAdd} className="w-full" variant="outline">
+      {/* Adicionar conta button */}
+      <Button type="button" onClick={handleAdicionarConta} className="w-full" variant="outline">
         <Plus className="w-4 h-4" />
-        Adicionar grupo
+        Adicionar conta
+      </Button>
+
+      {/* Lista de contas adicionadas */}
+      {contasAdicionadas.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[#3F3F58] text-[10px] font-semibold uppercase tracking-widest flex items-center gap-1.5">
+            <Tag className="w-3 h-3" />
+            Contas configuradas ({contasAdicionadas.length})
+          </p>
+          {contasAdicionadas.map((c) => (
+            <div key={c.contaId} className="flex items-center gap-2 px-3 py-2 bg-[#13131F] border border-[#1C1C2C] rounded-lg">
+              <span className="w-2 h-2 rounded-full bg-[#25D366] shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="text-xs text-[#EEEEF5] truncate block">{c.contaNome}</span>
+                <span className="text-[10px] text-[#3F3F58] truncate block">{c.tagNome}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setContasAdicionadas((prev) => prev.filter((x) => x.contaId !== c.contaId))}
+                className="w-6 h-6 flex items-center justify-center rounded text-[#3F3F58] hover:text-[#F87171] transition-colors shrink-0"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+          {errors.contas && <p className="text-xs text-[#F87171]">{errors.contas}</p>}
+        </div>
+      )}
+      {errors.contas && contasAdicionadas.length === 0 && (
+        <p className="text-xs text-[#F87171]">{errors.contas}</p>
+      )}
+
+      {/* Salvar grupo */}
+      <Button
+        type="button"
+        onClick={handleSalvarGrupo}
+        className="w-full"
+        disabled={contasAdicionadas.length === 0 || !grupoId}
+      >
+        <CheckCircle2 className="w-4 h-4" />
+        Salvar grupo
       </Button>
     </div>
   )

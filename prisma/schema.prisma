@@ -167,10 +167,11 @@ model ContaManychat {
   updated_at          DateTime  @updatedAt
   deleted_at          DateTime?
 
-  webhook_flows        WebhookFlow[]
-  contatos_vinculados  ContatoConta[]
-  grupos_monitoramento GrupoMonitoramento[]
-  uso_diario           ContaUsoDiario[]
+  webhook_flows               WebhookFlow[]
+  contatos_vinculados         ContatoConta[]
+  grupos_monitoramento        GrupoMonitoramento[]
+  uso_diario                  ContaUsoDiario[]
+  grupos_monitoramento_contas GrupoMonitoramentoConta[]
 
   @@map("contas_manychat")
 }
@@ -387,10 +388,25 @@ model GrupoMonitoramento {
   created_at          DateTime      @default(now())
   updated_at          DateTime      @updatedAt
 
-  entradas EntradaGrupo[]
-  saidas   SaidaGrupo[]
+  entradas             EntradaGrupo[]
+  saidas               SaidaGrupo[]
+  contas_monitoramento GrupoMonitoramentoConta[]
 
   @@map("grupos_monitoramento")
+}
+
+model GrupoMonitoramentoConta {
+  id                String             @id @default(uuid())
+  grupo_id          String
+  grupo             GrupoMonitoramento @relation(fields: [grupo_id], references: [id], onDelete: Cascade)
+  conta_manychat_id String
+  conta_manychat    ContaManychat      @relation(fields: [conta_manychat_id], references: [id])
+  tag_manychat_id   Int
+  tag_manychat_nome String
+  created_at        DateTime           @default(now())
+
+  @@unique([grupo_id, conta_manychat_id])
+  @@map("grupos_monitoramento_contas")
 }
 
 model EntradaGrupo {
