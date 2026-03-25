@@ -20,6 +20,8 @@ export interface EscanearResult {
     acao: "criado" | "existente" | "sem_match"
     score: number
     templateNomeFiltro: string | null
+    grupoId: string | null
+    leads_count: number
   }>
 }
 
@@ -166,30 +168,41 @@ export async function escanearEAutoVincular(
     if (r.criado) {
       result.novos_vinculados++
       result.detalhes.push({
-        nome: g.name,
-        grupoWaId: g.phone,
-        acao: "criado",
-        score: r.score,
-        templateNomeFiltro: r.templateNomeFiltro,
+        nome: g.name, grupoWaId: g.phone, acao: "criado",
+        score: r.score, templateNomeFiltro: r.templateNomeFiltro,
+        grupoId: r.grupoId, leads_count: 0,
       })
     } else if (r.grupoId) {
       result.ja_configurados++
       result.detalhes.push({
-        nome: g.name,
-        grupoWaId: g.phone,
-        acao: "existente",
-        score: r.score,
-        templateNomeFiltro: r.templateNomeFiltro,
+        nome: g.name, grupoWaId: g.phone, acao: "existente",
+        score: r.score, templateNomeFiltro: r.templateNomeFiltro,
+        grupoId: r.grupoId, leads_count: 0,
       })
     } else {
       result.sem_match++
       result.detalhes.push({
-        nome: g.name,
-        grupoWaId: g.phone,
-        acao: "sem_match",
-        score: r.score,
-        templateNomeFiltro: null,
+        nome: g.name, grupoWaId: g.phone, acao: "sem_match",
+        score: r.score, templateNomeFiltro: null,
+        grupoId: null, leads_count: 0,
       })
+    }
+  }
+
+  // Batch-fetch leads counts for all configured groups in a single query
+  const configuredIds = result.detalhes
+    .filter((d) => d.grupoId)
+    .map((d) => d.grupoId!)
+
+  if (configuredIds.length > 0) {
+    const counts = await prisma.entradaGrupo.groupBy({
+      by: ["grupo_id"],
+      where: { grupo_id: { in: configuredIds } },
+      _count: { grupo_id: true },
+    })
+    const countMap = new Map(counts.map((c) => [c.grupo_id, c._count.grupo_id]))
+    for (const d of result.detalhes) {
+      if (d.grupoId) d.leads_count = countMap.get(d.grupoId) ?? 0
     }
   }
 

@@ -8,7 +8,7 @@ import {
   Plus, Trash2, ToggleLeft, ToggleRight, Info, GripVertical, FlaskConical,
   Building2, Calendar, ChevronDown, ChevronRight, PauseCircle, PlayCircle,
   ListOrdered, ChevronsRight, DoorOpen, Tag, ExternalLink, Smartphone, Save,
-  ScanSearch,
+  ScanSearch, MessageSquare,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
@@ -92,6 +92,18 @@ interface LeadItem {
 }
 
 type TesteResultado = { ok: true; lead_id: string } | { ok: false; message: string } | null
+
+interface GrupoMonitoramento {
+  id: string
+  nome_filtro: string
+  grupo_wa_id: string | null
+  tag_manychat_nome: string
+  status: string
+  created_at: string
+  instancia: { id: string; nome: string }
+  conta_manychat: { id: string; nome: string }
+  _count: { entradas: number }
+}
 
 interface VarreduraResult {
   grupos_varridos: number
@@ -178,6 +190,11 @@ export default function CampanhaDetailPage() {
   // Varredura de grupos
   const [varrendo, setVarrendo] = useState(false)
   const [varreduraResult, setVarreduraResult] = useState<VarreduraResult | null>(null)
+
+  // Grupos monitoramento
+  const [grupos, setGrupos] = useState<GrupoMonitoramento[]>([])
+  const [loadingGrupos, setLoadingGrupos] = useState(false)
+  const [deletingGrupo, setDeletingGrupo] = useState<string | null>(null)
 
   // Pause actions
   const [pauseLoading, setPauseLoading] = useState<string | null>(null)
@@ -402,6 +419,38 @@ export default function CampanhaDetailPage() {
     } finally {
       setTesteLoading(false)
     }
+  }
+
+  // ── Grupos monitoramento ────────────────────────────────────────────────────
+
+  const fetchGrupos = useCallback(async () => {
+    if (!accessToken || !id) return
+    setLoadingGrupos(true)
+    try {
+      const res = await fetch(`/api/admin/campanhas/${id}/grupos`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      const data = await res.json()
+      setGrupos(data.grupos || [])
+    } catch { /* silent */ }
+    finally { setLoadingGrupos(false) }
+  }, [accessToken, id])
+
+  useEffect(() => { fetchGrupos() }, [fetchGrupos])
+
+  async function handleDeleteGrupo(grupo: GrupoMonitoramento) {
+    if (!accessToken) return
+    setDeletingGrupo(grupo.id)
+    try {
+      const res = await fetch(`/api/admin/zapi/instancias/${grupo.instancia.id}/grupos/${grupo.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      const data = await res.json()
+      if (res.ok) { toast.success(data.message || "Grupo removido."); fetchGrupos() }
+      else toast.error(data.message || "Erro ao remover grupo.")
+    } catch { toast.error("Erro de conexão.") }
+    finally { setDeletingGrupo(null) }
   }
 
   // ── Varredura de grupos ─────────────────────────────────────────────────────
@@ -731,6 +780,83 @@ export default function CampanhaDetailPage() {
               )}
             </div>
           </section>
+
+          {/* ── Seção: Grupos WhatsApp ──────────────────────────────────────── */}
+          {campanha?.instancia_zapi && (
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold flex items-center gap-1.5">
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  Grupos WhatsApp{grupos.length > 0 && <span className="text-[#3F3F58] normal-case">({grupos.length})</span>}
+                </p>
+                <Link
+                  href={`/admin/zapi/${campanha.instancia_zapi.id}`}
+                  className="text-xs text-[#25D366] hover:text-[#1DB954] flex items-center gap-1 transition-colors"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  Gerenciar na instância
+                </Link>
+              </div>
+
+              {loadingGrupos ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin w-4 h-4 border-2 border-[#25D366] border-t-transparent rounded-full" />
+                </div>
+              ) : grupos.length === 0 ? (
+                <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl flex flex-col items-center justify-center py-8 gap-2">
+                  <MessageSquare className="w-5 h-5 text-[#3F3F58]" />
+                  <p className="text-[#5A5A72] text-sm">Nenhum grupo monitorado nesta campanha</p>
+                  <Link
+                    href={`/admin/zapi/${campanha.instancia_zapi.id}`}
+                    className="text-xs text-[#25D366] hover:text-[#1DB954] flex items-center gap-1 mt-1 transition-colors"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Adicionar grupo na instância Z-API
+                  </Link>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {grupos.map((g) => (
+                    <div
+                      key={g.id}
+                      className="bg-[#16161E] border border-[#1E1E2A] rounded-xl px-4 py-3 flex items-center gap-3"
+                    >
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${g.status === "ativo" ? "bg-[#25D366]" : "bg-[#3F3F58]"}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[#EEEEF5] text-sm font-medium truncate">{g.nome_filtro}</p>
+                        <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                          <span className="text-[#5A5A72] text-xs flex items-center gap-1">
+                            <Building2 className="w-2.5 h-2.5" />
+                            {g.conta_manychat.nome}
+                          </span>
+                          <span className="text-[#5A5A72] text-xs flex items-center gap-1">
+                            <Tag className="w-2.5 h-2.5" />
+                            {g.tag_manychat_nome}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-[#EEEEF5] text-sm font-bold">{g._count.entradas}</p>
+                        <p className="text-[#3F3F58] text-[10px] uppercase">entradas</p>
+                      </div>
+                      {canWrite && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteGrupo(g)}
+                          disabled={deletingGrupo === g.id}
+                          className="w-7 h-7 shrink-0 flex items-center justify-center rounded-lg text-[#3F3F58] hover:text-[#F87171] hover:bg-[#F87171]/10 transition-all disabled:opacity-50"
+                        >
+                          {deletingGrupo === g.id
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <Trash2 className="w-3.5 h-3.5" />}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
 
           {/* ── Seção: Webhooks ─────────────────────────────────────────────── */}
           <section className="space-y-3">

@@ -52,6 +52,8 @@ interface EscanearDetalhe {
   acao: "criado" | "existente" | "sem_match"
   score: number
   templateNomeFiltro: string | null
+  grupoId: string | null
+  leads_count: number
 }
 
 interface EscanearResult {
@@ -206,6 +208,7 @@ export default function InstanciaDetailPage() {
   const [deletingGrupo, setDeletingGrupo] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState<EscanearResult | null>(null)
+  const [scanFilter, setScanFilter] = useState("")
 
   // Entradas
   const [entradas, setEntradas] = useState<EntradaGrupo[]>([])
@@ -567,7 +570,7 @@ export default function InstanciaDetailPage() {
                 <div className="flex items-center gap-1.5">
                   <Megaphone className="w-3.5 h-3.5 text-[#7F7F9E]" />
                   <span className="text-xs text-[#9898B0]">
-                    {new Set(inst.grupos.map((g) => g.campanha.id)).size} campanhas
+                    {new Set(inst.grupos.map((g) => g.campanha?.id).filter(Boolean)).size} campanhas
                   </span>
                 </div>
               </div>
@@ -837,12 +840,12 @@ export default function InstanciaDetailPage() {
                               {/* Campanha */}
                               <div className="flex items-center gap-1">
                                 <Megaphone className="w-3 h-3 text-[#3F3F58]" />
-                                <span className="text-[#7F7F9E] text-xs">{g.campanha.nome}</span>
+                                <span className="text-[#7F7F9E] text-xs">{g.campanha?.nome ?? "—"}</span>
                               </div>
                               {/* Conta */}
                               <div className="flex items-center gap-1">
                                 <Building2 className="w-3 h-3 text-[#3F3F58]" />
-                                <span className="text-[#7F7F9E] text-xs">{g.conta_manychat.nome}</span>
+                                <span className="text-[#7F7F9E] text-xs">{g.conta_manychat?.nome ?? "—"}</span>
                               </div>
                               {/* Tag */}
                               <div className="flex items-center gap-1">
@@ -1058,7 +1061,7 @@ export default function InstanciaDetailPage() {
       </div>
 
       {/* Scan result modal */}
-      <Dialog open={!!scanResult} onOpenChange={() => setScanResult(null)}>
+      <Dialog open={!!scanResult} onOpenChange={() => { setScanResult(null); setScanFilter("") }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Resultado do Escaneamento</DialogTitle>
@@ -1085,11 +1088,25 @@ export default function InstanciaDetailPage() {
                 </div>
               </div>
 
+              {/* Name filter */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#3F3F58]" />
+                <input
+                  type="text"
+                  value={scanFilter}
+                  onChange={(e) => setScanFilter(e.target.value)}
+                  placeholder="Filtrar por nome…"
+                  className="w-full h-9 pl-9 pr-3 rounded-lg border border-[#1C1C2C] bg-[#0A0A12] text-sm text-[#EEEEF5] placeholder-[#3F3F58] focus:outline-none focus:border-[#25D366]/40 transition-colors"
+                />
+              </div>
+
               {/* Detail list */}
               <div className="max-h-64 overflow-y-auto space-y-1.5">
-                {scanResult.detalhes.map((d) => (
+                {scanResult.detalhes
+                  .filter((d) => !scanFilter || d.nome.toLowerCase().includes(scanFilter.toLowerCase()))
+                  .map((d, i) => (
                   <div
-                    key={`${d.grupoWaId}-${d.acao}`}
+                    key={`${d.grupoWaId || i}-${d.acao}`}
                     className="flex items-start gap-3 bg-[#0A0A12] border border-[#1C1C2C] rounded-lg px-3 py-2.5"
                   >
                     <div className="shrink-0 mt-0.5">
@@ -1109,9 +1126,16 @@ export default function InstanciaDetailPage() {
                         </p>
                       )}
                     </div>
-                    <span className="shrink-0 text-[10px] font-mono text-[#3F3F58]">
-                      {(d.score * 100).toFixed(0)}%
-                    </span>
+                    <div className="shrink-0 flex items-center gap-2">
+                      {d.leads_count > 0 && (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-[#25D366]/10 text-[#25D366]">
+                          {d.leads_count} leads
+                        </span>
+                      )}
+                      <span className="text-[10px] font-mono text-[#3F3F58]">
+                        {(d.score * 100).toFixed(0)}%
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1119,7 +1143,7 @@ export default function InstanciaDetailPage() {
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setScanResult(null)}>Fechar</Button>
+            <Button variant="outline" onClick={() => { setScanResult(null); setScanFilter("") }}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
