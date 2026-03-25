@@ -24,9 +24,9 @@ interface GrupoMonitoramento {
   tag_manychat_nome: string
   status: "ativo" | "inativo"
   created_at: string
-  campanha: { id: string; nome: string }
-  conta_manychat: { id: string; nome: string }
-  _count: { entradas: number }
+  campanha: { id: string; nome: string } | null
+  conta_manychat: { id: string; nome: string } | null
+  _count: { entradas: number } | null
 }
 
 interface Instancia {
@@ -931,7 +931,7 @@ export default function InstanciaDetailPage() {
                               onClick={() => { setGrupoFiltro(g.id); setActiveTab("entradas") }}
                               className="text-right hover:text-[#25D366] transition-colors"
                             >
-                              <p className="text-[#EEEEF5] text-sm font-bold">{g._count.entradas}</p>
+                              <p className="text-[#EEEEF5] text-sm font-bold">{g._count?.entradas ?? 0}</p>
                               <p className="text-[#3F3F58] text-[10px] uppercase tracking-wider">entradas</p>
                             </button>
 
