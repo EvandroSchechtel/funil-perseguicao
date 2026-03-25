@@ -105,7 +105,7 @@ function SearchableSelect<T>({
   const ref = useRef<HTMLDivElement>(null)
 
   const selected = options.find((o) => getKey(o) === value)
-  const filtered = options.filter((o) => getLabel(o).toLowerCase().includes(search.toLowerCase()))
+  const filtered = options.filter((o) => (getLabel(o) ?? "").toLowerCase().includes(search.toLowerCase()))
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -262,14 +262,13 @@ export default function InstanciaDetailPage() {
 
   useEffect(() => { fetchInst() }, [fetchInst])
 
-  async function fetchZapiGroups() {
+  async function fetchZapiGroups(forceRefresh = false) {
     setZapiGroupsLoading(true)
     try {
-      const res = await fetch(`/api/admin/zapi/instancias/${id}/detectar-grupos`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      })
+      const url = `/api/admin/zapi/instancias/${id}/detectar-grupos${forceRefresh ? "?refresh=true" : ""}`
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
       const data = await res.json()
-      setZapiGroups(data.grupos || [])
+      setZapiGroups((data.grupos || []).filter((g: ZApiGroup) => g.name?.trim()))
     } catch {
       toast.error("Erro ao buscar grupos do Z-API.")
     } finally {
@@ -740,7 +739,7 @@ export default function InstanciaDetailPage() {
                       </label>
                       <button
                         type="button"
-                        onClick={fetchZapiGroups}
+                        onClick={() => fetchZapiGroups(true)}
                         className="text-[#25D366] hover:text-[#1DB954] text-[10px] font-medium flex items-center gap-1 transition-colors"
                       >
                         <RefreshCw className={`w-2.5 h-2.5 ${zapiGroupsLoading ? "animate-spin" : ""}`} />

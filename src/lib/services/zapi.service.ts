@@ -233,6 +233,31 @@ export async function listarSaidas(instanciaId: string, grupoId?: string) {
   })
 }
 
+// ── Cache de Grupos WhatsApp ────────────────────────────────────────────────────
+
+/**
+ * Persists the list of WhatsApp groups for an instance to the database cache.
+ * Called after every Z-API fetch (detectar-grupos refresh or escanear-grupos).
+ * Groups with empty/null names are discarded.
+ */
+export async function sincronizarGruposCache(
+  instanciaId: string,
+  grupos: Array<{ phone: string; name: string }>
+) {
+  const validos = grupos.filter((g) => g.name?.trim())
+  await prisma.grupoWaCache.deleteMany({ where: { instancia_id: instanciaId } })
+  if (validos.length === 0) return
+  await prisma.grupoWaCache.createMany({
+    data: validos.map((g) => ({
+      id: crypto.randomUUID(),
+      instancia_id: instanciaId,
+      grupo_wa_id: g.phone,
+      nome: g.name.trim(),
+    })),
+    skipDuplicates: true,
+  })
+}
+
 export async function listarEntradas(instanciaId: string, grupoId?: string) {
   return prisma.entradaGrupo.findMany({
     where: {

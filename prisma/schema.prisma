@@ -369,6 +369,7 @@ model InstanciaZApi {
   grupos          GrupoMonitoramento[]
   clientes_notif  Cliente[]            @relation("ClienteInstanciaNotif")
   campanhas       Campanha[]
+  grupos_cache    GrupoWaCache[]
 
   @@map("instancias_zapi")
 }
@@ -408,6 +409,18 @@ model GrupoMonitoramentoConta {
 
   @@unique([grupo_id, conta_manychat_id])
   @@map("grupos_monitoramento_contas")
+}
+
+model GrupoWaCache {
+  id           String        @id @default(uuid())
+  instancia_id String
+  instancia    InstanciaZApi @relation(fields: [instancia_id], references: [id])
+  grupo_wa_id  String
+  nome         String
+  synced_at    DateTime      @default(now())
+
+  @@unique([instancia_id, grupo_wa_id])
+  @@map("grupos_wa_cache")
 }
 
 model EntradaGrupo {

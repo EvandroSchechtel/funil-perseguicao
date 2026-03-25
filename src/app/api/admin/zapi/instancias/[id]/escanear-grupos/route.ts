@@ -4,6 +4,7 @@ import { ok, forbidden, serverError, handleServiceError } from "@/lib/api/respon
 import { prisma } from "@/lib/db/prisma"
 import { getGroups } from "@/lib/zapi/client"
 import { escanearEAutoVincular } from "@/lib/services/grupo-auto-vincular.service"
+import { sincronizarGruposCache } from "@/lib/services/zapi.service"
 
 // Allows time for paginated group fetching across large accounts
 export const maxDuration = 60
@@ -27,6 +28,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     if (!inst) return (await import("@/lib/api/response")).notFound("Instância não encontrada.")
 
     const grupos = await getGroups(inst.instance_id, inst.token, inst.client_token)
+    await sincronizarGruposCache(id, grupos)
     const result = await escanearEAutoVincular(id, grupos)
 
     return ok(result)
