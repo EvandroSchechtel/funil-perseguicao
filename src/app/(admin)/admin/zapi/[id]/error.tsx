@@ -34,6 +34,11 @@ export default function ZApiError({
           <p className="text-[#F87171] text-sm font-mono bg-[#0A0A12] border border-[#1C1C2C] rounded-lg px-4 py-3 text-left break-all">
             {error.message || "Erro desconhecido"}
           </p>
+          {error.stack && (
+            <p className="text-[#3F3F58] text-[10px] font-mono bg-[#0A0A12] border border-[#1C1C2C] rounded-lg px-4 py-3 text-left whitespace-pre-wrap break-all mt-2 max-h-48 overflow-y-auto">
+              {error.stack}
+            </p>
+          )}
           {error.digest && (
             <p className="text-[#3F3F58] text-xs">digest: {error.digest}</p>
           )}
