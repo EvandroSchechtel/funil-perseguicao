@@ -203,8 +203,9 @@ model Campanha {
   usuario     Usuario   @relation(fields: [created_by], references: [id])
   cliente_id  String?   @db.Uuid
   cliente     Cliente?  @relation(fields: [cliente_id], references: [id])
-  instancia_zapi_id String?
-  instancia_zapi    InstanciaZApi? @relation(fields: [instancia_zapi_id], references: [id])
+  instancia_zapi_id   String?
+  instancia_zapi      InstanciaZApi? @relation(fields: [instancia_zapi_id], references: [id])
+  ultima_varredura_at DateTime?      // trava 24h para varredura de grupos
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
   deleted_at  DateTime?

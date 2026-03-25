@@ -8,6 +8,7 @@ import {
   Plus, Trash2, ToggleLeft, ToggleRight, Info, GripVertical, FlaskConical,
   Building2, Calendar, ChevronDown, ChevronRight, PauseCircle, PlayCircle,
   ListOrdered, ChevronsRight, DoorOpen, Tag, ExternalLink, Smartphone, Save,
+  ScanSearch,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
@@ -38,6 +39,7 @@ interface CampanhaData {
   usuario: { nome: string }
   cliente: { id: string; nome: string } | null
   instancia_zapi: { id: string; nome: string; status: string } | null
+  ultima_varredura_at: string | null
 }
 
 interface InstanciaOption {
@@ -90,6 +92,17 @@ interface LeadItem {
 }
 
 type TesteResultado = { ok: true; lead_id: string } | { ok: false; message: string } | null
+
+interface VarreduraResult {
+  grupos_varridos: number
+  grupos_sem_id: number
+  total_membros: number
+  leads_encontrados: number
+  ja_processados: number
+  tags_aplicadas: number
+  erros: number
+  proxima_varredura_em: string
+}
 
 const LEADS_PREVIEW = 5
 
@@ -161,6 +174,10 @@ export default function CampanhaDetailPage() {
   const [loadingLeads, setLoadingLeads] = useState(false)
   const [leadsTotal, setLeadsTotal] = useState(0)
   const [leadsExpanded, setLeadsExpanded] = useState(false)
+
+  // Varredura de grupos
+  const [varrendo, setVarrendo] = useState(false)
+  const [varreduraResult, setVarreduraResult] = useState<VarreduraResult | null>(null)
 
   // Pause actions
   const [pauseLoading, setPauseLoading] = useState<string | null>(null)
@@ -384,6 +401,31 @@ export default function CampanhaDetailPage() {
       setTesteResultado({ ok: false, message: "Erro de rede." })
     } finally {
       setTesteLoading(false)
+    }
+  }
+
+  // ── Varredura de grupos ─────────────────────────────────────────────────────
+
+  async function handleVarredura() {
+    if (!accessToken || !id) return
+    setVarrendo(true)
+    setVarreduraResult(null)
+    try {
+      const res = await fetch(`/api/admin/campanhas/${id}/varredura-grupos`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setVarreduraResult(data.resultado)
+        fetchCampanha()
+      } else {
+        toast.error(data.message || "Erro na varredura.")
+      }
+    } catch {
+      toast.error("Erro de conexão.")
+    } finally {
+      setVarrendo(false)
     }
   }
 
@@ -647,6 +689,45 @@ export default function CampanhaDetailPage() {
                   Vinculada: <span className="text-[#25D366]">{campanha.instancia_zapi.nome}</span>
                   {campanha.instancia_zapi.status !== "ativo" && <span className="text-[#F87171] ml-1">(inativa)</span>}
                 </p>
+              )}
+
+              {/* Varredura de grupos */}
+              {campanha?.instancia_zapi && canWrite && (
+                <div className="mt-4 pt-4 border-t border-[#1E1E2A]">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-[#C4C4D4]">Varredura de Grupos</p>
+                      <p className="text-xs text-[#5A5A72] mt-0.5">
+                        {campanha.ultima_varredura_at
+                          ? `Última: ${fmtDt(campanha.ultima_varredura_at)}`
+                          : "Nunca varrido — verifique quem já está nos grupos"}
+                      </p>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={handleVarredura} loading={varrendo} disabled={varrendo}>
+                      <ScanSearch className="w-3.5 h-3.5 mr-1.5" />
+                      {varrendo ? "Varrendo…" : "Varrer Grupos"}
+                    </Button>
+                  </div>
+                  {varreduraResult && (
+                    <div className="mt-3 p-3 bg-[#0A1A12] border border-[#25D366]/30 rounded-lg text-xs">
+                      <p className="text-[#25D366] font-semibold mb-2">Varredura concluída</p>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[#8B8B9E]">
+                        <span>Grupos varridos: <strong className="text-[#EEEEF5]">{varreduraResult.grupos_varridos}</strong></span>
+                        <span>Membros lidos: <strong className="text-[#EEEEF5]">{varreduraResult.total_membros}</strong></span>
+                        <span>Leads encontrados: <strong className="text-[#EEEEF5]">{varreduraResult.leads_encontrados}</strong></span>
+                        <span>Tags aplicadas: <strong className="text-[#25D366]">{varreduraResult.tags_aplicadas}</strong></span>
+                        <span>Já processados: <strong className="text-[#5A5A72]">{varreduraResult.ja_processados}</strong></span>
+                        {varreduraResult.grupos_sem_id > 0 && (
+                          <span>Grupos sem ID WA: <strong className="text-[#F59E0B]">{varreduraResult.grupos_sem_id}</strong></span>
+                        )}
+                        {varreduraResult.erros > 0 && (
+                          <span>Erros: <strong className="text-[#F87171]">{varreduraResult.erros}</strong></span>
+                        )}
+                      </div>
+                      <p className="text-[#3F3F58] mt-2">Próxima varredura disponível em 24h</p>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </section>

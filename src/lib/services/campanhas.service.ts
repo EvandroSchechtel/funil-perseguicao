@@ -79,6 +79,7 @@ export async function buscarCampanha(id: string) {
         usuario: { select: { nome: true } },
         cliente: { select: { id: true, nome: true } },
         instancia_zapi: { select: { id: true, nome: true, status: true } },
+        ultima_varredura_at: true,
         _count: { select: { webhooks: true, leads: true } },
       },
     }),
