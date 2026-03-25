@@ -270,7 +270,7 @@ export default function EditarWebhookPage() {
                                 className="text-[#C4C4D4] text-sm font-medium cursor-pointer hover:text-[#F1F1F3] transition-colors"
                                 onClick={() => setEditFlowDialog(flow)}
                               >
-                                {flow.conta?.nome ?? "Webhook externo"}
+                                {flow.conta?.nome ?? (flow.flow_nome || "Webhook externo")}
                               </p>
                               <p className="text-[#5A5A72] text-xs font-mono mt-0.5">
                                 {flow.tipo === "webhook"
@@ -446,7 +446,7 @@ export default function EditarWebhookPage() {
                 <div className="bg-[#111118] border border-[#1E1E2A] rounded-lg px-4 py-3">
                   <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold mb-1">Flow que receberá</p>
                   <p className="text-[#C4C4D4] text-sm font-medium">
-                    {activeFlows[0].conta?.nome ?? "Webhook externo"}
+                    {activeFlows[0].conta?.nome ?? (activeFlows[0].flow_nome || "Webhook externo")}
                   </p>
                   <p className="text-[#5A5A72] text-xs font-mono mt-0.5">
                     {activeFlows[0].flow_nome || activeFlows[0].webhook_url || activeFlows[0].flow_ns || "—"}

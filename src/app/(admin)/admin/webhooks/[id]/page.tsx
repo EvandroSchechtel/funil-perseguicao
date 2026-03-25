@@ -28,6 +28,7 @@ interface Flow {
   ordem: number
   total_enviados: number
   status: "ativo" | "inativo"
+  limite_diario: number | null
   tag_manychat_id: number | null
   tag_manychat_nome: string | null
   conta: { id: string; nome: string; page_name: string | null } | null
@@ -404,7 +405,7 @@ export default function WebhookDetailPage() {
                   <div key={flow.id} className="flex items-center gap-3 px-5 py-3">
                     <GripVertical className="w-4 h-4 text-[#2A2A3A] shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-[#C4C4D4] text-sm font-medium">{flow.conta?.nome ?? "Webhook externo"}</p>
+                      <p className="text-[#C4C4D4] text-sm font-medium">{flow.conta?.nome ?? (flow.flow_nome || "Webhook externo")}</p>
                       <p className="text-[#5A5A72] text-xs font-mono">
                         {flow.tipo === "webhook"
                           ? (flow.webhook_url ? truncate(flow.webhook_url, 50) : "—")
@@ -589,8 +590,8 @@ export default function WebhookDetailPage() {
                             {/* Flow / Conta */}
                             {lead.webhook_flow && (
                               <p className="text-[#5A5A72] text-xs">
-                                {lead.webhook_flow.conta?.nome ?? "Webhook externo"}
-                                {lead.webhook_flow.flow_nome && <span className="text-[#3F3F58]"> · {lead.webhook_flow.flow_nome}</span>}
+                                {lead.webhook_flow.conta?.nome ?? (lead.webhook_flow.flow_nome || "Webhook externo")}
+                                {lead.webhook_flow.conta && lead.webhook_flow.flow_nome && <span className="text-[#3F3F58]"> · {lead.webhook_flow.flow_nome}</span>}
                               </p>
                             )}
 
