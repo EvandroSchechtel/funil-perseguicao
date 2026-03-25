@@ -5,6 +5,9 @@ import { prisma } from "@/lib/db/prisma"
 import { getGroups } from "@/lib/zapi/client"
 import { escanearEAutoVincular } from "@/lib/services/grupo-auto-vincular.service"
 
+// Allows time for paginated group fetching across large accounts
+export const maxDuration = 60
+
 type Ctx = { params: Promise<{ id: string }> }
 
 // POST /api/admin/zapi/instancias/[id]/escanear-grupos

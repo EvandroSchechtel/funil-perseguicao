@@ -60,6 +60,13 @@ export async function tentarAutoVincularGrupo(
       t.nome_filtro.toLowerCase() === grupoNome.toLowerCase()
   )
   if (existing) {
+    // Back-fill grupo_wa_id if it wasn't set yet
+    if (!existing.grupo_wa_id && grupoWaId) {
+      await prisma.grupoMonitoramento.update({
+        where: { id: existing.id },
+        data: { grupo_wa_id: grupoWaId },
+      })
+    }
     return {
       criado: false,
       grupoId: existing.id,

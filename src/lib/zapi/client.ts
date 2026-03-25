@@ -18,26 +18,40 @@ export interface ZApiGroup {
 
 /**
  * Returns all WhatsApp groups from the Z-API instance.
+ * Paginates /chats until all groups are fetched (Z-API returns chunks of pageSize).
  */
 export async function getGroups(
   instanceId: string,
   token: string,
   clientToken: string
 ): Promise<ZApiGroup[]> {
-  const { signal, clear } = withTimeout(12000)
-  try {
-    const res = await fetch(zapiUrl(instanceId, token, "/chats"), {
-      headers: { "Client-Token": clientToken },
-      signal,
-    })
-    clear()
-    if (!res.ok) return []
-    const data: ZApiGroup[] = await res.json().catch(() => [])
-    return Array.isArray(data) ? data.filter((c) => c.isGroup) : []
-  } catch {
-    clear()
-    return []
+  const allGroups: ZApiGroup[] = []
+  const pageSize = 100
+  let page = 1
+
+  while (true) {
+    const { signal, clear } = withTimeout(15000)
+    let data: ZApiGroup[]
+    try {
+      const res = await fetch(
+        zapiUrl(instanceId, token, `/chats?page=${page}&pageSize=${pageSize}`),
+        { headers: { "Client-Token": clientToken }, signal }
+      )
+      clear()
+      if (!res.ok) break
+      data = await res.json().catch(() => [])
+    } catch {
+      clear()
+      break
+    }
+
+    if (!Array.isArray(data) || data.length === 0) break
+    allGroups.push(...data.filter((c) => c.isGroup))
+    if (data.length < pageSize) break  // last page
+    page++
   }
+
+  return allGroups
 }
 
 export interface ZApiGroupMetadata {
