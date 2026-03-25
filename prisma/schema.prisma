@@ -252,6 +252,7 @@ model WebhookFlow {
   status            Status         @default(ativo)
   tag_manychat_id   Int?
   tag_manychat_nome String?
+  limite_diario     Int?           // null = sem limite por flow
   created_at        DateTime       @default(now())
   updated_at        DateTime       @updatedAt
   deleted_at        DateTime?

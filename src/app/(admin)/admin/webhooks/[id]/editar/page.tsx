@@ -4,12 +4,13 @@ import React, { useEffect, useState, useCallback } from "react"
 import { useParams } from "next/navigation"
 import {
   Plus, Trash2, ToggleLeft, ToggleRight, GripVertical, Info,
-  FlaskConical, CheckCircle2, XCircle, Loader2, Tag,
+  FlaskConical, CheckCircle2, XCircle, Loader2, Tag, Pencil,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Header } from "@/components/layout/Header"
 import { WebhookForm } from "@/components/admin/WebhookForm"
 import { AddFlowDialog } from "@/components/admin/AddFlowDialog"
+import { EditFlowDialog } from "@/components/admin/EditFlowDialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -25,6 +26,7 @@ interface Flow {
   ordem: number
   total_enviados: number
   status: "ativo" | "inativo"
+  limite_diario: number | null
   tag_manychat_id: number | null
   tag_manychat_nome: string | null
   conta: { id: string; nome: string; page_name: string | null } | null
@@ -56,6 +58,7 @@ export default function EditarWebhookPage() {
 
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [deleteFlowDialog, setDeleteFlowDialog] = useState<Flow | null>(null)
+  const [editFlowDialog, setEditFlowDialog] = useState<Flow | null>(null)
 
   // Test dialog
   const [showTeste, setShowTeste] = useState(false)
@@ -263,7 +266,10 @@ export default function EditarWebhookPage() {
                           <div className="flex items-center gap-2">
                             <GripVertical className="w-4 h-4 text-[#2A2A3A] shrink-0" />
                             <div>
-                              <p className="text-[#C4C4D4] text-sm font-medium">
+                              <p
+                                className="text-[#C4C4D4] text-sm font-medium cursor-pointer hover:text-[#F1F1F3] transition-colors"
+                                onClick={() => setEditFlowDialog(flow)}
+                              >
                                 {flow.conta?.nome ?? "Webhook externo"}
                               </p>
                               <p className="text-[#5A5A72] text-xs font-mono mt-0.5">
@@ -271,11 +277,18 @@ export default function EditarWebhookPage() {
                                   ? (flow.webhook_url ? flow.webhook_url.slice(0, 40) + (flow.webhook_url.length > 40 ? "…" : "") : "—")
                                   : (flow.flow_nome || (flow.flow_ns ? flow.flow_ns.slice(0, 30) + (flow.flow_ns.length > 30 ? "…" : "") : "—"))}
                               </p>
-                              {flow.tag_manychat_nome && (
-                                <span className="inline-flex items-center gap-1 text-[10px] text-[#A78BFA] mt-0.5">
-                                  <Tag className="w-2.5 h-2.5" />{flow.tag_manychat_nome}
-                                </span>
-                              )}
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                {flow.tag_manychat_nome && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] text-[#A78BFA]">
+                                    <Tag className="w-2.5 h-2.5" />{flow.tag_manychat_nome}
+                                  </span>
+                                )}
+                                {flow.limite_diario && (
+                                  <span className="text-[10px] text-[#A78BFA] bg-[#1A1130] border border-[#2D1F54] px-1.5 py-0.5 rounded">
+                                    lim. {flow.limite_diario}/dia
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -289,6 +302,14 @@ export default function EditarWebhookPage() {
                         </td>
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-1 justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setEditFlowDialog(flow)}
+                              className="p-1.5 text-[#3F3F58] hover:text-[#A78BFA] transition-colors"
+                              title="Editar flow"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
                             <button
                               onClick={() => handleToggleFlow(flow)}
                               disabled={actionLoading === flow.id + "-toggle"}
@@ -328,6 +349,16 @@ export default function EditarWebhookPage() {
         accessToken={accessToken}
         onClose={() => setShowAddFlow(false)}
         onSuccess={() => { setShowAddFlow(false); fetchWebhook() }}
+      />
+
+      {/* ── Edit Flow Dialog ── */}
+      <EditFlowDialog
+        open={!!editFlowDialog}
+        flow={editFlowDialog}
+        webhookId={id}
+        accessToken={accessToken}
+        onClose={() => setEditFlowDialog(null)}
+        onSuccess={() => { setEditFlowDialog(null); fetchWebhook() }}
       />
 
       {/* ── Delete Flow Dialog ── */}

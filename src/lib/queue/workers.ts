@@ -2,7 +2,7 @@ import { Worker, Job } from "bullmq"
 import { getRedisConfig } from "./redis"
 import { prisma } from "@/lib/db/prisma"
 import { processLeadInManychat, setWhatsappIdField } from "@/lib/manychat/client"
-import { isLimitReached, incrementUsage, msUntilMidnightBRT } from "@/lib/services/uso-diario.service"
+import { isLimitReached, incrementUsage, msUntilMidnightBRT, isFlowLimitReached } from "@/lib/services/uso-diario.service"
 import { processarEntradaGrupo } from "@/lib/services/entradas.service"
 import { processarSaidaGrupo } from "@/lib/services/saidas.service"
 import { executarMonitoramento } from "@/lib/services/monitor.service"
@@ -42,7 +42,7 @@ export function startWebhookWorker(): Worker {
       const updated = await prisma.lead.update({
         where: { id: leadId },
         data: { status: "processando", tentativas: { increment: 1 } },
-        select: { tentativas: true, contato_id: true, campanha_id: true, subscriber_id: true },
+        select: { tentativas: true, contato_id: true, campanha_id: true, subscriber_id: true, webhook_flow_id: true },
       })
       const numeroTentativa = updated.tentativas
 
@@ -57,6 +57,24 @@ export function startWebhookWorker(): Worker {
           })
           // Don't throw — misconfigured URL won't be fixed by retrying
           return { leadId, ok: false, error: errMsg }
+        }
+
+        // Check per-flow daily limit (if configured)
+        if (updated.webhook_flow_id) {
+          const flow = await prisma.webhookFlow.findUnique({
+            where: { id: updated.webhook_flow_id },
+            select: { limite_diario: true },
+          })
+          if (flow?.limite_diario) {
+            const limitReached = await isFlowLimitReached(updated.webhook_flow_id, flow.limite_diario)
+            if (limitReached) {
+              const delay = msUntilMidnightBRT()
+              await job.moveToDelayed(Date.now() + delay)
+              await prisma.lead.update({ where: { id: leadId }, data: { status: "pendente", tentativas: { decrement: 1 } } })
+              console.log(`[Worker] Lead ${leadId} — flow ${updated.webhook_flow_id} at daily limit, delayed ${Math.round(delay / 60000)}min`)
+              return { leadId, delayed: true }
+            }
+          }
         }
 
         const result = await sendWebhookOutput(webhookUrl, {

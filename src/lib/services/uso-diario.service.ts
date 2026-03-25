@@ -82,3 +82,31 @@ export async function isLimitReached(
   const usage = await getTodayUsage(contaId)
   return usage >= limiteDiario
 }
+
+/**
+ * Returns today's successful send count for a webhook flow (BRT).
+ * Uses Lead.processado_at which is only set on status="sucesso".
+ */
+export async function getFlowTodayUsage(flowId: string): Promise<number> {
+  const todayStart = todayBRT()
+  return prisma.lead.count({
+    where: {
+      webhook_flow_id: flowId,
+      status: "sucesso",
+      processado_at: { gte: todayStart },
+    },
+  })
+}
+
+/**
+ * Returns true if the webhook flow has reached its daily limit.
+ * If limiteDiario is null or 0, the flow is unlimited.
+ */
+export async function isFlowLimitReached(
+  flowId: string,
+  limiteDiario: number | null
+): Promise<boolean> {
+  if (!limiteDiario || limiteDiario <= 0) return false
+  const usage = await getFlowTodayUsage(flowId)
+  return usage >= limiteDiario
+}

@@ -329,7 +329,7 @@ export function AddFlowDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Adicionar Flow{pendingFlows.length > 0 ? `s (${pendingFlows.length} na lista)` : ""}</DialogTitle>
         </DialogHeader>
@@ -477,6 +477,16 @@ export function AddFlowDialog({
             </>
           ) : (
             <>
+              {/* Webhook info block */}
+              <div className="flex gap-3 p-3 bg-[#111118] border border-[#1E1E2A] rounded-lg text-xs text-[#8B8B9E]">
+                <Link2 className="w-4 h-4 text-[#6366F1] shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-[#C4C4D4] font-medium">Webhook externo</p>
+                  <p>Envia um HTTP POST com JSON ao sistema externo quando um lead é selecionado no rodízio.</p>
+                  <p>Sem limite de conta — entre no rodízio normalmente. Retries automáticos em caso de falha.</p>
+                </div>
+              </div>
+
               {/* Webhook URL */}
               <Input
                 label="URL do Webhook externo"
@@ -484,7 +494,8 @@ export function AddFlowDialog({
                 value={webhookUrl}
                 onChange={(e) => { setWebhookUrl(e.target.value); setErrors((e2) => ({ ...e2, webhook_url: "" })); setTestResult(null) }}
                 error={errors.webhook_url}
-                helperText="Será feito um HTTP POST com JSON: { lead_id, nome, telefone, email, campanha_id }"
+                helperText="HTTP POST com JSON: { lead_id, nome, telefone, email, campanha_id }"
+                className="font-mono text-xs"
                 required
               />
 
@@ -494,14 +505,13 @@ export function AddFlowDialog({
                   <Button
                     type="button"
                     variant="outline"
-                    size="sm"
-                    className="w-full text-xs"
+                    className="w-full h-10 text-xs"
                     onClick={handleTestUrl}
                     disabled={testingUrl}
                   >
                     {testingUrl
-                      ? <><Loader2 className="w-3 h-3 animate-spin" /> Testando…</>
-                      : <><Send className="w-3 h-3" /> Enviar Teste</>
+                      ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> Testando…</>
+                      : <><Send className="w-3.5 h-3.5 mr-1.5" /> Enviar Teste</>
                     }
                   </Button>
                   {testResult && (

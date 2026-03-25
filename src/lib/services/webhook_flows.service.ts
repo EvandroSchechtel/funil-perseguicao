@@ -17,6 +17,7 @@ export async function listarWebhookFlows(webhookId: string) {
       ordem: true,
       total_enviados: true,
       status: true,
+      limite_diario: true,
       created_at: true,
       updated_at: true,
       conta: { select: { id: true, nome: true, page_name: true } },
@@ -144,23 +145,31 @@ export async function adicionarFlow(webhookId: string, params: AdicionarFlowPara
 export interface AtualizarFlowParams {
   flow_ns?: string
   flow_nome?: string | null
+  webhook_url?: string
   ordem?: number
   status?: "ativo" | "inativo"
+  tag_manychat_id?: number | null
+  tag_manychat_nome?: string | null
+  limite_diario?: number | null
 }
 
 export async function atualizarFlow(id: string, params: AtualizarFlowParams) {
   const existing = await prisma.webhookFlow.findFirst({ where: { id, deleted_at: null } })
   if (!existing) throw new ServiceError("not_found", "Flow não encontrado.")
 
-  const { flow_ns, flow_nome, ordem, status } = params
+  const { flow_ns, flow_nome, webhook_url, ordem, status, tag_manychat_id, tag_manychat_nome, limite_diario } = params
 
   const flow = await prisma.webhookFlow.update({
     where: { id },
     data: {
       ...(flow_ns !== undefined && { flow_ns }),
       ...(flow_nome !== undefined && { flow_nome }),
+      ...(webhook_url !== undefined && { webhook_url }),
       ...(ordem !== undefined && { ordem }),
       ...(status !== undefined && { status }),
+      ...(tag_manychat_id !== undefined && { tag_manychat_id }),
+      ...(tag_manychat_nome !== undefined && { tag_manychat_nome }),
+      ...(limite_diario !== undefined && { limite_diario }),
     },
     select: {
       id: true,
@@ -172,6 +181,9 @@ export async function atualizarFlow(id: string, params: AtualizarFlowParams) {
       ordem: true,
       total_enviados: true,
       status: true,
+      limite_diario: true,
+      tag_manychat_id: true,
+      tag_manychat_nome: true,
       updated_at: true,
       conta: { select: { id: true, nome: true, page_name: true } },
     },

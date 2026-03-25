@@ -80,6 +80,7 @@ export async function buscarWebhook(id: string) {
           ordem: true,
           total_enviados: true,
           status: true,
+          limite_diario: true,
           tag_manychat_id: true,
           tag_manychat_nome: true,
           conta: { select: { id: true, nome: true, page_name: true } },

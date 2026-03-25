@@ -8,8 +8,12 @@ import { atualizarFlow, removerFlow } from "@/lib/services/webhook_flows.service
 const updateFlowSchema = z.object({
   flow_ns: z.string().min(1).optional(),
   flow_nome: z.string().max(200).nullable().optional(),
+  webhook_url: z.string().url("URL inválida").optional(),
   ordem: z.number().int().min(0).optional(),
   status: z.enum(["ativo", "inativo"]).optional(),
+  tag_manychat_id: z.number().int().positive().nullable().optional(),
+  tag_manychat_nome: z.string().max(200).nullable().optional(),
+  limite_diario: z.number().int().min(1).nullable().optional(),
 })
 
 // PATCH /api/admin/webhooks/[id]/flows/[flowId]
