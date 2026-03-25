@@ -67,7 +67,7 @@ interface EscanearResult {
 interface EntradaGrupo {
   id: string
   telefone: string
-  nome_participante: string | null
+  nome_whatsapp: string | null
   entrou_at: string
   tag_aplicada: boolean
   lead: { id: string; nome: string; status: string } | null
@@ -197,10 +197,16 @@ export default function InstanciaDetailPage() {
   const [manychatTags, setManychatTags] = useState<ManychatTag[]>([])
   const [tagsLoading, setTagsLoading] = useState(false)
   const [grupoForm, setGrupoForm] = useState({
-    campanha_id: "", campanha_nome: "",
-    conta_manychat_id: "", conta_manychat_nome: "",
-    nome_filtro: "", tag_manychat_id: "", tag_manychat_nome: "",
+    campanha_id: "", campanha_nome: "", nome_filtro: "",
   })
+  // Multi-conta staging area
+  const [contaStageId, setContaStageId] = useState("")
+  const [contaStageNome, setContaStageNome] = useState("")
+  const [tagStageId, setTagStageId] = useState("")
+  const [tagStageNome, setTagStageNome] = useState("")
+  const [contasAdicionadas, setContasAdicionadas] = useState<Array<{
+    contaId: string; contaNome: string; tagId: number; tagNome: string
+  }>>([])
   const [savingGrupo, setSavingGrupo] = useState(false)
   const [newTagName, setNewTagName] = useState("")
   const [creatingTag, setCreatingTag] = useState(false)
@@ -288,19 +294,17 @@ export default function InstanciaDetailPage() {
     }
   }
 
-  // Auto-fetch tags when conta_manychat_id changes
+  // Auto-fetch tags when staged conta changes
   useEffect(() => {
-    if (grupoForm.conta_manychat_id) {
-      fetchTags(grupoForm.conta_manychat_id)
-    }
+    if (contaStageId) fetchTags(contaStageId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [grupoForm.conta_manychat_id])
+  }, [contaStageId])
 
   async function handleCreateTag() {
-    if (!grupoForm.conta_manychat_id || !newTagName.trim()) return
+    if (!contaStageId || !newTagName.trim()) return
     setCreatingTag(true)
     try {
-      const res = await fetch(`/api/admin/contas/${grupoForm.conta_manychat_id}/tags`, {
+      const res = await fetch(`/api/admin/contas/${contaStageId}/tags`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify({ nome: newTagName.trim() }),
@@ -308,7 +312,8 @@ export default function InstanciaDetailPage() {
       const data = await res.json()
       if (res.ok && data.tag) {
         setManychatTags((prev) => [...prev, data.tag])
-        setGrupoForm((p) => ({ ...p, tag_manychat_id: String(data.tag.id), tag_manychat_nome: data.tag.name }))
+        setTagStageId(String(data.tag.id))
+        setTagStageNome(data.tag.name)
         setNewTagName("")
         toast.success(`Tag "${data.tag.name}" criada com sucesso.`)
       } else {
@@ -318,20 +323,41 @@ export default function InstanciaDetailPage() {
     finally { setCreatingTag(false) }
   }
 
+  function handleAdicionarConta() {
+    if (!contaStageId || !tagStageId || Number(tagStageId) <= 0) {
+      toast.error("Selecione uma conta e uma tag antes de adicionar.")
+      return
+    }
+    if (contasAdicionadas.some((c) => c.contaId === contaStageId)) {
+      toast.error("Esta conta já foi adicionada.")
+      return
+    }
+    setContasAdicionadas((prev) => [
+      ...prev,
+      { contaId: contaStageId, contaNome: contaStageNome, tagId: Number(tagStageId), tagNome: tagStageNome },
+    ])
+    setContaStageId(""); setContaStageNome("")
+    setTagStageId(""); setTagStageNome("")
+    setManychatTags([]); setNewTagName("")
+  }
+
   function openGrupoForm() {
-    setGrupoForm({ campanha_id: "", campanha_nome: "", conta_manychat_id: "", conta_manychat_nome: "", nome_filtro: "", tag_manychat_id: "", tag_manychat_nome: "" })
-    setManychatTags([])
-    setNewTagName("")
+    setGrupoForm({ campanha_id: "", campanha_nome: "", nome_filtro: "" })
+    setContasAdicionadas([])
+    setContaStageId(""); setContaStageNome("")
+    setTagStageId(""); setTagStageNome("")
+    setManychatTags([]); setNewTagName("")
     setShowGrupoForm(true)
     fetchZapiGroups()
   }
 
   async function handleSaveGrupo() {
-    const { campanha_id, conta_manychat_id, nome_filtro, tag_manychat_id, tag_manychat_nome } = grupoForm
-    if (!campanha_id || !conta_manychat_id || !nome_filtro || !tag_manychat_id || Number(tag_manychat_id) <= 0) {
-      toast.error("Preencha todos os campos obrigatórios.")
+    const { campanha_id, nome_filtro } = grupoForm
+    if (!campanha_id || !nome_filtro || contasAdicionadas.length === 0) {
+      toast.error("Preencha todos os campos e adicione pelo menos uma conta Manychat.")
       return
     }
+    const [primary, ...rest] = contasAdicionadas
     setSavingGrupo(true)
     try {
       const res = await fetch(`/api/admin/zapi/instancias/${id}/grupos`, {
@@ -339,10 +365,17 @@ export default function InstanciaDetailPage() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify({
           campanha_id,
-          conta_manychat_id,
+          conta_manychat_id: primary.contaId,
           nome_filtro,
-          tag_manychat_id: Number(tag_manychat_id),
-          tag_manychat_nome,
+          tag_manychat_id: primary.tagId,
+          tag_manychat_nome: primary.tagNome,
+          ...(rest.length > 0 && {
+            contas_adicionais: rest.map((c) => ({
+              conta_id: c.contaId,
+              tag_id: c.tagId,
+              tag_nome: c.tagNome,
+            })),
+          }),
         }),
       })
       const data = await res.json()
@@ -687,110 +720,146 @@ export default function InstanciaDetailPage() {
                 </div>
 
                 <div className="p-6 space-y-4">
-                  {/* Row 1: Campanha + Conta */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <SearchableSelect<Campanha>
-                      label="Campanha *"
-                      options={campanhas}
-                      value={grupoForm.campanha_id}
-                      getKey={(c) => c.id}
-                      getLabel={(c) => c.nome}
-                      placeholder="Selecionar campanha…"
-                      searchPlaceholder="Buscar campanha…"
-                      onChange={(val, label) => setGrupoForm((p) => ({ ...p, campanha_id: val, campanha_nome: label }))}
+                  {/* Row 1: Campanha */}
+                  <SearchableSelect<Campanha>
+                    label="Campanha *"
+                    options={campanhas}
+                    value={grupoForm.campanha_id}
+                    getKey={(c) => c.id}
+                    getLabel={(c) => c.nome}
+                    placeholder="Selecionar campanha…"
+                    searchPlaceholder="Buscar campanha…"
+                    onChange={(val, label) => setGrupoForm((p) => ({ ...p, campanha_id: val, campanha_nome: label }))}
+                  />
+
+                  {/* Row 2: Grupo WA */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[10px] font-semibold text-[#3F3F58] uppercase tracking-widest">
+                        Grupo WhatsApp *
+                      </label>
+                      <button
+                        type="button"
+                        onClick={fetchZapiGroups}
+                        className="text-[#25D366] hover:text-[#1DB954] text-[10px] font-medium flex items-center gap-1 transition-colors"
+                      >
+                        <RefreshCw className={`w-2.5 h-2.5 ${zapiGroupsLoading ? "animate-spin" : ""}`} />
+                        Recarregar
+                      </button>
+                    </div>
+                    <SearchableSelect<ZApiGroup>
+                      options={zapiGroups}
+                      value={grupoForm.nome_filtro}
+                      getKey={(g) => g.name}
+                      getLabel={(g) => g.name}
+                      placeholder={zapiGroupsLoading ? "Buscando grupos…" : "Selecionar grupo…"}
+                      searchPlaceholder="Filtrar por nome…"
+                      loading={zapiGroupsLoading}
+                      onChange={(val) => setGrupoForm((p) => ({ ...p, nome_filtro: val }))}
                     />
-                    <SearchableSelect<ContaManychat>
-                      label="Conta Manychat *"
-                      options={contas}
-                      value={grupoForm.conta_manychat_id}
-                      getKey={(c) => c.id}
-                      getLabel={(c) => c.nome}
-                      placeholder="Selecionar conta…"
-                      searchPlaceholder="Buscar conta…"
-                      onChange={(val, label) => {
-                        setGrupoForm((p) => ({ ...p, conta_manychat_id: val, conta_manychat_nome: label, tag_manychat_id: "", tag_manychat_nome: "" }))
-                        // fetchTags é acionado pelo useEffect([grupoForm.conta_manychat_id])
-                      }}
-                    />
+                    <p className="text-[11px] text-[#3F3F58] mt-1.5">
+                      Qualquer grupo cujo nome <span className="text-[#7F7F9E]">contenha</span> esse texto será monitorado automaticamente.
+                    </p>
                   </div>
 
-                  {/* Row 2: Grupo WA + Tag */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="text-[10px] font-semibold text-[#3F3F58] uppercase tracking-widest">
-                          Grupo WhatsApp *
-                        </label>
-                        <button
-                          type="button"
-                          onClick={fetchZapiGroups}
-                          className="text-[#25D366] hover:text-[#1DB954] text-[10px] font-medium flex items-center gap-1 transition-colors"
-                        >
-                          <RefreshCw className={`w-2.5 h-2.5 ${zapiGroupsLoading ? "animate-spin" : ""}`} />
-                          Recarregar
-                        </button>
+                  {/* Multi-conta section */}
+                  <div className="space-y-3 pt-2 border-t border-[#1C1C2C]">
+                    <p className="text-[10px] font-semibold text-[#3F3F58] uppercase tracking-widest">
+                      Contas Manychat *
+                    </p>
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Staged conta */}
+                      <SearchableSelect<ContaManychat>
+                        label="Conta Manychat"
+                        options={contas}
+                        value={contaStageId}
+                        getKey={(c) => c.id}
+                        getLabel={(c) => c.nome}
+                        placeholder="Selecionar conta…"
+                        searchPlaceholder="Buscar conta…"
+                        onChange={(val, label) => {
+                          setContaStageId(val); setContaStageNome(label)
+                          setTagStageId(""); setTagStageNome("")
+                          setManychatTags([])
+                        }}
+                      />
+                      {/* Staged tag */}
+                      <div className="space-y-1.5">
+                        <SearchableSelect<ManychatTag>
+                          label="Tag Manychat"
+                          options={manychatTags}
+                          value={tagStageId}
+                          getKey={(t) => String(t.id)}
+                          getLabel={(t) => t.name}
+                          placeholder={
+                            !contaStageId ? "Selecione a conta primeiro…"
+                            : tagsLoading ? "Buscando tags…"
+                            : manychatTags.length === 0 ? "Nenhuma tag — crie abaixo"
+                            : "Selecionar tag…"
+                          }
+                          searchPlaceholder="Buscar tag…"
+                          loading={tagsLoading}
+                          disabled={!contaStageId}
+                          onChange={(val, label) => { setTagStageId(val); setTagStageNome(label) }}
+                        />
+                        {/* Criar tag inline */}
+                        {contaStageId && !tagsLoading && (
+                          <div className="flex gap-2">
+                            <input
+                              value={newTagName}
+                              onChange={(e) => setNewTagName(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleCreateTag() } }}
+                              placeholder="Nome da nova tag…"
+                              className="flex-1 h-8 px-3 rounded-lg border border-[#1C1C2C] bg-[#13131F] text-xs text-[#EEEEF5] placeholder-[#3F3F58] focus:outline-none focus:border-[#25D366]/50 transition-colors"
+                            />
+                            <Button type="button" size="sm" variant="outline" className="h-8 px-3 text-xs shrink-0"
+                              disabled={!newTagName.trim() || creatingTag} onClick={handleCreateTag}>
+                              {creatingTag ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                              Criar
+                            </Button>
+                          </div>
+                        )}
                       </div>
-                      <SearchableSelect<ZApiGroup>
-                        options={zapiGroups}
-                        value={grupoForm.nome_filtro}
-                        getKey={(g) => g.name}
-                        getLabel={(g) => g.name}
-                        placeholder={zapiGroupsLoading ? "Buscando grupos…" : "Selecionar grupo…"}
-                        searchPlaceholder="Filtrar por nome…"
-                        loading={zapiGroupsLoading}
-                        onChange={(val) => setGrupoForm((p) => ({ ...p, nome_filtro: val }))}
-                      />
                     </div>
 
-                    <div className="space-y-1.5">
-                      <SearchableSelect<ManychatTag>
-                        label="Tag Manychat *"
-                        options={manychatTags}
-                        value={grupoForm.tag_manychat_id}
-                        getKey={(t) => String(t.id)}
-                        getLabel={(t) => t.name}
-                        placeholder={
-                          !grupoForm.conta_manychat_id ? "Selecione a conta primeiro…"
-                          : tagsLoading ? "Buscando tags…"
-                          : manychatTags.length === 0 ? "Nenhuma tag — crie abaixo"
-                          : "Selecionar tag…"
-                        }
-                        searchPlaceholder="Buscar tag…"
-                        loading={tagsLoading}
-                        disabled={!grupoForm.conta_manychat_id}
-                        onChange={(val, label) => setGrupoForm((p) => ({ ...p, tag_manychat_id: val, tag_manychat_nome: label }))}
-                      />
-                      {grupoForm.tag_manychat_id && Number(grupoForm.tag_manychat_id) > 0 && (
-                        <p className="text-[10px] text-[#25D366]/70 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3 shrink-0" />
-                          ID capturado: <span className="font-mono">{grupoForm.tag_manychat_id}</span>
+                    {/* Adicionar conta button */}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      disabled={!contaStageId || !tagStageId || Number(tagStageId) <= 0}
+                      onClick={handleAdicionarConta}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Adicionar conta Manychat
+                    </Button>
+
+                    {/* Lista de contas confirmadas */}
+                    {contasAdicionadas.length > 0 && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-semibold text-[#3F3F58] uppercase tracking-widest flex items-center gap-1.5">
+                          <Tag className="w-3 h-3" /> Contas configuradas ({contasAdicionadas.length})
                         </p>
-                      )}
-                      {/* Criar tag inline */}
-                      {grupoForm.conta_manychat_id && !tagsLoading && (
-                        <div className="flex gap-2">
-                          <input
-                            value={newTagName}
-                            onChange={(e) => setNewTagName(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleCreateTag() } }}
-                            placeholder="Nome da nova tag…"
-                            className="flex-1 h-8 px-3 rounded-lg border border-[#1C1C2C] bg-[#13131F] text-xs text-[#EEEEF5] placeholder-[#3F3F58] focus:outline-none focus:border-[#25D366]/50 transition-colors"
-                          />
-                          <Button type="button" size="sm" variant="outline" className="h-8 px-3 text-xs shrink-0"
-                            disabled={!newTagName.trim() || creatingTag} onClick={handleCreateTag}>
-                            {creatingTag
-                              ? <RefreshCw className="w-3 h-3 animate-spin" />
-                              : <Plus className="w-3 h-3" />}
-                            Criar tag
-                          </Button>
-                        </div>
-                      )}
-                    </div>
+                        {contasAdicionadas.map((c) => (
+                          <div key={c.contaId} className="flex items-center gap-2 px-3 py-2 bg-[#0A0A12] border border-[#1C1C2C] rounded-lg">
+                            <span className="w-2 h-2 rounded-full bg-[#25D366] shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <span className="text-xs text-[#EEEEF5] truncate block">{c.contaNome}</span>
+                              <span className="text-[10px] text-[#3F3F58] truncate block">{c.tagNome}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setContasAdicionadas((prev) => prev.filter((x) => x.contaId !== c.contaId))}
+                              className="w-6 h-6 flex items-center justify-center rounded text-[#3F3F58] hover:text-[#F87171] transition-colors shrink-0"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-
-                  <p className="text-[11px] text-[#3F3F58]">
-                    O nome selecionado é usado como filtro de correspondência parcial: qualquer grupo cujo nome <span className="text-[#7F7F9E]">contenha</span> esse texto será monitorado automaticamente.
-                  </p>
                 </div>
 
                 <div className="px-6 py-4 bg-[#0A0A12] border-t border-[#1C1C2C] flex gap-3">
@@ -937,7 +1006,7 @@ export default function InstanciaDetailPage() {
                     {entradas.map((e) => (
                       <tr key={e.id} className="border-b border-[#1C1C2C] last:border-0 hover:bg-[#121220] transition-colors">
                         <td className="px-5 py-3.5">
-                          <p className="text-[#EEEEF5] text-sm font-medium">{e.nome_participante || "—"}</p>
+                          <p className="text-[#EEEEF5] text-sm font-medium">{e.nome_whatsapp || "—"}</p>
                           <p className="text-[#3F3F58] text-xs font-mono mt-0.5">{e.telefone}</p>
                         </td>
                         <td className="px-5 py-3.5">
