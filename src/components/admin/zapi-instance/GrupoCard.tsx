@@ -3,9 +3,10 @@
 import React, { useState, useCallback } from "react"
 import {
   ChevronDown, ChevronRight, Megaphone, Building2, Tag,
-  Copy, CheckCircle2, XCircle, Loader2, Pencil, Trash2, ArrowRight, ExternalLink,
+  Copy, CheckCircle2, XCircle, Loader2, Pencil, Trash2, ArrowRight, ExternalLink, RefreshCw, AlertCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
 import { type ZApiGrupo, fmtDt } from "./types"
 
 interface EntradaRow {
@@ -35,6 +36,7 @@ export function GrupoCard({
   const [loadingEntries, setLoadingEntries] = useState(false)
   const [entriesLoaded, setEntriesLoaded] = useState(false)
   const [copiedId, setCopiedId] = useState(false)
+  const [reprocessing, setReprocessing] = useState(false)
 
   const g = grupo
 
@@ -65,6 +67,30 @@ export function GrupoCard({
       setLoadingEntries(false)
     }
   }, [accessToken, instanciaId, g.id, g.grupo_wa_id])
+
+  async function handleReprocessTags() {
+    if (!accessToken) return
+    setReprocessing(true)
+    try {
+      // Call varredura endpoint for the parent campaign to re-tag entries
+      const res = await fetch(`/api/admin/zapi/instancias/${instanciaId}/escanear-grupos`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      if (res.ok) {
+        toast.success("Tags reprocessadas. Atualizando entradas...")
+        // Refresh entries after a small delay to let the backend process
+        setTimeout(() => fetchEntries(), 1500)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        toast.error((data as { message?: string }).message || "Erro ao reprocessar tags.")
+      }
+    } catch {
+      toast.error("Erro de conexão.")
+    } finally {
+      setReprocessing(false)
+    }
+  }
 
   function handleToggleExpand() {
     const willExpand = !expanded
@@ -159,34 +185,70 @@ export function GrupoCard({
 
           {/* 2. Recent Entries */}
           <div className="space-y-2">
-            <p className="text-[#5A5A72] text-[10px] uppercase tracking-wider font-semibold">
-              Entradas recentes
-            </p>
-            {!g.grupo_wa_id ? (
-              <p className="text-xs text-[#5A5A72] italic">
-                Grupo ainda não detectado — entradas aparecerão após a primeira detecção
+            <div className="flex items-center justify-between">
+              <p className="text-[#5A5A72] text-[10px] uppercase tracking-wider font-semibold">
+                Entradas recentes
               </p>
+              {g.grupo_wa_id && entriesLoaded && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); fetchEntries() }}
+                  className="text-[10px] text-[#5A5A72] hover:text-[#25D366] flex items-center gap-1 transition-colors"
+                  title="Atualizar entradas"
+                >
+                  <RefreshCw className={`w-3 h-3 ${loadingEntries ? "animate-spin" : ""}`} />
+                  Atualizar
+                </button>
+              )}
+            </div>
+            {!g.grupo_wa_id ? (
+              <div className="flex items-center gap-2 py-2 px-3 bg-[#1A1500]/50 border border-[#F59E0B]/20 rounded-lg">
+                <XCircle className="w-3.5 h-3.5 text-[#F59E0B] shrink-0" />
+                <p className="text-xs text-[#F59E0B]">
+                  Grupo ainda não encontrado no WhatsApp — execute &quot;Escanear e Vincular&quot; para detectar
+                </p>
+              </div>
             ) : loadingEntries ? (
               <div className="flex items-center gap-2 py-2">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-[#5A5A72]" />
-                <span className="text-xs text-[#5A5A72]">Carregando...</span>
+                <span className="text-xs text-[#5A5A72]">Carregando entradas...</span>
               </div>
             ) : entries.length === 0 ? (
               <p className="text-xs text-[#5A5A72] italic">Nenhuma entrada registrada</p>
             ) : (
               <div className="space-y-1">
                 {entries.map((e) => (
-                  <div key={e.id} className="flex items-center gap-3 py-1 text-xs">
+                  <div key={e.id} className="flex items-center gap-3 py-1.5 text-xs">
                     <span className="font-mono text-[#EEEEF5] min-w-[100px]">{e.telefone}</span>
                     <span className="text-[#8B8B9E] flex-1 truncate">{e.nome_whatsapp || "—"}</span>
                     <span className="text-[#5A5A72] shrink-0">{fmtDt(e.entrou_at) || "—"}</span>
                     {e.tag_aplicada ? (
-                      <span title="Tag aplicada"><CheckCircle2 className="w-3.5 h-3.5 text-[#25D366] shrink-0" /></span>
+                      <span className="flex items-center gap-1 text-[#25D366] shrink-0" title="Tag aplicada com sucesso">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span className="text-[10px] font-medium">Tag OK</span>
+                      </span>
                     ) : (
-                      <span title="Tag não aplicada"><XCircle className="w-3.5 h-3.5 text-[#F87171] shrink-0" /></span>
+                      <span className="flex items-center gap-1 text-[#F59E0B] shrink-0" title="Tag ainda não aplicada — subscriber pode não estar no Manychat">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span className="text-[10px] font-medium">Pendente</span>
+                      </span>
                     )}
                   </div>
                 ))}
+                {/* Reprocess button when there are pending tags */}
+                {entries.some((e) => !e.tag_aplicada) && canWrite && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-2 w-full"
+                    onClick={(e) => { e.stopPropagation(); handleReprocessTags() }}
+                    loading={reprocessing}
+                    disabled={reprocessing}
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                    Reprocessar tags pendentes
+                  </Button>
+                )}
               </div>
             )}
           </div>
