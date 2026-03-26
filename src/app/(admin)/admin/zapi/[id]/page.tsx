@@ -267,6 +267,11 @@ export default function InstanciaDetailPage() {
     try {
       const url = `/api/admin/zapi/instancias/${id}/detectar-grupos${forceRefresh ? "?refresh=true" : ""}`
       const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
+      if (!res.ok) {
+        toast.error("Erro ao buscar grupos do Z-API.")
+        setZapiGroups([])
+        return
+      }
       const data = await res.json()
       setZapiGroups((data.grupos || []).filter((g: ZApiGroup) => g.name?.trim()))
     } catch {
@@ -317,6 +322,7 @@ export default function InstanciaDetailPage() {
         toast.success(`Tag "${data.tag.name}" criada com sucesso.`)
       } else {
         toast.error(data.message || "Erro ao criar tag.")
+        setNewTagName("")
       }
     } catch { toast.error("Erro de conexão.") }
     finally { setCreatingTag(false) }
@@ -480,9 +486,12 @@ export default function InstanciaDetailPage() {
 
   function copyWebhook() {
     navigator.clipboard.writeText(webhookUrl)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-    toast.success("URL copiada!")
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+        toast.success("URL copiada!")
+      })
+      .catch(() => toast.error("Não foi possível copiar. Copie manualmente."))
   }
 
   function formatDate(str: string) {

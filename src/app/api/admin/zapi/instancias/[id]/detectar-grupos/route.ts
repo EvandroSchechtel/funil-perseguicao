@@ -30,22 +30,26 @@ export async function GET(request: NextRequest, { params }: Ctx) {
 
     // Serve from cache unless forced refresh or cache is empty
     if (!refresh) {
-      const cached = await prisma.grupoWaCache.findMany({
-        where: { instancia_id: id },
-        select: { grupo_wa_id: true, nome: true },
-        orderBy: { nome: "asc" },
-      })
-      if (cached.length > 0) {
-        return ok({
-          grupos: cached.map((c) => ({ phone: c.grupo_wa_id, name: c.nome, isGroup: true })),
-          from_cache: true,
+      try {
+        const cached = await prisma.grupoWaCache.findMany({
+          where: { instancia_id: id },
+          select: { grupo_wa_id: true, nome: true },
+          orderBy: { nome: "asc" },
         })
+        if (cached.length > 0) {
+          return ok({
+            grupos: cached.map((c) => ({ phone: c.grupo_wa_id, name: c.nome, isGroup: true })),
+            from_cache: true,
+          })
+        }
+      } catch {
+        // Cache table may not exist yet — fall through to Z-API
       }
     }
 
     // Cache miss or forced refresh → call Z-API and persist
     const grupos = await getGroups(inst.instance_id, inst.token, inst.client_token)
-    await sincronizarGruposCache(id, grupos)
+    try { await sincronizarGruposCache(id, grupos) } catch { /* best-effort */ }
     return ok({ grupos: grupos.filter((g) => g.name?.trim()), from_cache: false })
   } catch (error) {
     return handleServiceError(error) ?? serverError()
