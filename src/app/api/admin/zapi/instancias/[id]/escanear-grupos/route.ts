@@ -6,15 +6,12 @@ import { getGroupsAndCommunities } from "@/lib/zapi/client"
 import { escanearEAutoVincular } from "@/lib/services/grupo-auto-vincular.service"
 import { sincronizarGruposCache } from "@/lib/services/zapi.service"
 
-// Buscar grupos + auto-vincular é rápido (poucos requests à Z-API)
-// Processamento de participantes fica na varredura da campanha (endpoint separado)
-export const maxDuration = 60
+export const maxDuration = 30
 
 type Ctx = { params: Promise<{ id: string }> }
 
 // POST /api/admin/zapi/instancias/[id]/escanear-grupos
-// Fetches all Z-API groups, syncs cache, auto-links similar ones.
-// Does NOT process participants — use the campaign varredura for that.
+// Fetches Z-API groups (or uses cache as fallback), auto-links similar ones.
 export async function POST(request: NextRequest, { params }: Ctx) {
   try {
     const ctx = await getAuthContext(request)
@@ -29,33 +26,50 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     })
     if (!inst) return (await import("@/lib/api/response")).notFound("Instância não encontrada.")
 
-    // 1. Buscar grupos do WhatsApp (paginado, ~5-15s)
-    let grupos: Awaited<ReturnType<typeof getGroupsAndCommunities>>
+    // Try Z-API first, fallback to local cache
+    let grupos: Array<{ phone: string; name: string; isGroup: boolean }>
+    let usouCache = false
+
     try {
       grupos = await getGroupsAndCommunities(inst.instance_id, inst.token, inst.client_token)
     } catch (zapiErr) {
-      console.error("[escanear-grupos] Erro Z-API:", zapiErr)
-      const msg = zapiErr instanceof Error ? zapiErr.message : "Erro desconhecido"
-      return NextResponse.json(
-        { error: "zapi_error", message: `Erro ao buscar grupos da Z-API: ${msg}. Verifique se a instância está conectada.` },
-        { status: 502 }
-      )
+      console.warn("[escanear-grupos] Z-API falhou, usando cache local:", zapiErr)
+      grupos = []
+    }
+
+    // Fallback: use GrupoWaCache if Z-API returned nothing
+    if (grupos.length === 0) {
+      const cached = await prisma.grupoWaCache.findMany({
+        where: { instancia_id: id },
+        select: { grupo_wa_id: true, nome: true },
+        orderBy: { synced_at: "desc" },
+        take: 100,
+      })
+      if (cached.length > 0) {
+        grupos = cached.map((c) => ({ phone: c.grupo_wa_id, name: c.nome, isGroup: true }))
+        usouCache = true
+      }
     }
 
     if (grupos.length === 0) {
       return ok({
-        novos_vinculados: 0, ja_existentes: 0, total_grupos_wa: 0,
-        aviso: "Nenhum grupo encontrado no WhatsApp. Verifique se a instância está conectada e se o número tem grupos.",
+        total_grupos_zapi: 0, novos_vinculados: 0, ja_configurados: 0, sem_match: 0, detalhes: [],
+        aviso: "Nenhum grupo encontrado. Verifique se a instância Z-API está conectada.",
       })
     }
 
-    // 2. Sincronizar cache (rápido, Prisma upserts)
-    try { await sincronizarGruposCache(id, grupos) } catch { /* best-effort */ }
+    // Sync cache (only if we got fresh data from Z-API)
+    if (!usouCache) {
+      try { await sincronizarGruposCache(id, grupos) } catch { /* best-effort */ }
+    }
 
-    // 3. Auto-vincular por similaridade (rápido, comparações em memória)
+    // Auto-link by similarity
     const result = await escanearEAutoVincular(id, grupos)
 
-    return ok(result)
+    return ok({
+      ...result,
+      ...(usouCache ? { aviso: "Z-API indisponível — usou cache local. Dados podem estar desatualizados." } : {}),
+    })
   } catch (error) {
     console.error("[escanear-grupos] Erro:", error)
     const msg = error instanceof Error ? error.message : "Erro interno no servidor"
