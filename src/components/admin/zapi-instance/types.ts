@@ -70,6 +70,7 @@ export interface EscanearResult {
   detalhes: EscanearDetalhe[]
   entradas_processadas?: number
   erros_entradas?: number
+  aviso?: string | null
 }
 
 export interface ZApiWaGroup {
