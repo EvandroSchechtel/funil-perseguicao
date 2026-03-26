@@ -26,14 +26,18 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     })
     if (!inst) return (await import("@/lib/api/response")).notFound("Instância não encontrada.")
 
+    const t0 = Date.now()
+    console.log("[escanear-grupos] Iniciando para instância", id)
+
     // Try Z-API first, fallback to local cache
     let grupos: Array<{ phone: string; name: string; isGroup: boolean }>
     let usouCache = false
 
     try {
       grupos = await getGroupsAndCommunities(inst.instance_id, inst.token, inst.client_token)
+      console.log(`[escanear-grupos] Z-API retornou ${grupos.length} grupos em ${Date.now() - t0}ms`)
     } catch (zapiErr) {
-      console.warn("[escanear-grupos] Z-API falhou, usando cache local:", zapiErr)
+      console.warn(`[escanear-grupos] Z-API falhou em ${Date.now() - t0}ms:`, zapiErr)
       grupos = []
     }
 
@@ -45,6 +49,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
         orderBy: { synced_at: "desc" },
         take: 100,
       })
+      console.log(`[escanear-grupos] Cache local: ${cached.length} grupos em ${Date.now() - t0}ms`)
       if (cached.length > 0) {
         grupos = cached.map((c) => ({ phone: c.grupo_wa_id, name: c.nome, isGroup: true }))
         usouCache = true
@@ -62,9 +67,11 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     if (!usouCache) {
       try { await sincronizarGruposCache(id, grupos) } catch { /* best-effort */ }
     }
+    console.log(`[escanear-grupos] Cache sync em ${Date.now() - t0}ms`)
 
     // Auto-link by similarity
     const result = await escanearEAutoVincular(id, grupos)
+    console.log(`[escanear-grupos] Auto-link concluído em ${Date.now() - t0}ms:`, JSON.stringify(result))
 
     return ok({
       ...result,
