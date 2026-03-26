@@ -36,16 +36,17 @@ export function GruposListSection({
         method: "POST",
         headers: { Authorization: `Bearer ${accessToken}` },
       })
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        toast.error((data as { message?: string }).message || "Erro ao escanear grupos.")
+        const msg = (data as { message?: string }).message || `Erro ao escanear grupos (HTTP ${res.status}).`
+        toast.error(msg)
         return
       }
-      const data = await res.json()
       setScanResult(data)
       if (data.novos_vinculados > 0) onRefresh()
-    } catch {
-      toast.error("Erro ao escanear grupos.")
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro de conexão"
+      toast.error(`Erro ao escanear grupos: ${msg}`)
     } finally {
       setScanning(false)
     }

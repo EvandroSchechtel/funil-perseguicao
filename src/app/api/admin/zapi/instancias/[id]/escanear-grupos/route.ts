@@ -29,7 +29,26 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     })
     if (!inst) return (await import("@/lib/api/response")).notFound("Instância não encontrada.")
 
-    const grupos = await getGroupsAndCommunities(inst.instance_id, inst.token, inst.client_token)
+    let grupos: Awaited<ReturnType<typeof getGroupsAndCommunities>>
+    try {
+      grupos = await getGroupsAndCommunities(inst.instance_id, inst.token, inst.client_token)
+    } catch (zapiErr) {
+      console.error("[escanear-grupos] Erro Z-API:", zapiErr)
+      const msg = zapiErr instanceof Error ? zapiErr.message : "Erro desconhecido"
+      return (await import("next/server")).NextResponse.json(
+        { error: "zapi_error", message: `Erro ao buscar grupos da Z-API: ${msg}. Verifique se a instância está conectada.` },
+        { status: 502 }
+      )
+    }
+
+    if (grupos.length === 0) {
+      return ok({
+        novos_vinculados: 0, ja_existentes: 0, total_grupos_wa: 0,
+        entradas_processadas: 0, erros_entradas: 0,
+        aviso: "Nenhum grupo encontrado no WhatsApp. Verifique se a instância está conectada e se o número tem grupos.",
+      })
+    }
+
     try { await sincronizarGruposCache(id, grupos) } catch { /* best-effort */ }
     const result = await escanearEAutoVincular(id, grupos)
 
@@ -59,6 +78,8 @@ export async function POST(request: NextRequest, { params }: Ctx) {
 
     return ok({ ...result, entradas_processadas, erros_entradas })
   } catch (error) {
-    return handleServiceError(error) ?? serverError()
+    console.error("[escanear-grupos] Erro:", error)
+    const msg = error instanceof Error ? error.message : "Erro interno no servidor"
+    return handleServiceError(error) ?? serverError(msg)
   }
 }
