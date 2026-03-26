@@ -25,6 +25,11 @@ export async function buscarInstancia(id: string) {
         include: {
           campanha: { select: { id: true, nome: true } },
           conta_manychat: { select: { id: true, nome: true } },
+          contas_monitoramento: {
+            include: {
+              conta_manychat: { select: { id: true, nome: true } },
+            },
+          },
           _count: { select: { entradas: true } },
         },
         orderBy: { created_at: "desc" },
