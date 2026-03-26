@@ -28,7 +28,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     if (!inst) return (await import("@/lib/api/response")).notFound("Instância não encontrada.")
 
     const grupos = await getGroupsAndCommunities(inst.instance_id, inst.token, inst.client_token)
-    await sincronizarGruposCache(id, grupos)
+    try { await sincronizarGruposCache(id, grupos) } catch { /* best-effort */ }
     const result = await escanearEAutoVincular(id, grupos)
 
     return ok(result)

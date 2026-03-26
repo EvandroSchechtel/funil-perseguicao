@@ -6,7 +6,7 @@ import Link from "next/link"
 import {
   ArrowLeft, Plus, Trash2, Search, Tag, Users, CheckCircle2,
   XCircle, RefreshCw, Copy, ChevronDown, X, Wifi, Building2,
-  Megaphone, MessageSquare, Lock, ScanSearch,
+  Megaphone, MessageSquare, Lock, ScanSearch, Pencil,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
@@ -215,6 +215,9 @@ export default function InstanciaDetailPage() {
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState<EscanearResult | null>(null)
   const [scanFilter, setScanFilter] = useState("")
+  const [showEditInstancia, setShowEditInstancia] = useState(false)
+  const [editForm, setEditForm] = useState({ nome: "", instance_id: "", token: "", client_token: "", status: "ativo" as "ativo" | "inativo" })
+  const [savingEdit, setSavingEdit] = useState(false)
 
   // Entradas
   const [entradas, setEntradas] = useState<EntradaGrupo[]>([])
@@ -428,15 +431,16 @@ export default function InstanciaDetailPage() {
         method: "POST",
         headers: { Authorization: `Bearer ${accessToken}` },
       })
-      const data = await res.json()
-      if (res.ok) {
-        setScanResult(data)
-        if (data.novos_vinculados > 0) fetchInst()
-      } else {
-        toast.error(data.message || "Erro ao escanear grupos.")
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        toast.error((data as { message?: string }).message || "Erro ao escanear grupos.")
+        return
       }
+      const data = await res.json()
+      setScanResult(data)
+      if (data.novos_vinculados > 0) fetchInst()
     } catch {
-      toast.error("Erro de conexão.")
+      toast.error("Erro ao escanear grupos.")
     } finally {
       setScanning(false)
     }
@@ -483,6 +487,47 @@ export default function InstanciaDetailPage() {
   useEffect(() => {
     if (activeTab === "saidas") fetchSaidas()
   }, [activeTab, fetchSaidas])
+
+  function openEditInstancia() {
+    if (!inst) return
+    setEditForm({ nome: inst.nome, instance_id: inst.instance_id, token: "", client_token: "", status: inst.status })
+    setShowEditInstancia(true)
+  }
+
+  async function handleSaveEdit() {
+    if (!editForm.nome.trim() || !editForm.instance_id.trim()) {
+      toast.error("Nome e Instance ID são obrigatórios.")
+      return
+    }
+    setSavingEdit(true)
+    try {
+      const body: Record<string, string> = {
+        nome: editForm.nome.trim(),
+        instance_id: editForm.instance_id.trim(),
+        status: editForm.status,
+      }
+      if (editForm.token.trim()) body.token = editForm.token.trim()
+      if (editForm.client_token.trim()) body.client_token = editForm.client_token.trim()
+
+      const res = await fetch(`/api/admin/zapi/instancias/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast.success("Instância atualizada.")
+        setShowEditInstancia(false)
+        fetchInst()
+      } else {
+        toast.error(data.message || "Erro ao atualizar.")
+      }
+    } catch {
+      toast.error("Erro de conexão.")
+    } finally {
+      setSavingEdit(false)
+    }
+  }
 
   function copyWebhook() {
     navigator.clipboard.writeText(webhookUrl)
@@ -616,6 +661,16 @@ export default function InstanciaDetailPage() {
                 </div>
               </div>
             </div>
+            {canWrite && (
+              <button
+                type="button"
+                onClick={openEditInstancia}
+                className="shrink-0 p-2 rounded-lg border border-[#1C1C2C] text-[#7F7F9E] hover:text-[#EEEEF5] hover:border-[#252535] transition-all"
+                title="Editar instância"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           {/* Webhook URL */}
@@ -1221,6 +1276,60 @@ export default function InstanciaDetailPage() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => { setScanResult(null); setScanFilter("") }}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit instância dialog */}
+      <Dialog open={showEditInstancia} onOpenChange={setShowEditInstancia}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Instância</DialogTitle>
+            <DialogDescription>
+              Token e Client Token só são alterados se preenchidos.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[#9898B0]">Nome *</label>
+              <input value={editForm.nome} onChange={(e) => setEditForm((p) => ({ ...p, nome: e.target.value }))}
+                className="w-full h-9 px-3 rounded-lg border border-[#1C1C2C] bg-[#13131F] text-sm text-[#EEEEF5] placeholder-[#3F3F58] focus:outline-none focus:border-[#25D366]/50"
+                placeholder="Nome da instância" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[#9898B0]">Instance ID *</label>
+              <input value={editForm.instance_id} onChange={(e) => setEditForm((p) => ({ ...p, instance_id: e.target.value }))}
+                className="w-full h-9 px-3 rounded-lg border border-[#1C1C2C] bg-[#13131F] text-sm text-[#EEEEF5] font-mono focus:outline-none focus:border-[#25D366]/50"
+                placeholder="Instance ID" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[#9898B0]">
+                Token <span className="text-[#3F3F58] font-normal">(deixe em branco para manter)</span>
+              </label>
+              <input type="password" value={editForm.token} onChange={(e) => setEditForm((p) => ({ ...p, token: e.target.value }))}
+                className="w-full h-9 px-3 rounded-lg border border-[#1C1C2C] bg-[#13131F] text-sm text-[#EEEEF5] focus:outline-none focus:border-[#25D366]/50"
+                placeholder="••••••••" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[#9898B0]">
+                Client Token <span className="text-[#3F3F58] font-normal">(deixe em branco para manter)</span>
+              </label>
+              <input type="password" value={editForm.client_token} onChange={(e) => setEditForm((p) => ({ ...p, client_token: e.target.value }))}
+                className="w-full h-9 px-3 rounded-lg border border-[#1C1C2C] bg-[#13131F] text-sm text-[#EEEEF5] focus:outline-none focus:border-[#25D366]/50"
+                placeholder="••••••••" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[#9898B0]">Status</label>
+              <select value={editForm.status} onChange={(e) => setEditForm((p) => ({ ...p, status: e.target.value as "ativo" | "inativo" }))}
+                className="w-full h-9 px-3 rounded-lg border border-[#1C1C2C] bg-[#13131F] text-sm text-[#EEEEF5] focus:outline-none focus:border-[#25D366]/50">
+                <option value="ativo">Ativo</option>
+                <option value="inativo">Inativo</option>
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowEditInstancia(false)}>Cancelar</Button>
+            <Button onClick={handleSaveEdit} loading={savingEdit}>Salvar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
