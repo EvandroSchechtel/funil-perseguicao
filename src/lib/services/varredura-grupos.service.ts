@@ -17,6 +17,24 @@ export interface VarreduraResult {
   aviso_24h: string | null    // aviso quando varredura recente, mas nao bloqueia
 }
 
+// ── Progress callback types ─────────────────────────────────────────────────
+
+export interface VarreduraProgressEvent {
+  fase: "inicio" | "metadata" | "processando" | "tags" | "salvando" | "grupo_completo" | "completo"
+  grupoIndex?: number
+  grupoTotal?: number
+  grupoNome?: string
+  status?: string
+  membros?: number
+  leadsEncontrados?: number
+  tagsAplicadas?: number
+  tagsTotal?: number
+  jaProcessados?: number
+  erros?: number
+}
+
+export type VarreduraProgressCallback = (event: VarreduraProgressEvent) => void
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Runs promises in batches of `size`, returning all settled results in order. */
@@ -53,7 +71,10 @@ function phoneVariants(phone: string): string[] {
  * - Aplica tags em todas as contas Manychat vinculadas ao grupo (multi-conta)
  * - Usa ContatoConta(contato_id, conta_id) — nunca Lead.subscriber_id
  */
-export async function varredarGruposCampanha(campanhaId: string): Promise<VarreduraResult> {
+export async function varredarGruposCampanha(
+  campanhaId: string,
+  onProgress?: VarreduraProgressCallback,
+): Promise<VarreduraResult> {
   // 1. Busca campanha com credenciais da instancia Z-API
   const campanha = await prisma.campanha.findFirst({
     where: { id: campanhaId, deleted_at: null },
@@ -146,6 +167,9 @@ export async function varredarGruposCampanha(campanhaId: string): Promise<Varred
   // Filter to groups that have grupo_wa_id resolved
   const gruposComId = grupos.filter((g) => g.grupo_wa_id)
 
+  // Emit inicio event
+  onProgress?.({ fase: "inicio", grupoTotal: gruposComId.length })
+
   // ── Phase 2: Fetch group metadata in parallel batches of 3 ─────────────
 
   console.log(`[Varredura] Buscando metadados de ${gruposComId.length} grupos (batches de 3)...`)
@@ -157,9 +181,27 @@ export async function varredarGruposCampanha(campanhaId: string): Promise<Varred
 
   const gruposComMeta: GrupoComMeta[] = []
 
-  const metadataFetchers = gruposComId.map((grupo) => () =>
-    getGroupMetadata(inst.instance_id, inst.token, inst.client_token, grupo.grupo_wa_id!)
-  )
+  // Emit "buscando" for each group before fetching
+  for (let i = 0; i < gruposComId.length; i++) {
+    onProgress?.({
+      fase: "metadata",
+      grupoIndex: i + 1,
+      grupoTotal: gruposComId.length,
+      grupoNome: gruposComId[i].nome_filtro,
+      status: "aguardando",
+    })
+  }
+
+  const metadataFetchers = gruposComId.map((grupo, idx) => async () => {
+    onProgress?.({
+      fase: "metadata",
+      grupoIndex: idx + 1,
+      grupoTotal: gruposComId.length,
+      grupoNome: grupo.nome_filtro,
+      status: "buscando",
+    })
+    return getGroupMetadata(inst.instance_id, inst.token, inst.client_token, grupo.grupo_wa_id!)
+  })
 
   const metadataResults = await batchAllSettled(metadataFetchers, 3)
 
@@ -170,6 +212,14 @@ export async function varredarGruposCampanha(campanhaId: string): Promise<Varred
     if (settled.status === "rejected" || !settled.value) {
       console.warn(`[Varredura] getGroupMetadata falhou para grupo ${grupo.id} (${grupo.grupo_wa_id})`)
       result.erros++
+      onProgress?.({
+        fase: "metadata",
+        grupoIndex: i + 1,
+        grupoTotal: gruposComId.length,
+        grupoNome: grupo.nome_filtro,
+        status: "erro",
+        erros: result.erros,
+      })
       continue
     }
 
@@ -177,6 +227,15 @@ export async function varredarGruposCampanha(campanhaId: string): Promise<Varred
     const metadata = settled.value
     console.log(`[Varredura] Grupo "${metadata.name}" — ${metadata.participants.length} participantes`)
     gruposComMeta.push({ grupo, metadata })
+
+    onProgress?.({
+      fase: "metadata",
+      grupoIndex: i + 1,
+      grupoTotal: gruposComId.length,
+      grupoNome: metadata.name,
+      status: "ok",
+      membros: metadata.participants.length,
+    })
   }
 
   // ── Phase 3: Collect all unique phones from all groups ─────────────────
@@ -326,6 +385,12 @@ export async function varredarGruposCampanha(campanhaId: string): Promise<Varred
 
   console.log(`[Varredura] Batch results: ${contatosArr.length} contatos, ${leadsArr.length} leads, ${entradasArr.length} entradas, ${contatoContasArr.length} contatoContas`)
 
+  onProgress?.({
+    fase: "processando",
+    grupoTotal: gruposComMeta.length,
+    status: "identificando_leads",
+  })
+
   // ── Phase 5: Process participants, apply tags, collect upserts ─────────
 
   interface UpsertEntry {
@@ -430,6 +495,14 @@ export async function varredarGruposCampanha(campanhaId: string): Promise<Varred
   // Flatten all tag calls
   const allTagCalls = pendingParticipants.flatMap((p) => p.tagCalls)
 
+  onProgress?.({
+    fase: "tags",
+    tagsTotal: allTagCalls.length,
+    tagsAplicadas: 0,
+    leadsEncontrados: result.leads_encontrados,
+    jaProcessados: result.ja_processados,
+  })
+
   const tagCallFunctions = allTagCalls.map((tc) => () =>
     addTag(tc.apiKey, tc.subscriberId, tc.tagId)
   )
@@ -488,10 +561,20 @@ export async function varredarGruposCampanha(campanhaId: string): Promise<Varred
     leadIdsToUpdateGrupoEntrou.push(pp.lead.id)
   }
 
+  onProgress?.({
+    fase: "tags",
+    tagsTotal: allTagCalls.length,
+    tagsAplicadas: result.tags_aplicadas,
+    leadsEncontrados: result.leads_encontrados,
+    jaProcessados: result.ja_processados,
+    erros: result.erros,
+  })
+
   // ── Phase 8: Batch upserts via $transaction ───────────────────────────
 
   if (upserts.length > 0) {
     console.log(`[Varredura] Executando ${upserts.length} upserts em transacao...`)
+    onProgress?.({ fase: "salvando" })
 
     // Prisma doesn't support bulk upserts natively, so batch in transaction
     // Process in chunks of 50 to keep transactions manageable
@@ -538,6 +621,16 @@ export async function varredarGruposCampanha(campanhaId: string): Promise<Varred
       })
     }
   }
+
+  onProgress?.({
+    fase: "completo",
+    grupoTotal: gruposComMeta.length,
+    tagsAplicadas: result.tags_aplicadas,
+    leadsEncontrados: result.leads_encontrados,
+    jaProcessados: result.ja_processados,
+    erros: result.erros,
+    membros: result.total_membros,
+  })
 
   console.log(`[Varredura] campanhaId=${campanhaId} result=`, result)
   return result

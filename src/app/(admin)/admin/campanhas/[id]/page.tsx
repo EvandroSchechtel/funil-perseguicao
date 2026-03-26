@@ -16,7 +16,7 @@ import { EditGrupoDialog } from "@/components/admin/EditGrupoDialog"
 
 import {
   type CampanhaData, type InstanciaOption, type WebhookItem, type Flow,
-  type GrupoMonitoramento, type VarreduraResult,
+  type GrupoMonitoramento,
   formatDate,
 } from "@/components/admin/campanha/types"
 import { PauseBanner } from "@/components/admin/campanha/PauseBanner"
@@ -51,10 +51,6 @@ export default function CampanhaDetailPage() {
   // Delete flow
   const [deleteFlow, setDeleteFlow] = useState<{ flow: Flow; webhookId: string } | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
-
-  // Varredura de grupos
-  const [varrendo, setVarrendo] = useState(false)
-  const [varreduraResult, setVarreduraResult] = useState<VarreduraResult | null>(null)
 
   // Grupos monitoramento
   const [grupos, setGrupos] = useState<GrupoMonitoramento[]>([])
@@ -242,31 +238,6 @@ export default function CampanhaDetailPage() {
   }
 
 
-  // ── Varredura de grupos ─────────────────────────────────────────────────────
-
-  async function handleVarredura() {
-    if (!accessToken || !id) return
-    setVarrendo(true)
-    setVarreduraResult(null)
-    try {
-      const res = await fetch(`/api/admin/campanhas/${id}/varredura-grupos`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${accessToken}` },
-      })
-      const data = await res.json()
-      if (res.ok) {
-        setVarreduraResult(data.resultado)
-        fetchCampanha()
-      } else {
-        toast.error(data.message || "Erro na varredura.")
-      }
-    } catch {
-      toast.error("Erro de conexão.")
-    } finally {
-      setVarrendo(false)
-    }
-  }
-
   // ── Pause actions ───────────────────────────────────────────────────────────
 
   async function callPauseAction(action: "pausar" | "retomar" | "soltar-um" | "soltar-todos") {
@@ -396,9 +367,6 @@ export default function CampanhaDetailPage() {
             onInstanciaChange={setInstanciaId}
             onSaveInstancia={handleSaveInstancia}
             savingInstancia={savingInstancia}
-            varrendo={varrendo}
-            varreduraResult={varreduraResult}
-            onVarredura={handleVarredura}
           />
           <GruposSection
             campanha={campanha}

@@ -4,7 +4,9 @@ import React, { useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { AlertasProvider } from "@/contexts/AlertasContext"
+import { VarreduraProvider } from "@/contexts/VarreduraContext"
 import { Sidebar } from "@/components/layout/Sidebar"
+import { VarreduraProgressPanel } from "@/components/admin/VarreduraProgressPanel"
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -59,12 +61,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <AlertasProvider>
-      <div className="min-h-screen bg-[#0B0B0F]">
-        <Sidebar />
-        <main className="ml-64 min-h-screen">
-          {children}
-        </main>
-      </div>
+      <VarreduraProvider>
+        <div className="min-h-screen bg-[#0B0B0F]">
+          <Sidebar />
+          <main className="ml-64 min-h-screen">
+            {children}
+          </main>
+          <VarreduraProgressPanel />
+        </div>
+      </VarreduraProvider>
     </AlertasProvider>
   )
 }
