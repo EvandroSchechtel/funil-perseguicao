@@ -62,6 +62,8 @@ interface EscanearResult {
   ja_configurados: number
   sem_match: number
   detalhes: EscanearDetalhe[]
+  entradas_processadas?: number
+  erros_entradas?: number
 }
 
 interface EntradaGrupo {
@@ -1319,6 +1321,19 @@ export default function InstanciaDetailPage() {
                   <p className="text-[#3F3F58] text-xs mt-0.5">Sem match</p>
                 </div>
               </div>
+
+              {/* Entradas processadas */}
+              {(scanResult.entradas_processadas ?? 0) > 0 && (
+                <div className="bg-[#0A0A12] border border-[#1C1C2C] rounded-xl p-3 text-center">
+                  <p className="text-[#60A5FA] text-xl font-bold">{scanResult.entradas_processadas}</p>
+                  <p className="text-[#3F3F58] text-xs mt-0.5">
+                    Entradas processadas
+                    {(scanResult.erros_entradas ?? 0) > 0 && (
+                      <span className="text-[#F87171] ml-1">({scanResult.erros_entradas} erros)</span>
+                    )}
+                  </p>
+                </div>
+              )}
 
               {/* Name filter */}
               <div className="relative">

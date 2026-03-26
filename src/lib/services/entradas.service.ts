@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/prisma"
 import { addTag } from "@/lib/manychat/tags"
-import { normalizePhone, getParticipantPhone, isSystemJoinName, type ZApiWebhookPayload } from "@/lib/zapi/client"
+import { normalizePhone, getParticipantPhone, isSystemJoinName, getGroupMetadata, type ZApiWebhookPayload } from "@/lib/zapi/client"
 import { tentarAutoVincularGrupo } from "@/lib/services/grupo-auto-vincular.service"
 import { addWebhookJob } from "@/lib/queue/queues"
 
@@ -86,6 +86,31 @@ export async function processarEntradaGrupo(
       })
       if (novoGrupo) {
         await processarEntradaParaGrupo({ grupo: novoGrupo, groupWaId, groupWaName: chatName, telefoneNorm, senderName: nomeSender ?? undefined })
+        // Fire & forget: scan outros membros já presentes no grupo recém-vinculado
+        ;(async () => {
+          try {
+            const instZapi = await prisma.instanciaZApi.findFirst({
+              where: { id: instanciaId, deleted_at: null },
+              select: { instance_id: true, token: true, client_token: true },
+            })
+            if (!instZapi || !novoGrupo.grupo_wa_id) return
+            const metadata = await getGroupMetadata(
+              instZapi.instance_id, instZapi.token, instZapi.client_token, novoGrupo.grupo_wa_id
+            )
+            if (!metadata?.participants?.length) return
+            const outros = metadata.participants.filter(
+              (p) => normalizePhone(p.phone) !== telefoneNorm
+            )
+            if (outros.length === 0) return
+            const stats = await processarParticipantesDoGrupo(novoGrupo, outros)
+            console.log(
+              `[AutoVincular] Participantes escaneados no grupo "${novoGrupo.nome_filtro}": ` +
+              `${stats.processados} processados, ${stats.erros} erros`
+            )
+          } catch (err) {
+            console.error("[AutoVincular] Erro ao escanear participantes pós-vincular:", err)
+          }
+        })()
       }
     } else {
       console.log(`[Entradas] Nenhum grupo monitorado corresponde a "${chatName}"`)
@@ -110,7 +135,7 @@ export async function processarEntradaGrupo(
   }
 }
 
-async function processarEntradaParaGrupo({
+export async function processarEntradaParaGrupo({
   grupo,
   groupWaId,
   groupWaName,
@@ -348,4 +373,49 @@ async function processarEntradaParaGrupo({
         .catch((err) => console.error(`[Entradas] Webhook externo entrou_grupo falhou → ${extUrl}:`, err))
     }
   }
+}
+
+/**
+ * Processes a list of Z-API group participants through the entry pipeline.
+ * For each participant: normalizes phone, finds/creates Contato + Lead,
+ * applies Manychat tag, and upserts EntradaGrupo.
+ * Best-effort per participant — individual errors don't abort the batch.
+ */
+export async function processarParticipantesDoGrupo(
+  grupo: {
+    id: string
+    campanha_id: string
+    tag_manychat_id: number
+    grupo_wa_id: string | null
+    nome_filtro: string
+    conta_manychat: { id: string; api_key: string }
+    contas_monitoramento: Array<{
+      conta_manychat_id: string
+      conta_manychat: { id: string; api_key: string }
+      tag_manychat_id: number
+    }>
+  },
+  participants: Array<{ phone: string; name?: string }>,
+): Promise<{ processados: number; erros: number }> {
+  let processados = 0
+  let erros = 0
+
+  for (const p of participants) {
+    const tel = normalizePhone(p.phone)
+    if (!tel || tel.length < 8) continue
+    try {
+      await processarEntradaParaGrupo({
+        grupo,
+        groupWaId: grupo.grupo_wa_id ?? "",
+        groupWaName: grupo.nome_filtro,
+        telefoneNorm: tel,
+        senderName: p.name ?? undefined,
+      })
+      processados++
+    } catch {
+      erros++
+    }
+  }
+
+  return { processados, erros }
 }
