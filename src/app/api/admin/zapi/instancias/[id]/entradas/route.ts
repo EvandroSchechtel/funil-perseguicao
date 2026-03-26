@@ -5,7 +5,7 @@ import { listarEntradas } from "@/lib/services/zapi.service"
 
 type Ctx = { params: Promise<{ id: string }> }
 
-// GET /api/admin/zapi/instancias/[id]/entradas?grupo_id=<gid>
+// GET /api/admin/zapi/instancias/[id]/entradas?grupo_id=<gid>&per_page=<n>
 export async function GET(request: NextRequest, { params }: Ctx) {
   try {
     const ctx = await getAuthContext(request)
@@ -15,8 +15,10 @@ export async function GET(request: NextRequest, { params }: Ctx) {
 
     const { id } = await params
     const grupoId = request.nextUrl.searchParams.get("grupo_id") ?? undefined
+    const perPageRaw = request.nextUrl.searchParams.get("per_page")
+    const perPage = perPageRaw ? Math.min(Math.max(parseInt(perPageRaw, 10) || 200, 1), 200) : undefined
 
-    const entradas = await listarEntradas(id, grupoId)
+    const entradas = await listarEntradas(id, grupoId, perPage)
     return ok({ entradas })
   } catch (error) {
     return handleServiceError(error) ?? serverError()

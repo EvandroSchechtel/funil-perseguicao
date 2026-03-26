@@ -25,6 +25,7 @@ export async function GET(request: NextRequest, { params }: Ctx) {
         tag_manychat_id: true,
         tag_manychat_nome: true,
         status: true,
+        auto_expand: true,
         created_at: true,
         instancia: { select: { id: true, nome: true } },
         conta_manychat: { select: { id: true, nome: true } },

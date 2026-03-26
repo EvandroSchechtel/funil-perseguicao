@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { Header } from "@/components/layout/Header"
 import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
+import { LeadJourneyIndicator } from "@/components/admin/LeadJourneyIndicator"
 
 interface LeadTentativa {
   id: string
@@ -264,6 +265,18 @@ export default function LeadDetailPage() {
           </div>
         ) : lead && statusCfg ? (
           <div className="space-y-5">
+
+            {/* ── Journey Indicator ── */}
+            <LeadJourneyIndicator
+              status={lead.status}
+              createdAt={lead.created_at}
+              processadoAt={lead.processado_at}
+              grupoEntrouAt={lead.grupo_entrou_at}
+              grupoSaiuAt={lead.grupo_saiu_at}
+              tagAplicada={lead.entradas_grupo?.some((e) => e.tag_aplicada)}
+              tentativas={lead.tentativas}
+              pausado={lead.status === "aguardando"}
+            />
 
             {/* ── Status Card ── */}
             <div className={`${statusCfg.bg} border ${statusCfg.border} rounded-xl p-5`}>

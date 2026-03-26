@@ -3,158 +3,29 @@
 import React, { useState, useEffect, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import {
-  Pencil, Webhook, Users2, Copy, CheckCircle2, XCircle, Loader2,
-  Plus, Trash2, ToggleLeft, ToggleRight, Info, GripVertical, FlaskConical,
-  Building2, Calendar, ChevronDown, ChevronRight, PauseCircle, PlayCircle,
-  ListOrdered, ChevronsRight, DoorOpen, Tag, ExternalLink, Smartphone, Save,
-  ScanSearch, MessageSquare, AlertTriangle,
-} from "lucide-react"
+import { Pencil, PauseCircle, Building2, Calendar } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
 import { Header } from "@/components/layout/Header"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { toast } from "sonner"
 import { AddFlowDialog } from "@/components/admin/AddFlowDialog"
+import { EditGrupoDialog } from "@/components/admin/EditGrupoDialog"
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface CampanhaData {
-  id: string
-  nome: string
-  descricao: string | null
-  status: "ativo" | "inativo"
-  pausado_at: string | null
-  data_inicio: string | null
-  data_fim: string | null
-  created_at: string
-  updated_at: string
-  webhooks_count: number
-  leads_count: number
-  aguardando_count: number
-  grupos_entrados_count: number
-  usuario: { nome: string }
-  cliente: { id: string; nome: string } | null
-  instancia_zapi: { id: string; nome: string; status: string } | null
-  ultima_varredura_at: string | null
-}
-
-interface InstanciaOption {
-  id: string
-  nome: string
-  status: string
-}
-
-interface Flow {
-  id: string
-  tipo: string
-  flow_ns: string | null
-  flow_nome: string | null
-  webhook_url: string | null
-  ordem: number
-  total_enviados: number
-  status: "ativo" | "inativo"
-  tag_manychat_id: number | null
-  tag_manychat_nome: string | null
-  conta: { id: string; nome: string; page_name: string | null } | null
-}
-
-interface WebhookItem {
-  id: string
-  nome: string
-  token: string
-  status: "ativo" | "inativo"
-  url_publica: string
-  leads_count: number
-  leads_status: Record<string, number>
-  webhook_flows: Flow[]
-}
-
-interface LeadItem {
-  id: string
-  nome: string
-  telefone: string
-  email: string | null
-  status: string
-  erro_msg: string | null
-  tentativas: number
-  subscriber_id: string | null
-  flow_executado: string | null
-  conta_nome: string | null
-  grupo_entrou_at: string | null
-  grupo_saiu_at: string | null
-  processado_at: string | null
-  created_at: string
-  webhook: { nome: string } | null
-}
-
-type TesteResultado = { ok: true; lead_id: string } | { ok: false; message: string } | null
-
-interface GrupoMonitoramento {
-  id: string
-  nome_filtro: string
-  grupo_wa_id: string | null
-  tag_manychat_nome: string
-  status: string
-  created_at: string
-  instancia: { id: string; nome: string }
-  conta_manychat: { id: string; nome: string }
-  contas_monitoramento: Array<{
-    conta_manychat_id: string
-    conta_manychat: { id: string; nome: string }
-    tag_manychat_id: number
-    tag_manychat_nome: string
-  }>
-  _count: { entradas: number }
-}
-
-interface VarreduraResult {
-  grupos_varridos: number
-  grupos_sem_id: number
-  total_membros: number
-  leads_encontrados: number
-  ja_processados: number
-  tags_aplicadas: number
-  erros: number
-  proxima_varredura_em: string
-  aviso_24h?: string | null
-}
-
-const LEADS_PREVIEW = 5
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function formatDate(str: string | null) {
-  if (!str) return "—"
-  return new Date(str).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })
-}
-
-function statusColor(s: string) {
-  if (s === "ok" || s === "enviado") return "text-[#25D366]"
-  if (s === "falha" || s === "erro") return "text-[#F87171]"
-  return "text-[#F59E0B]"
-}
-
-function fmtDt(str: string | null) {
-  if (!str) return null
-  return new Date(str).toLocaleString("pt-BR", {
-    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
-  })
-}
-
-function leadStatusStyle(status: string): { border: string; badge: string; bg: string } {
-  switch (status) {
-    case "sucesso": return { border: "border-l-[#25D366]", badge: "bg-[#25D366]/15 text-[#25D366]", bg: "" }
-    case "falha":   return { border: "border-l-[#F87171]", badge: "bg-[#F87171]/15 text-[#F87171]", bg: "" }
-    case "sem_optin": return { border: "border-l-[#F59E0B]", badge: "bg-[#F59E0B]/15 text-[#F59E0B]", bg: "" }
-    case "processando": return { border: "border-l-[#60A5FA]", badge: "bg-[#60A5FA]/15 text-[#60A5FA]", bg: "" }
-    case "aguardando": return { border: "border-l-[#F59E0B]", badge: "bg-[#F59E0B]/15 text-[#F59E0B]", bg: "" }
-    default: return { border: "border-l-[#8B8B9E]", badge: "bg-[#8B8B9E]/15 text-[#8B8B9E]", bg: "" }
-  }
-}
+import {
+  type CampanhaData, type InstanciaOption, type WebhookItem, type Flow,
+  type GrupoMonitoramento, type VarreduraResult,
+  formatDate,
+} from "@/components/admin/campanha/types"
+import { PauseBanner } from "@/components/admin/campanha/PauseBanner"
+import { VisaoGeralSection } from "@/components/admin/campanha/VisaoGeralSection"
+import { InstanciaZApiSection } from "@/components/admin/campanha/InstanciaZApiSection"
+import { GruposSection } from "@/components/admin/campanha/GruposSection"
+import { WebhooksSection } from "@/components/admin/campanha/WebhooksSection"
+import { LeadsPreviewSection } from "@/components/admin/campanha/LeadsPreviewSection"
+import { TesteWebhookDialog } from "@/components/admin/campanha/TesteWebhookDialog"
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
@@ -167,32 +38,19 @@ export default function CampanhaDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Webhooks tab
+  // Webhooks
   const [webhooks, setWebhooks] = useState<WebhookItem[]>([])
   const [loadingWebhooks, setLoadingWebhooks] = useState(false)
-  const [expandedWebhook, setExpandedWebhook] = useState<string | null>(null)
-  const [copiedId, setCopiedId] = useState<string | null>(null)
 
   // Add flow dialog
-  const [showAddFlow, setShowAddFlow] = useState<string | null>(null) // webhookId
+  const [showAddFlow, setShowAddFlow] = useState<string | null>(null)
 
   // Test webhook dialog
   const [testeWebhook, setTesteWebhook] = useState<WebhookItem | null>(null)
-  const [testeNome, setTesteNome] = useState("")
-  const [testeTelefone, setTesteTelefone] = useState("")
-  const [testeLoading, setTesteLoading] = useState(false)
-  const [testeErrors, setTesteErrors] = useState<Record<string, string>>({})
-  const [testeResultado, setTesteResultado] = useState<TesteResultado>(null)
 
   // Delete flow
   const [deleteFlow, setDeleteFlow] = useState<{ flow: Flow; webhookId: string } | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
-
-  // Leads
-  const [leads, setLeads] = useState<LeadItem[]>([])
-  const [loadingLeads, setLoadingLeads] = useState(false)
-  const [leadsTotal, setLeadsTotal] = useState(0)
-  const [leadsExpanded, setLeadsExpanded] = useState(false)
 
   // Varredura de grupos
   const [varrendo, setVarrendo] = useState(false)
@@ -202,10 +60,7 @@ export default function CampanhaDetailPage() {
   const [grupos, setGrupos] = useState<GrupoMonitoramento[]>([])
   const [loadingGrupos, setLoadingGrupos] = useState(false)
   const [deletingGrupo, setDeletingGrupo] = useState<string | null>(null)
-  const [expandedGrupo, setExpandedGrupo] = useState<string | null>(null)
-  const [editingGrupoId, setEditingGrupoId] = useState<string | null>(null)
-  const [editingGrupoNome, setEditingGrupoNome] = useState("")
-  const [savingEditGrupo, setSavingEditGrupo] = useState(false)
+  const [editGrupo, setEditGrupo] = useState<GrupoMonitoramento | null>(null)
 
   // Pause actions
   const [pauseLoading, setPauseLoading] = useState<string | null>(null)
@@ -216,6 +71,7 @@ export default function CampanhaDetailPage() {
   const [savingInstancia, setSavingInstancia] = useState(false)
 
   const canWrite = user ? hasPermission(user.role, "webhooks:write") : false
+  const canReprocess = user ? hasPermission(user.role, "leads:reprocess") : false
 
   // ── Fetch campanha ──────────────────────────────────────────────────────────
 
@@ -271,7 +127,7 @@ export default function CampanhaDetailPage() {
     }
   }
 
-  // ── Fetch webhooks (lazy, on tab switch) ────────────────────────────────────
+  // ── Fetch webhooks ────────────────────────────────────────────────────────
 
   const fetchWebhooks = useCallback(async () => {
     if (!accessToken || !id) return
@@ -282,7 +138,6 @@ export default function CampanhaDetailPage() {
       })
       if (!res.ok) return
       const data = await res.json()
-      // Fetch full data for each webhook (flows)
       const full = await Promise.all(
         (data.webhooks || []).map(async (w: { id: string }) => {
           const r = await fetch(`/api/admin/webhooks/${w.id}`, {
@@ -301,48 +156,14 @@ export default function CampanhaDetailPage() {
     }
   }, [accessToken, id])
 
-  // ── Fetch leads (lazy) ──────────────────────────────────────────────────────
-
-  const fetchLeads = useCallback(async () => {
-    if (!accessToken || !id) return
-    setLoadingLeads(true)
-    try {
-      const res = await fetch(`/api/admin/leads?campanha_id=${id}&per_page=100`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      })
-      if (!res.ok) return
-      const data = await res.json()
-      setLeads(data.leads || [])
-      setLeadsTotal(data.pagination?.total || 0)
-    } catch {
-      toast.error("Erro ao carregar leads.")
-    } finally {
-      setLoadingLeads(false)
-    }
-  }, [accessToken, id])
-
-  // Fetch webhooks and leads once campanha is loaded
+  // Fetch webhooks once campanha is loaded
   useEffect(() => {
     if (campanha) {
       fetchWebhooks()
-      fetchLeads()
     }
   }, [campanha?.id])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Copy URL ────────────────────────────────────────────────────────────────
-
-  async function handleCopy(url: string, wid: string) {
-    try {
-      await navigator.clipboard.writeText(url)
-      setCopiedId(wid)
-      setTimeout(() => setCopiedId(null), 2000)
-      toast.success("URL copiada!")
-    } catch {
-      toast.error("Erro ao copiar.")
-    }
-  }
-
-  // ── Toggle webhook ──────────────────────────────────────────────────────────
+  // ── Webhook actions ────────────────────────────────────────────────────────
 
   async function handleToggleWebhook(w: WebhookItem) {
     setActionLoading(w.id + "-toggle")
@@ -360,8 +181,6 @@ export default function CampanhaDetailPage() {
     }
   }
 
-  // ── Toggle flow ─────────────────────────────────────────────────────────────
-
   async function handleToggleFlow(flow: Flow, webhookId: string) {
     setActionLoading(flow.id + "-toggle")
     try {
@@ -373,8 +192,6 @@ export default function CampanhaDetailPage() {
       if (res.ok) { toast.success("Status do flow alterado."); fetchWebhooks() }
     } catch { /* silent */ } finally { setActionLoading(null) }
   }
-
-  // ── Delete flow ─────────────────────────────────────────────────────────────
 
   async function handleDeleteFlow() {
     if (!deleteFlow) return
@@ -390,46 +207,6 @@ export default function CampanhaDetailPage() {
         fetchWebhooks()
       }
     } catch { /* silent */ } finally { setActionLoading(null) }
-  }
-
-  // ── Test webhook ────────────────────────────────────────────────────────────
-
-  function handleOpenTeste(w: WebhookItem) {
-    setTesteWebhook(w)
-    setTesteNome("")
-    setTesteTelefone("")
-    setTesteErrors({})
-    setTesteResultado(null)
-  }
-
-  async function handleEnviarTeste() {
-    if (!testeWebhook) return
-    const errs: Record<string, string> = {}
-    if (!testeNome.trim()) errs.nome = "Nome é obrigatório"
-    if (!testeTelefone.trim()) errs.telefone = "Telefone é obrigatório"
-    if (Object.keys(errs).length > 0) { setTesteErrors(errs); return }
-
-    setTesteLoading(true)
-    setTesteResultado(null)
-    try {
-      const res = await fetch(`/api/webhook/${testeWebhook.token}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nome: testeNome.trim(), telefone: testeTelefone.trim() }),
-      })
-      const data = await res.json()
-      if (res.ok && data.ok) {
-        setTesteResultado({ ok: true, lead_id: data.lead_id })
-        fetchWebhooks()
-        fetchLeads()
-      } else {
-        setTesteResultado({ ok: false, message: data.message || "Erro ao processar." })
-      }
-    } catch {
-      setTesteResultado({ ok: false, message: "Erro de rede." })
-    } finally {
-      setTesteLoading(false)
-    }
   }
 
   // ── Grupos monitoramento ────────────────────────────────────────────────────
@@ -464,21 +241,6 @@ export default function CampanhaDetailPage() {
     finally { setDeletingGrupo(null) }
   }
 
-  async function handleEditGrupoSave(grupo: GrupoMonitoramento) {
-    if (!accessToken) return
-    setSavingEditGrupo(true)
-    try {
-      const res = await fetch(`/api/admin/zapi/instancias/${grupo.instancia.id}/grupos/${grupo.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ nome_filtro: editingGrupoNome }),
-      })
-      const data = await res.json()
-      if (res.ok) { toast.success(data.message || "Grupo atualizado."); setEditingGrupoId(null); fetchGrupos() }
-      else toast.error(data.message || "Erro ao atualizar grupo.")
-    } catch { toast.error("Erro de conexão.") }
-    finally { setSavingEditGrupo(false) }
-  }
 
   // ── Varredura de grupos ─────────────────────────────────────────────────────
 
@@ -554,8 +316,6 @@ export default function CampanhaDetailPage() {
     )
   }
 
-  const visibleLeads = leadsExpanded ? leads : leads.slice(0, LEADS_PREVIEW)
-
   return (
     <div className="flex flex-col h-full">
       <Header
@@ -625,545 +385,54 @@ export default function CampanhaDetailPage() {
 
         {/* ── Unified scrollable content ─────────────────────────────────── */}
         <div className="px-6 pb-10 max-w-3xl space-y-10">
-
-          {/* Pause banner */}
-          {campanha.pausado_at && (
-            <div className="bg-[#1A1500] border border-[#F59E0B]/30 rounded-xl px-5 py-4">
-              <div className="flex items-center gap-3">
-                <PauseCircle className="w-5 h-5 text-[#F59E0B] shrink-0" />
-                <div>
-                  <p className="text-[#F59E0B] font-semibold text-sm">Campanha pausada</p>
-                  <p className="text-[#A08030] text-xs mt-0.5">
-                    {campanha.aguardando_count > 0
-                      ? `${campanha.aguardando_count} lead(s) na fila de espera`
-                      : "Nenhum lead na fila ainda"}
-                    {" · "}Pausada em {formatDate(campanha.pausado_at)}
-                  </p>
-                </div>
-              </div>
-              {canWrite && (
-                <div className="flex flex-wrap gap-2 mt-4">
-                  <Button size="sm" onClick={() => callPauseAction("retomar")} loading={pauseLoading === "retomar"} disabled={!!pauseLoading}>
-                    <PlayCircle className="w-4 h-4 mr-1.5" />Retomar campanha
-                  </Button>
-                  {campanha.aguardando_count > 0 && (
-                    <>
-                      <Button size="sm" variant="outline" onClick={() => callPauseAction("soltar-todos")} loading={pauseLoading === "soltar-todos"} disabled={!!pauseLoading}>
-                        <ChevronsRight className="w-4 h-4 mr-1.5" />Soltar todos ({campanha.aguardando_count})
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => callPauseAction("soltar-um")} loading={pauseLoading === "soltar-um"} disabled={!!pauseLoading}>
-                        <ListOrdered className="w-4 h-4 mr-1.5" />Soltar um
-                      </Button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Seção: Visão Geral ──────────────────────────────────────────── */}
-          <section className="space-y-4">
-            <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold">Visão Geral</p>
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { label: "Webhooks", value: campanha.webhooks_count, icon: <Webhook className="w-4 h-4 text-[#7F7F9E]" /> },
-                { label: "Leads recebidos", value: campanha.leads_count, icon: <Users2 className="w-4 h-4 text-[#7F7F9E]" /> },
-                {
-                  label: "Entradas no grupo",
-                  value: campanha.grupos_entrados_count,
-                  icon: <DoorOpen className="w-4 h-4 text-[#25D366]" />,
-                  suffix: campanha.leads_count > 0
-                    ? <span className="text-xs font-semibold ml-1" style={{ color: campanha.grupos_entrados_count / campanha.leads_count >= 0.6 ? "#25D366" : campanha.grupos_entrados_count / campanha.leads_count >= 0.3 ? "#F59E0B" : "#F87171" }}>
-                        {((campanha.grupos_entrados_count / campanha.leads_count) * 100).toFixed(1)}%
-                      </span>
-                    : null,
-                },
-              ].map((s) => (
-                <div key={s.label} className="bg-[#0F0F1A] border border-[#1C1C2C] rounded-xl px-4 py-4 flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-[#13131F] flex items-center justify-center shrink-0">{s.icon}</div>
-                  <div>
-                    <div className="flex items-baseline">
-                      <p className="text-xl font-bold text-[#EEEEF5] leading-none">{s.value}</p>
-                      {"suffix" in s ? s.suffix : null}
-                    </div>
-                    <p className="text-[#7F7F9E] text-[10px] mt-1">{s.label}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-5 space-y-4">
-              {campanha.descricao && (
-                <div>
-                  <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold mb-1">Descrição</p>
-                  <p className="text-[#C4C4D4] text-sm">{campanha.descricao}</p>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold mb-1">Criado por</p>
-                  <p className="text-[#C4C4D4] text-sm">{campanha.usuario.nome}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold mb-1">Criado em</p>
-                  <p className="text-[#C4C4D4] text-sm">{formatDate(campanha.created_at)}</p>
-                </div>
-                {campanha.data_inicio && (
-                  <div>
-                    <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold mb-1">Início</p>
-                    <p className="text-[#C4C4D4] text-sm">{formatDate(campanha.data_inicio)}</p>
-                  </div>
-                )}
-                {campanha.data_fim && (
-                  <div>
-                    <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold mb-1">Fim</p>
-                    <p className="text-[#C4C4D4] text-sm">{formatDate(campanha.data_fim)}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-
-          {/* ── Seção: Instância Z-API ──────────────────────────────────────── */}
-          <section className="space-y-3">
-            <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold flex items-center gap-1.5">
-              <Smartphone className="w-3.5 h-3.5" />
-              Instância Z-API
-            </p>
-            <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-5">
-              {!campanha?.cliente ? (
-                <p className="text-[#5A5A72] text-sm">Vincule um cliente à campanha para selecionar uma instância Z-API.</p>
-              ) : instancias.length === 0 ? (
-                <p className="text-[#5A5A72] text-sm">Nenhuma instância Z-API encontrada para o cliente <span className="text-[#C4C4D4]">{campanha.cliente.nome}</span>.</p>
-              ) : (
-                <div className="flex items-center gap-3">
-                  <select
-                    value={instanciaId ?? ""}
-                    onChange={(e) => setInstanciaId(e.target.value || null)}
-                    className="flex-1 bg-[#0F0F1A] border border-[#2E2E3E] text-[#EEEEF5] text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#25D366]"
-                  >
-                    <option value="">— Nenhuma instância —</option>
-                    {instancias.map((inst) => (
-                      <option key={inst.id} value={inst.id} disabled={inst.status !== "ativo"}>
-                        {inst.nome}{inst.status !== "ativo" ? " (inativa)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                  {canWrite && (
-                    <Button
-                      size="sm"
-                      onClick={handleSaveInstancia}
-                      disabled={savingInstancia || instanciaId === (campanha?.instancia_zapi?.id ?? null)}
-                    >
-                      {savingInstancia ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                      <span className="ml-1">Salvar</span>
-                    </Button>
-                  )}
-                </div>
-              )}
-              {campanha?.instancia_zapi && (
-                <p className="text-xs text-[#5A5A72] mt-2">
-                  Vinculada: <span className="text-[#25D366]">{campanha.instancia_zapi.nome}</span>
-                  {campanha.instancia_zapi.status !== "ativo" && <span className="text-[#F87171] ml-1">(inativa)</span>}
-                </p>
-              )}
-
-              {/* Varredura de grupos */}
-              {campanha?.instancia_zapi && canWrite && (
-                <div className="mt-4 pt-4 border-t border-[#1E1E2A]">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-[#C4C4D4]">Varredura de Grupos</p>
-                      <p className="text-xs text-[#5A5A72] mt-0.5">
-                        {campanha.ultima_varredura_at
-                          ? `Última: ${fmtDt(campanha.ultima_varredura_at)}`
-                          : "Nunca varrido — verifique quem já está nos grupos"}
-                      </p>
-                    </div>
-                    <Button size="sm" variant="outline" onClick={handleVarredura} loading={varrendo} disabled={varrendo}>
-                      <ScanSearch className="w-3.5 h-3.5 mr-1.5" />
-                      {varrendo ? "Varrendo…" : "Varrer Grupos"}
-                    </Button>
-                  </div>
-                  {varreduraResult && (
-                    <div className="mt-3 p-3 bg-[#0A1A12] border border-[#25D366]/30 rounded-lg text-xs">
-                      <p className="text-[#25D366] font-semibold mb-2">Varredura concluída</p>
-                      {varreduraResult.aviso_24h && (
-                        <div className="mb-2 flex items-start gap-1.5 text-[#F59E0B]">
-                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                          <p>{varreduraResult.aviso_24h}</p>
-                        </div>
-                      )}
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[#8B8B9E]">
-                        <span>Grupos varridos: <strong className="text-[#EEEEF5]">{varreduraResult.grupos_varridos}</strong></span>
-                        <span>Membros lidos: <strong className="text-[#EEEEF5]">{varreduraResult.total_membros}</strong></span>
-                        <span>Leads encontrados: <strong className="text-[#EEEEF5]">{varreduraResult.leads_encontrados}</strong></span>
-                        <span>Tags aplicadas: <strong className="text-[#25D366]">{varreduraResult.tags_aplicadas}</strong></span>
-                        <span>Já processados: <strong className="text-[#5A5A72]">{varreduraResult.ja_processados}</strong></span>
-                        {varreduraResult.grupos_sem_id > 0 && (
-                          <span>Grupos sem ID WA: <strong className="text-[#F59E0B]">{varreduraResult.grupos_sem_id}</strong></span>
-                        )}
-                        {varreduraResult.erros > 0 && (
-                          <span>Erros: <strong className="text-[#F87171]">{varreduraResult.erros}</strong></span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* ── Seção: Grupos WhatsApp ──────────────────────────────────────── */}
-          {campanha?.instancia_zapi && (
-            <section className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold flex items-center gap-1.5">
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  Grupos WhatsApp{grupos.length > 0 && <span className="text-[#3F3F58] normal-case">({grupos.length})</span>}
-                </p>
-                <Link
-                  href={`/admin/zapi/${campanha.instancia_zapi.id}`}
-                  className="text-xs text-[#25D366] hover:text-[#1DB954] flex items-center gap-1 transition-colors"
-                >
-                  <ExternalLink className="w-3 h-3" />
-                  Gerenciar na instância
-                </Link>
-              </div>
-
-              {loadingGrupos ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin w-4 h-4 border-2 border-[#25D366] border-t-transparent rounded-full" />
-                </div>
-              ) : grupos.length === 0 ? (
-                <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl flex flex-col items-center justify-center py-8 gap-2">
-                  <MessageSquare className="w-5 h-5 text-[#3F3F58]" />
-                  <p className="text-[#5A5A72] text-sm">Nenhum grupo monitorado nesta campanha</p>
-                  <Link
-                    href={`/admin/zapi/${campanha.instancia_zapi.id}`}
-                    className="text-xs text-[#25D366] hover:text-[#1DB954] flex items-center gap-1 mt-1 transition-colors"
-                  >
-                    <Plus className="w-3 h-3" />
-                    Adicionar grupo na instância Z-API
-                  </Link>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {grupos.map((g) => {
-                    const expanded = expandedGrupo === g.id
-                    const isEditing = editingGrupoId === g.id
-                    const contasExibir = g.contas_monitoramento.length > 0
-                      ? g.contas_monitoramento
-                      : [{ conta_manychat: g.conta_manychat, tag_manychat_id: 0, tag_manychat_nome: g.tag_manychat_nome, conta_manychat_id: g.conta_manychat.id }]
-                    return (
-                      <div key={g.id} className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-hidden">
-                        {/* Header */}
-                        <div
-                          className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-[#1C1C28] transition-colors"
-                          onClick={() => setExpandedGrupo(expanded ? null : g.id)}
-                        >
-                          <div className={`w-2 h-2 rounded-full shrink-0 ${g.status === "ativo" ? "bg-[#25D366]" : "bg-[#3F3F58]"}`} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[#EEEEF5] text-sm font-medium truncate">{g.nome_filtro}</p>
-                            <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                              <span className="text-[#5A5A72] text-xs flex items-center gap-1">
-                                <Building2 className="w-2.5 h-2.5" />
-                                {g.conta_manychat.nome}
-                              </span>
-                              <span className="text-[#5A5A72] text-xs flex items-center gap-1">
-                                <Tag className="w-2.5 h-2.5" />
-                                {g.tag_manychat_nome}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="shrink-0 text-right mr-1">
-                            <p className="text-[#EEEEF5] text-sm font-bold">{g._count.entradas}</p>
-                            <p className="text-[#3F3F58] text-[10px] uppercase">entradas</p>
-                          </div>
-                          {expanded ? <ChevronDown className="w-4 h-4 text-[#5A5A72] shrink-0" /> : <ChevronRight className="w-4 h-4 text-[#5A5A72] shrink-0" />}
-                        </div>
-
-                        {/* Expanded area */}
-                        {expanded && (
-                          <div className="border-t border-[#1E1E2A] px-4 py-3 space-y-3">
-                            {/* Inline edit or info */}
-                            {isEditing ? (
-                              <div className="flex items-center gap-2">
-                                <input
-                                  className="flex-1 bg-[#0A0A12] border border-[#2A2A3A] rounded-lg px-3 py-1.5 text-sm text-[#EEEEF5] focus:outline-none focus:border-[#25D366]"
-                                  value={editingGrupoNome}
-                                  onChange={(e) => setEditingGrupoNome(e.target.value)}
-                                  onKeyDown={(e) => { if (e.key === "Enter") handleEditGrupoSave(g); if (e.key === "Escape") setEditingGrupoId(null) }}
-                                  autoFocus
-                                />
-                                <Button size="sm" onClick={() => handleEditGrupoSave(g)} loading={savingEditGrupo} disabled={savingEditGrupo}>
-                                  <Save className="w-3.5 h-3.5 mr-1" />Salvar
-                                </Button>
-                                <Button size="sm" variant="outline" onClick={() => setEditingGrupoId(null)} disabled={savingEditGrupo}>
-                                  Cancelar
-                                </Button>
-                              </div>
-                            ) : (
-                              <div className="space-y-1.5 text-xs text-[#8B8B9E]">
-                                {g.grupo_wa_id && (
-                                  <p>ID Z-API: <span className="text-[#EEEEF5] font-mono">{g.grupo_wa_id}</span></p>
-                                )}
-                                <p className="text-[#5A5A72] uppercase tracking-wider font-semibold mt-1">Contas monitoradas</p>
-                                {contasExibir.map((cm, i) => (
-                                  <div key={i} className="flex items-center gap-2">
-                                    <Building2 className="w-3 h-3 shrink-0" />
-                                    <span>{cm.conta_manychat.nome}</span>
-                                    <Tag className="w-3 h-3 shrink-0 ml-1" />
-                                    <span className="text-[#EEEEF5]">{cm.tag_manychat_nome}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {/* Action buttons */}
-                            {canWrite && !isEditing && (
-                              <div className="flex items-center gap-2 pt-1">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={(e) => { e.stopPropagation(); setEditingGrupoId(g.id); setEditingGrupoNome(g.nome_filtro) }}
-                                >
-                                  <Pencil className="w-3.5 h-3.5 mr-1" />Editar nome
-                                </Button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteGrupo(g)}
-                                  disabled={deletingGrupo === g.id}
-                                  className="w-7 h-7 flex items-center justify-center rounded-lg text-[#3F3F58] hover:text-[#F87171] hover:bg-[#F87171]/10 transition-all disabled:opacity-50"
-                                >
-                                  {deletingGrupo === g.id
-                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                    : <Trash2 className="w-3.5 h-3.5" />}
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* ── Seção: Webhooks ─────────────────────────────────────────────── */}
-          <section className="space-y-3">
-            <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold">
-              Webhooks{campanha.webhooks_count > 0 && <span className="text-[#3F3F58] normal-case ml-1">({campanha.webhooks_count})</span>}
-            </p>
-            {loadingWebhooks ? (
-              <div className="flex items-center justify-center py-10">
-                <div className="animate-spin w-5 h-5 border-2 border-[#25D366] border-t-transparent rounded-full" />
-              </div>
-            ) : webhooks.length === 0 ? (
-              <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl flex items-center justify-center py-10 gap-3">
-                <Webhook className="w-5 h-5 text-[#5A5A72]" />
-                <p className="text-[#5A5A72] text-sm">Nenhum webhook nesta campanha</p>
-              </div>
-            ) : (
-              webhooks.map((w) => {
-                const expanded = expandedWebhook === w.id
-                const activeFlows = w.webhook_flows?.filter((f) => f.status === "ativo") || []
-                return (
-                  <div key={w.id} className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-hidden">
-                    <div className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-[#1C1C28] transition-colors" onClick={() => setExpandedWebhook(expanded ? null : w.id)}>
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${w.status === "ativo" ? "bg-[#25D366]" : "bg-[#3F3F58]"}`} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[#F1F1F3] font-medium text-sm">{w.nome}</p>
-                        <p className="text-[#5A5A72] text-xs font-mono mt-0.5 truncate">{w.url_publica}</p>
-                      </div>
-                      <Badge variant={w.status === "ativo" ? "ativo" : "inativo"} className="shrink-0">{w.status === "ativo" ? "Ativo" : "Inativo"}</Badge>
-                      <div className="flex items-center gap-3 shrink-0 text-[#8B8B9E] text-xs">
-                        <span>{activeFlows.length} flows</span>
-                        <span>{w.leads_count} leads</span>
-                      </div>
-                      <Link href={`/admin/webhooks/${w.id}`} onClick={(e) => e.stopPropagation()} className="p-1.5 text-[#5A5A72] hover:text-[#A78BFA] transition-colors shrink-0" title="Ver detalhes e fila">
-                        <ExternalLink className="w-4 h-4" />
-                      </Link>
-                      <button onClick={(e) => { e.stopPropagation(); handleCopy(w.url_publica, w.id) }} className="p-1.5 text-[#5A5A72] hover:text-[#25D366] transition-colors shrink-0" title="Copiar URL">
-                        {copiedId === w.id ? <CheckCircle2 className="w-4 h-4 text-[#25D366]" /> : <Copy className="w-4 h-4" />}
-                      </button>
-                      {expanded ? <ChevronDown className="w-4 h-4 text-[#5A5A72] shrink-0" /> : <ChevronRight className="w-4 h-4 text-[#5A5A72] shrink-0" />}
-                    </div>
-                    {expanded && (
-                      <div className="border-t border-[#1E1E2A] px-5 py-3">
-                        <div className="flex items-center justify-between mb-3">
-                          <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold">Flows</p>
-                          <div className="flex gap-2">
-                            {activeFlows.length > 0 && (
-                              <Button size="sm" variant="outline" onClick={() => handleOpenTeste(w)}>
-                                <FlaskConical className="w-3.5 h-3.5 mr-1" />Testar
-                              </Button>
-                            )}
-                            <Button size="sm" onClick={() => setShowAddFlow(w.id)}>
-                              <Plus className="w-3.5 h-3.5 mr-1" />Adicionar Flow
-                            </Button>
-                            <button onClick={() => handleToggleWebhook(w)} className="text-[#5A5A72] hover:text-[#25D366] transition-colors p-1.5" title={w.status === "ativo" ? "Desativar webhook" : "Ativar webhook"}>
-                              {w.status === "ativo" ? <ToggleRight className="w-5 h-5 text-[#25D366]" /> : <ToggleLeft className="w-5 h-5" />}
-                            </button>
-                          </div>
-                        </div>
-                        {!w.webhook_flows || w.webhook_flows.length === 0 ? (
-                          <div className="flex items-center gap-2 py-3">
-                            <Info className="w-4 h-4 text-[#5A5A72] shrink-0" />
-                            <p className="text-[#5A5A72] text-sm">Nenhum flow. Adicione um flow para este webhook receber leads.</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-1">
-                            {w.webhook_flows.map((flow) => (
-                              <div key={flow.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[#111118] border border-[#1E1E2A]">
-                                <GripVertical className="w-4 h-4 text-[#2A2A3A] shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-[#C4C4D4] text-sm font-medium">{flow.conta?.nome ?? "Webhook externo"}</p>
-                                  <p className="text-[#5A5A72] text-xs font-mono">
-                                    {flow.tipo === "webhook"
-                                      ? (flow.webhook_url ? (flow.webhook_url.length > 40 ? flow.webhook_url.slice(0, 40) + "…" : flow.webhook_url) : "—")
-                                      : (flow.flow_nome || (flow.flow_ns ? (flow.flow_ns.length > 40 ? flow.flow_ns.slice(0, 40) + "…" : flow.flow_ns) : "—"))}
-                                  </p>
-                                  {flow.tag_manychat_nome && (
-                                    <span className="inline-flex items-center gap-1 text-[10px] text-[#A78BFA] mt-0.5">
-                                      <Tag className="w-2.5 h-2.5" />{flow.tag_manychat_nome}
-                                    </span>
-                                  )}
-                                </div>
-                                <Badge variant={flow.status === "ativo" ? "ativo" : "inativo"}>{flow.status === "ativo" ? "Ativo" : "Inativo"}</Badge>
-                                <span className="text-[#8B8B9E] text-xs shrink-0">{flow.total_enviados} na fila</span>
-                                <div className="flex gap-1 shrink-0">
-                                  <button onClick={() => handleToggleFlow(flow, w.id)} disabled={actionLoading === flow.id + "-toggle"} className="p-1.5 text-[#5A5A72] hover:text-[#25D366] transition-colors disabled:opacity-50">
-                                    {flow.status === "ativo" ? <ToggleRight className="w-4 h-4 text-[#25D366]" /> : <ToggleLeft className="w-4 h-4" />}
-                                  </button>
-                                  <button onClick={() => setDeleteFlow({ flow, webhookId: w.id })} className="p-1.5 text-[#5A5A72] hover:text-[#F87171] transition-colors">
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {/* Lead status summary */}
-                        {w.leads_count > 0 && (
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-3 pt-3 border-t border-[#1E1E2A]">
-                            <span className="text-[10px] text-[#5A5A72] uppercase tracking-wider font-semibold shrink-0">Leads:</span>
-                            {[
-                              { key: "sucesso",    label: "Sucesso",    color: "text-[#25D366] bg-[#25D366]/10" },
-                              { key: "falha",      label: "Falha",      color: "text-[#F87171] bg-[#F87171]/10" },
-                              { key: "sem_optin",  label: "Sem optin",  color: "text-[#F59E0B] bg-[#F59E0B]/10" },
-                              { key: "pendente",   label: "Pendente",   color: "text-[#8B8B9E] bg-[#8B8B9E]/10" },
-                              { key: "processando",label: "Processando",color: "text-[#60A5FA] bg-[#60A5FA]/10" },
-                            ].map(({ key, label, color }) =>
-                              (w.leads_status?.[key] ?? 0) > 0 ? (
-                                <span key={key} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${color}`}>
-                                  {label}: {w.leads_status[key]}
-                                </span>
-                              ) : null
-                            )}
-                            <Link href={`/admin/webhooks/${w.id}`} className="ml-auto text-[10px] text-[#5A5A72] hover:text-[#A78BFA] transition-colors flex items-center gap-1">
-                              <ExternalLink className="w-3 h-3" />Ver fila completa
-                            </Link>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )
-              })
-            )}
-          </section>
-
-          {/* ── Seção: Leads ────────────────────────────────────────────────── */}
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold">
-                Leads{leadsTotal > 0 && <span className="text-[#3F3F58] normal-case ml-1">({leadsTotal})</span>}
-              </p>
-              {leadsTotal > 0 && (
-                <Link href={`/admin/leads?campanha_id=${id}`} className="text-xs text-[#8B8B9E] hover:text-[#25D366] transition-colors">
-                  Ver todos →
-                </Link>
-              )}
-            </div>
-            {loadingLeads ? (
-              <div className="flex items-center justify-center py-10">
-                <div className="animate-spin w-5 h-5 border-2 border-[#25D366] border-t-transparent rounded-full" />
-              </div>
-            ) : leads.length === 0 ? (
-              <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl flex items-center justify-center py-10 gap-3">
-                <Users2 className="w-5 h-5 text-[#5A5A72]" />
-                <p className="text-[#5A5A72] text-sm">Nenhum lead nesta campanha</p>
-              </div>
-            ) : (
-              <>
-                <div className="space-y-3">
-                  {visibleLeads.map((lead) => {
-                    const style = leadStatusStyle(lead.status)
-                    const isError = lead.status === "falha" || lead.status === "sem_optin"
-                    return (
-                      <div key={lead.id} className={`bg-[#16161E] border border-[#1E1E2A] border-l-4 ${style.border} rounded-xl px-5 py-4`}>
-                        <div className="flex items-start justify-between gap-3 mb-3">
-                          <div className="flex items-baseline gap-3 min-w-0">
-                            <Link href={`/admin/leads/${lead.id}`} className="text-[#F1F1F3] font-semibold text-sm hover:text-[#25D366] transition-colors truncate">
-                              {lead.nome}
-                            </Link>
-                            <span className="text-[#8B8B9E] text-xs font-mono shrink-0">{lead.telefone}</span>
-                          </div>
-                          <span className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full shrink-0 ${style.badge}`}>{lead.status}</span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs mb-2">
-                          <span className="flex items-center gap-1 text-[#8B8B9E]">
-                            <span className="text-[#5A5A72]">📅</span>
-                            Recebido: <span className="text-[#C4C4D4] font-mono">{fmtDt(lead.created_at) ?? "—"}</span>
-                          </span>
-                          <span className="flex items-center gap-1 text-[#8B8B9E]">
-                            <span className={lead.processado_at ? "text-[#25D366]" : "text-[#5A5A72]"}>⚡</span>
-                            Flow:{" "}
-                            {lead.processado_at ? <span className="text-[#25D366] font-mono">{fmtDt(lead.processado_at)}</span> : <span className="text-[#5A5A72]">—</span>}
-                            {lead.conta_nome && <span className="text-[#5A5A72]"> · {lead.conta_nome}</span>}
-                          </span>
-                          {lead.grupo_entrou_at && (
-                            <span className="flex items-center gap-1 text-[#8B8B9E]">
-                              <span className="text-[#25D366]">👥</span>
-                              Entrou grupo: <span className="text-[#25D366] font-mono">{fmtDt(lead.grupo_entrou_at)}</span>
-                            </span>
-                          )}
-                          {lead.grupo_saiu_at && (
-                            <span className="flex items-center gap-1 text-[#8B8B9E]">
-                              <span className="text-[#F87171]">🚪</span>
-                              Saiu grupo: <span className="text-[#F87171] font-mono">{fmtDt(lead.grupo_saiu_at)}</span>
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-[#5A5A72]">
-                          {lead.flow_executado && <span className="font-mono truncate max-w-[200px]" title={lead.flow_executado}>{lead.flow_executado}</span>}
-                          <span>{lead.tentativas} tentativa{lead.tentativas !== 1 ? "s" : ""}</span>
-                          {lead.webhook?.nome && <span>· {lead.webhook.nome}</span>}
-                        </div>
-                        {isError && lead.erro_msg && <p className="text-[#F87171] text-xs mt-2 leading-snug">{lead.erro_msg}</p>}
-                      </div>
-                    )
-                  })}
-                </div>
-                {leadsTotal > LEADS_PREVIEW && (
-                  <button
-                    onClick={() => setLeadsExpanded(!leadsExpanded)}
-                    className="w-full py-3 text-sm text-[#8B8B9E] hover:text-[#F1F1F3] border border-[#1E1E2A] rounded-xl flex items-center justify-center gap-2 transition-colors hover:bg-[#16161E]"
-                  >
-                    <ChevronDown className={`w-4 h-4 transition-transform ${leadsExpanded ? "rotate-180" : ""}`} />
-                    {leadsExpanded ? "Mostrar menos" : `Mostrar todos os ${leadsTotal} leads`}
-                  </button>
-                )}
-              </>
-            )}
-          </section>
-
+          <PauseBanner campanha={campanha} canWrite={canWrite} pauseLoading={pauseLoading} onAction={callPauseAction} />
+          <VisaoGeralSection campanha={campanha} />
+          <InstanciaZApiSection
+            campanha={campanha}
+            accessToken={accessToken}
+            canWrite={canWrite}
+            instancias={instancias}
+            instanciaId={instanciaId}
+            onInstanciaChange={setInstanciaId}
+            onSaveInstancia={handleSaveInstancia}
+            savingInstancia={savingInstancia}
+            varrendo={varrendo}
+            varreduraResult={varreduraResult}
+            onVarredura={handleVarredura}
+          />
+          <GruposSection
+            campanha={campanha}
+            accessToken={accessToken}
+            canWrite={canWrite}
+            grupos={grupos}
+            loadingGrupos={loadingGrupos}
+            onDeleteGrupo={handleDeleteGrupo}
+            deletingGrupo={deletingGrupo}
+            onEditGrupo={setEditGrupo}
+            onRefresh={fetchGrupos}
+          />
+          <WebhooksSection
+            webhooks={webhooks}
+            loadingWebhooks={loadingWebhooks}
+            accessToken={accessToken}
+            canWrite={canWrite}
+            onToggleWebhook={handleToggleWebhook}
+            onToggleFlow={handleToggleFlow}
+            onDeleteFlow={(flow, webhookId) => setDeleteFlow({ flow, webhookId })}
+            onOpenTeste={setTesteWebhook}
+            onShowAddFlow={setShowAddFlow}
+            actionLoading={actionLoading}
+            webhooksCount={campanha.webhooks_count}
+          />
+          <LeadsPreviewSection
+            campanhaId={id}
+            accessToken={accessToken}
+            canReprocess={canReprocess}
+          />
         </div>
       </div>
 
-      {/* ── Add Flow Dialog ─────────────────────────────────────────────────── */}
+      {/* ── Dialogs ─────────────────────────────────────────────────────────── */}
       <AddFlowDialog
         open={!!showAddFlow}
         webhookId={showAddFlow ?? ""}
@@ -1173,7 +442,7 @@ export default function CampanhaDetailPage() {
         onSuccess={() => { setShowAddFlow(null); fetchWebhooks() }}
       />
 
-      {/* ── Delete Flow Dialog ──────────────────────────────────────────────── */}
+      {/* Delete Flow Dialog */}
       <Dialog open={!!deleteFlow} onOpenChange={() => setDeleteFlow(null)}>
         <DialogContent>
           <DialogHeader><DialogTitle>Remover Flow</DialogTitle></DialogHeader>
@@ -1189,62 +458,19 @@ export default function CampanhaDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Test Webhook Dialog ─────────────────────────────────────────────── */}
-      <Dialog
-        open={!!testeWebhook}
-        onOpenChange={(open) => { if (!open) { setTesteWebhook(null); setTesteResultado(null) } }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FlaskConical className="w-5 h-5 text-[#25D366]" />
-              Testar Webhook
-            </DialogTitle>
-          </DialogHeader>
-          {testeResultado ? (
-            <div className="py-4 space-y-4">
-              <div className="flex flex-col items-center gap-3 py-4">
-                {testeResultado.ok ? (
-                  <>
-                    <div className="w-14 h-14 rounded-full bg-[rgba(37,211,102,0.15)] flex items-center justify-center">
-                      <CheckCircle2 className="w-8 h-8 text-[#25D366]" />
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[#F1F1F3] font-semibold">Lead enviado com sucesso!</p>
-                      <p className="text-[#5A5A72] text-xs mt-1 font-mono">Lead ID: {testeResultado.lead_id}</p>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="w-14 h-14 rounded-full bg-[rgba(248,113,113,0.15)] flex items-center justify-center">
-                      <XCircle className="w-8 h-8 text-[#F87171]" />
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[#F1F1F3] font-semibold">Falha no envio</p>
-                      <p className="text-[#F87171] text-sm mt-1">{testeResultado.message}</p>
-                    </div>
-                  </>
-                )}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setTesteResultado(null)} className="flex-1">Testar novamente</Button>
-                <Button onClick={() => { setTesteWebhook(null); setTesteResultado(null) }} className="flex-1">Fechar</Button>
-              </DialogFooter>
-            </div>
-          ) : (
-            <div className="space-y-4 py-2">
-              <Input label="Nome" placeholder="Ex: João Silva" value={testeNome} onChange={(e) => setTesteNome(e.target.value)} error={testeErrors.nome} required />
-              <Input label="Telefone" placeholder="Ex: 11999999999" value={testeTelefone} onChange={(e) => setTesteTelefone(e.target.value)} error={testeErrors.telefone} required />
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setTesteWebhook(null)} disabled={testeLoading}>Cancelar</Button>
-                <Button onClick={handleEnviarTeste} disabled={testeLoading}>
-                  {testeLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Enviando...</> : <><FlaskConical className="w-4 h-4 mr-2" />Enviar Teste</>}
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <TesteWebhookDialog
+        webhook={testeWebhook}
+        onClose={() => setTesteWebhook(null)}
+        onSuccess={() => { fetchWebhooks() }}
+      />
+
+      <EditGrupoDialog
+        open={!!editGrupo}
+        grupo={editGrupo}
+        accessToken={accessToken}
+        onClose={() => setEditGrupo(null)}
+        onSuccess={() => { setEditGrupo(null); fetchGrupos() }}
+      />
     </div>
   )
 }

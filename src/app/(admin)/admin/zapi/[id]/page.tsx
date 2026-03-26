@@ -226,11 +226,13 @@ export default function InstanciaDetailPage() {
   // Entradas
   const [entradas, setEntradas] = useState<EntradaGrupo[]>([])
   const [entradasLoading, setEntradasLoading] = useState(false)
+  const [entradasLoaded, setEntradasLoaded] = useState(false)
   const [grupoFiltro, setGrupoFiltro] = useState("")
 
   // Saídas
   const [saidas, setSaidas] = useState<SaidaGrupo[]>([])
   const [saidasLoading, setSaidasLoading] = useState(false)
+  const [saidasLoaded, setSaidasLoaded] = useState(false)
   const [grupoFiltroSaidas, setGrupoFiltroSaidas] = useState("")
 
   const canWrite = user ? hasPermission(user.role, "contas:write") : false
@@ -400,6 +402,12 @@ export default function InstanciaDetailPage() {
         if (data.results?.some((r: { status: string }) => r.status === "duplicado")) {
           toast.warning("Alguns grupos já existiam e foram ignorados.")
         }
+        if (data.autoVinculados?.length > 0) {
+          toast.success(
+            `Auto-vinculados: ${(data.autoVinculados as string[]).length} grupo(s) similares encontrados.`,
+            { duration: 6000 }
+          )
+        }
         setShowGrupoForm(false)
         fetchInst()
       } else {
@@ -467,6 +475,7 @@ export default function InstanciaDetailPage() {
       })
       const data = await res.json()
       setEntradas(data.entradas || [])
+      setEntradasLoaded(true)
     } catch {
       toast.error("Erro ao carregar entradas.")
     } finally {
@@ -474,9 +483,12 @@ export default function InstanciaDetailPage() {
     }
   }, [accessToken, id, grupoFiltro])
 
+  // Reset cache when the grupo filter changes so data is re-fetched
+  useEffect(() => { setEntradasLoaded(false) }, [grupoFiltro])
+
   useEffect(() => {
-    if (activeTab === "entradas") fetchEntradas()
-  }, [activeTab, fetchEntradas])
+    if (activeTab === "entradas" && !entradasLoaded) fetchEntradas()
+  }, [activeTab, entradasLoaded, fetchEntradas])
 
   const fetchSaidas = useCallback(async () => {
     if (!accessToken || !id) return
@@ -488,6 +500,7 @@ export default function InstanciaDetailPage() {
       })
       const data = await res.json()
       setSaidas(data.saidas || [])
+      setSaidasLoaded(true)
     } catch {
       toast.error("Erro ao carregar saídas.")
     } finally {
@@ -495,9 +508,12 @@ export default function InstanciaDetailPage() {
     }
   }, [accessToken, id, grupoFiltroSaidas])
 
+  // Reset cache when the grupo filter changes so data is re-fetched
+  useEffect(() => { setSaidasLoaded(false) }, [grupoFiltroSaidas])
+
   useEffect(() => {
-    if (activeTab === "saidas") fetchSaidas()
-  }, [activeTab, fetchSaidas])
+    if (activeTab === "saidas" && !saidasLoaded) fetchSaidas()
+  }, [activeTab, saidasLoaded, fetchSaidas])
 
   function openEditInstancia() {
     if (!inst) return
@@ -750,7 +766,7 @@ export default function InstanciaDetailPage() {
                     title="Busca todos os grupos do Z-API e auto-vincula os similares"
                   >
                     <ScanSearch className="w-4 h-4" />
-                    Escanear Grupos
+                    Descobrir Grupos
                   </Button>
                 )}
                 {canWrite && !showGrupoForm && (

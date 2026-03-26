@@ -261,7 +261,73 @@ export async function getMetricasGeral(filters: DashboardFilters) {
     falha: Number(row.falha),
   }))
 
-  return { kpis, comparativo, funil, diario }
+  // ---------------------------------------------------------------------------
+  // Campanhas Ativas — top 10 by leads count in the period
+  // ---------------------------------------------------------------------------
+
+  const campanhasAtivas = await prisma.campanha.findMany({
+    where: {
+      status: "ativo",
+      deleted_at: null,
+      ...(campanhaId ? { id: campanhaId } : {}),
+      ...(clienteId ? { cliente_id: clienteId } : {}),
+    },
+    select: {
+      id: true,
+      nome: true,
+      pausado_at: true,
+      cliente: { select: { nome: true } },
+      _count: {
+        select: {
+          leads: {
+            where: { created_at: { gte: from, lte: to } },
+          },
+          grupos_monitoramento: true,
+        },
+      },
+    },
+    orderBy: { leads: { _count: "desc" } },
+    take: 10,
+  })
+
+  // Get sucesso counts for each active campaign in the period
+  const campanhaIdsAtivas = campanhasAtivas.map((c) => c.id)
+  const sucessoPorCampanha = campanhaIdsAtivas.length > 0
+    ? await prisma.lead.groupBy({
+        by: ["campanha_id"],
+        where: {
+          campanha_id: { in: campanhaIdsAtivas },
+          created_at: { gte: from, lte: to },
+          status: "sucesso",
+        },
+        _count: { id: true },
+      })
+    : []
+
+  const sucessoMap = new Map(
+    sucessoPorCampanha.map((r) => [r.campanha_id, r._count.id])
+  )
+
+  const campanhas_ativas = campanhasAtivas.map((c) => {
+    const leads_count = c._count.leads
+    const sucesso_count = sucessoMap.get(c.id) ?? 0
+    const processados_c = leads_count > 0 ? leads_count : 0
+    return {
+      id: c.id,
+      nome: c.nome,
+      cliente_nome: c.cliente?.nome ?? null,
+      status: "ativo" as const,
+      pausado_at: c.pausado_at?.toISOString() ?? null,
+      leads_count,
+      sucesso_count,
+      taxa_sucesso: processados_c > 0
+        ? Math.round((sucesso_count / processados_c) * 1000) / 10
+        : 0,
+      grupos_entrados_count: c._count.grupos_monitoramento,
+    }
+  })
+
+  return { kpis, comparativo, funil, diario, campanhas_ativas }
 }
 
 // ---------------------------------------------------------------------------
@@ -517,12 +583,30 @@ export async function getMetricasGrupos(filters: DashboardFilters) {
   const campanhaMap = new Map(campanhasInfo.map((c) => [c.id, c]))
   const entradosMap = new Map(entradosPorCampanha.map((r) => [r.campanha_id, r._count.id]))
 
+  // Aggregate tag_aplicada per campanha from entradas (which are already fetched)
+  // Need campanha_id from the grupo — fetch the mapping
+  const gruposCampanha = await prisma.grupoMonitoramento.findMany({
+    select: { id: true, campanha_id: true },
+  })
+  const grupoCampanhaMap = new Map(gruposCampanha.map((g) => [g.id, g.campanha_id]))
+
+  const tagByCampanha = new Map<string, number>()
+  for (const e of entradas) {
+    if (e.tag_aplicada) {
+      const cId = grupoCampanhaMap.get(e.grupo_id)
+      if (cId) {
+        tagByCampanha.set(cId, (tagByCampanha.get(cId) ?? 0) + 1)
+      }
+    }
+  }
+
   const por_campanha = totalPorCampanha
     .filter((r) => r.campanha_id !== null)
     .map((r) => {
       const c = campanhaMap.get(r.campanha_id!)
       const grupos_entrados = entradosMap.get(r.campanha_id!) ?? 0
       const total = r._count.id
+      const tag_count = tagByCampanha.get(r.campanha_id!) ?? 0
       return {
         campanha_id: r.campanha_id!,
         campanha_nome: c?.nome ?? r.campanha_id!,
@@ -530,6 +614,8 @@ export async function getMetricasGrupos(filters: DashboardFilters) {
         total_leads: total,
         grupos_entrados,
         taxa_entrada: total > 0 ? Math.round((grupos_entrados / total) * 1000) / 10 : 0,
+        tag_aplicada: tag_count,
+        taxa_tag: grupos_entrados > 0 ? Math.round((tag_count / grupos_entrados) * 1000) / 10 : 0,
       }
     })
     .sort((a, b) => b.taxa_entrada - a.taxa_entrada)

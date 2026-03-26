@@ -12,6 +12,7 @@ import {
 } from "recharts"
 import { RefreshCw, Users2, CheckCircle2, XCircle, TrendingUp, Activity, Layers, AlertTriangle, CheckCheck, Loader2 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
+import { useAlertas } from "@/contexts/AlertasContext"
 import { Header } from "@/components/layout/Header"
 import { toast } from "sonner"
 
@@ -51,6 +52,17 @@ interface MetricasGeral {
   }
   funil: { label: string; value: number; pct: number }[]
   diario: { dia: string; total: number; sucesso: number; falha: number }[]
+  campanhas_ativas: {
+    id: string
+    nome: string
+    cliente_nome: string | null
+    status: "ativo" | "inativo"
+    pausado_at: string | null
+    leads_count: number
+    sucesso_count: number
+    taxa_sucesso: number
+    grupos_entrados_count: number
+  }[]
 }
 
 interface MetricasOperacional {
@@ -103,6 +115,8 @@ interface MetricasGrupos {
     total_leads: number
     grupos_entrados: number
     taxa_entrada: number
+    tag_aplicada: number
+    taxa_tag: number
   }[]
   diario: { dia: string; total: number; rastreadas: number; tag_aplicada: number }[]
 }
@@ -211,6 +225,7 @@ function Spinner() {
 
 export default function DashboardPage() {
   const { accessToken } = useAuth()
+  const { alertas: alertasCtx, resolverAlerta: resolverAlertaCtx, resolvingId: resolvingIdCtx } = useAlertas()
 
   // --- Filter state ---
   const [preset, setPreset] = useState<Preset>("7d")
@@ -224,9 +239,10 @@ export default function DashboardPage() {
   const [campanhaId, setCampanhaId] = useState("")
   const [contaId, setContaId] = useState("")
 
-  // --- Alertas ---
-  const [alertasCriticos, setAlertasCriticos] = useState<AlertaSistema[]>([])
-  const [resolvingId, setResolvingId] = useState<string | null>(null)
+  // --- Alertas (from context) ---
+  const alertasCriticos = alertasCtx.filter((a) => a.nivel === "critico")
+  const resolvingId = resolvingIdCtx
+  const resolverAlerta = resolverAlertaCtx
 
   // --- Filter options ---
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null)
@@ -243,32 +259,6 @@ export default function DashboardPage() {
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
 
   const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  // --- Fetch alertas críticos ---
-  useEffect(() => {
-    if (!accessToken) return
-    fetch("/api/admin/alertas", { headers: { Authorization: `Bearer ${accessToken}` } })
-      .then((r) => r.json())
-      .then((json) => {
-        const ativos: AlertaSistema[] = json?.data?.ativos ?? []
-        setAlertasCriticos(ativos.filter((a) => a.nivel === "critico"))
-      })
-      .catch(() => {})
-  }, [accessToken])
-
-  const resolverAlerta = useCallback(async (id: string) => {
-    if (!accessToken) return
-    setResolvingId(id)
-    try {
-      await fetch(`/api/admin/alertas/${id}/resolve`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${accessToken}` },
-      })
-      setAlertasCriticos((prev) => prev.filter((a) => a.id !== id))
-    } finally {
-      setResolvingId(null)
-    }
-  }, [accessToken])
 
   // --- Fetch filter options ---
   useEffect(() => {
@@ -579,7 +569,7 @@ export default function DashboardPage() {
 // ---------------------------------------------------------------------------
 
 function TabGeral({ data }: { data: MetricasGeral }) {
-  const { kpis, comparativo, funil, diario } = data
+  const { kpis, comparativo, funil, diario, campanhas_ativas } = data
 
   return (
     <div className="space-y-6">
@@ -709,6 +699,66 @@ function TabGeral({ data }: { data: MetricasGeral }) {
           </ResponsiveContainer>
         )}
       </div>
+
+      {/* Campanhas Ativas */}
+      {campanhas_ativas && campanhas_ativas.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold">
+            Campanhas Ativas
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {campanhas_ativas.map((c) => (
+              <div
+                key={c.id}
+                className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-4 flex flex-col gap-2"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <Link
+                      href={`/admin/campanhas/${c.id}`}
+                      className="text-[#F1F1F3] font-semibold text-sm hover:text-[#25D366] transition-colors line-clamp-1"
+                    >
+                      {c.nome}
+                    </Link>
+                    {c.cliente_nome && (
+                      <p className="text-[#8B8B9E] text-xs mt-0.5">{c.cliente_nome}</p>
+                    )}
+                  </div>
+                  <span
+                    className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                      c.pausado_at
+                        ? "bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30"
+                        : "bg-[#25D366]/15 text-[#25D366] border border-[#25D366]/30"
+                    }`}
+                  >
+                    {c.pausado_at ? "Pausada" : "Ativa"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-[#8B8B9E] mt-1">
+                  <span>
+                    Leads: <span className="text-[#F1F1F3] font-medium tabular-nums">{c.leads_count}</span>
+                  </span>
+                  <span className="text-[#2A2A3A]">|</span>
+                  <span>
+                    Sucesso:{" "}
+                    <span
+                      className={`font-medium tabular-nums ${
+                        c.taxa_sucesso >= 70 ? "text-[#25D366]" : c.taxa_sucesso >= 40 ? "text-[#FBBF24]" : "text-[#F87171]"
+                      }`}
+                    >
+                      {c.taxa_sucesso}%
+                    </span>
+                  </span>
+                  <span className="text-[#2A2A3A]">|</span>
+                  <span>
+                    Grupos: <span className="text-[#60A5FA] font-medium tabular-nums">{c.grupos_entrados_count}</span>
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -990,54 +1040,75 @@ function TabGrupos({ data }: { data: MetricasGrupos }) {
         )}
       </div>
 
-      {/* Por campanha table */}
-      <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#1E1E2A]">
-          <h2 className="text-[#F1F1F3] font-semibold">Taxa de Entrada por Campanha</h2>
-          <p className="text-[#5A5A72] text-xs mt-0.5">Total histórico de leads vs. entradas detectadas no grupo</p>
-        </div>
+      {/* Funil por Campanha */}
+      <div className="space-y-3">
+        <h3 className="text-xs text-[#5A5A72] uppercase tracking-wider font-semibold">
+          Funil por Campanha
+        </h3>
         {por_campanha.length === 0 ? (
-          <p className="text-[#5A5A72] text-sm text-center py-8">Nenhuma campanha com dados de grupo.</p>
+          <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-8">
+            <p className="text-[#5A5A72] text-sm text-center">Nenhuma campanha com dados de grupo.</p>
+          </div>
         ) : (
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-[#1E1E2A]">
-                {["Campanha", "Cliente", "Leads", "Entrou no Grupo", "Taxa"].map((h) => (
-                  <th key={h} className="text-left text-xs font-semibold text-[#5A5A72] uppercase tracking-wider px-5 py-3">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {por_campanha.map((c) => {
-                const taxa = c.taxa_entrada
-                const barColor = taxa >= 60 ? "#25D366" : taxa >= 30 ? "#F59E0B" : "#F87171"
-                return (
-                  <tr key={c.campanha_id} className="border-b border-[#1E1E2A] last:border-0 hover:bg-[#1C1C28] transition-colors">
-                    <td className="px-5 py-3">
-                      <Link href={`/admin/campanhas/${c.campanha_id}`} className="text-[#F1F1F3] text-sm font-medium hover:text-[#25D366] transition-colors">
-                        {c.campanha_nome}
-                      </Link>
-                    </td>
-                    <td className="px-5 py-3 text-[#8B8B9E] text-sm">{c.cliente_nome ?? "—"}</td>
-                    <td className="px-5 py-3 text-[#C4C4D4] text-sm tabular-nums">{c.total_leads}</td>
-                    <td className="px-5 py-3 text-[#25D366] text-sm tabular-nums">{c.grupos_entrados}</td>
-                    <td className="px-5 py-3 min-w-[140px]">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-1.5 bg-[#1C1C28] rounded-full overflow-hidden">
-                          <div className="h-full rounded-full" style={{ width: `${Math.min(taxa, 100)}%`, backgroundColor: barColor }} />
-                        </div>
-                        <span className="text-sm tabular-nums font-semibold" style={{ color: barColor }}>
-                          {taxa.toFixed(1)}%
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {por_campanha.map((c) => {
+              const taxaEntrada = c.taxa_entrada
+              const taxaTag = c.taxa_tag
+              const entradaColor = taxaEntrada >= 60 ? "#25D366" : taxaEntrada >= 30 ? "#F59E0B" : "#F87171"
+              const tagColor = taxaTag >= 60 ? "#25D366" : taxaTag >= 30 ? "#F59E0B" : "#F87171"
+              return (
+                <Link
+                  key={c.campanha_id}
+                  href={`/admin/campanhas/${c.campanha_id}`}
+                  className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-4 hover:border-[#25D366]/30 transition-colors block"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="min-w-0">
+                      <p className="text-[#F1F1F3] font-semibold text-sm line-clamp-1">{c.campanha_nome}</p>
+                      {c.cliente_nome && (
+                        <p className="text-[#8B8B9E] text-xs mt-0.5">{c.cliente_nome}</p>
+                      )}
+                    </div>
+                  </div>
+                  {/* Mini funnel with arrows */}
+                  <div className="flex items-center gap-1.5">
+                    {/* Leads */}
+                    <div className="flex flex-col items-center gap-0.5 min-w-0">
+                      <span className="text-[#5A5A72] text-[10px] uppercase tracking-wide">Leads</span>
+                      <span className="text-[#F1F1F3] text-lg font-bold tabular-nums">{c.total_leads}</span>
+                    </div>
+                    {/* Arrow */}
+                    <div className="flex flex-col items-center gap-0.5 px-1">
+                      <span className="text-[10px] font-medium tabular-nums" style={{ color: entradaColor }}>{taxaEntrada}%</span>
+                      <span className="text-[#5A5A72] text-xs">&rarr;</span>
+                    </div>
+                    {/* Entradas */}
+                    <div className="flex flex-col items-center gap-0.5 min-w-0">
+                      <span className="text-[#5A5A72] text-[10px] uppercase tracking-wide">Grupo</span>
+                      <span className="text-lg font-bold tabular-nums" style={{ color: entradaColor }}>{c.grupos_entrados}</span>
+                    </div>
+                    {/* Arrow */}
+                    <div className="flex flex-col items-center gap-0.5 px-1">
+                      <span className="text-[10px] font-medium tabular-nums" style={{ color: tagColor }}>{taxaTag}%</span>
+                      <span className="text-[#5A5A72] text-xs">&rarr;</span>
+                    </div>
+                    {/* Tag */}
+                    <div className="flex flex-col items-center gap-0.5 min-w-0">
+                      <span className="text-[#5A5A72] text-[10px] uppercase tracking-wide">Tag</span>
+                      <span className="text-lg font-bold tabular-nums" style={{ color: tagColor }}>{c.tag_aplicada}</span>
+                    </div>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="mt-3 h-1.5 bg-[#1C1C28] rounded-full overflow-hidden flex">
+                    <div
+                      className="h-full rounded-l-full"
+                      style={{ width: `${Math.min(taxaEntrada, 100)}%`, backgroundColor: entradaColor }}
+                    />
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
         )}
       </div>
 

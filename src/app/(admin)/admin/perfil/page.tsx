@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { Eye, EyeOff, User } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Header } from "@/components/layout/Header"
@@ -26,6 +26,17 @@ function getInitials(nome: string) {
 
 export default function PerfilPage() {
   const { user, accessToken, updateUser, setAccessToken } = useAuth()
+
+  // Profile data from API (has created_at)
+  const [profileCreatedAt, setProfileCreatedAt] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!accessToken) return
+    fetch("/api/admin/perfil", { headers: { Authorization: `Bearer ${accessToken}` } })
+      .then((r) => r.json())
+      .then((d) => { if (d.data?.created_at) setProfileCreatedAt(d.data.created_at) })
+      .catch(() => {})
+  }, [accessToken])
 
   // Info form
   const [nome, setNome] = useState(user?.nome || "")
@@ -174,7 +185,7 @@ export default function PerfilPage() {
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-semibold text-[#F1F1F3]">Membro desde</label>
                 <div className="flex h-10 items-center rounded-lg border border-[#1E1E2A] bg-[#111118] px-3 text-sm text-[#5A5A72]">
-                  {new Date(user.id ? Date.now() : Date.now()).toLocaleDateString("pt-BR", {
+                  {new Date(profileCreatedAt || Date.now()).toLocaleDateString("pt-BR", {
                     day: "2-digit",
                     month: "long",
                     year: "numeric",

@@ -359,10 +359,10 @@ export default function FilaPage() {
                   { key: "processando", label: "Processando", icon: Loader2,       color: "text-[#60A5FA]" },
                   { key: "sucesso",     label: "Sucesso",     icon: CheckCircle2,  color: "text-[#25D366]" },
                   { key: "falha",       label: "Falha",       icon: XCircle,       color: "text-[#F87171]" },
-                  { key: "sem_optin",   label: "Sem Opt-in",  icon: AlertTriangle, color: "text-[#F59E0B]" },
-                  { key: "aguardando",  label: "Pausados",    icon: PauseCircle,   color: "text-[#F59E0B]" },
-                ].map(({ key, label, icon: Icon, color }) => (
-                  <div key={key} className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-4">
+                  { key: "sem_optin",   label: "Sem Opt-in",  icon: AlertTriangle, color: "text-[#F59E0B]", tooltip: "Contato não encontrado no Manychat" },
+                  { key: "aguardando",  label: "Pausados",    icon: PauseCircle,   color: "text-[#F59E0B]", tooltip: "Leads aguardando porque a campanha está pausada" },
+                ].map(({ key, label, icon: Icon, color, tooltip }) => (
+                  <div key={key} className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-4" title={tooltip}>
                     <div className="flex items-center gap-2 mb-2">
                       <Icon className={`w-4 h-4 ${color}`} />
                       <p className="text-[#5A5A72] text-xs">{label}</p>

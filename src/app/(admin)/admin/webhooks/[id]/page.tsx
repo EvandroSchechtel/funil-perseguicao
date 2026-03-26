@@ -418,7 +418,7 @@ export default function WebhookDetailPage() {
                       )}
                     </div>
                     <Badge variant={flow.status === "ativo" ? "ativo" : "inativo"}>{flow.status === "ativo" ? "Ativo" : "Inativo"}</Badge>
-                    <span className="text-[#8B8B9E] text-xs shrink-0">{flow.total_enviados} na fila</span>
+                    <span className="text-[#8B8B9E] text-xs shrink-0">{flow.total_enviados} enviados</span>
                     {canWrite && (
                       <div className="flex gap-1 shrink-0">
                         <button onClick={() => handleToggleFlow(flow)} disabled={actionLoading === flow.id + "-toggle"} className="p-1.5 text-[#5A5A72] hover:text-[#25D366] disabled:opacity-50">

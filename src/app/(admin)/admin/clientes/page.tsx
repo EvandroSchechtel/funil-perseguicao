@@ -205,8 +205,10 @@ export default function ClientesPage() {
                               <DropdownMenuItem
                                 destructive
                                 onClick={() => setDeleteDialog(c)}
+                                disabled={c.campanhas_count > 0}
+                                title={c.campanhas_count > 0 ? "Cliente tem campanhas vinculadas" : undefined}
                               >
-                                Excluir
+                                Excluir{c.campanhas_count > 0 ? " (tem campanhas)" : ""}
                               </DropdownMenuItem>
                             </>
                           )}

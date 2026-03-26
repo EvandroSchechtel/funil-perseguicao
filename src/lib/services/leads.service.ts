@@ -49,6 +49,11 @@ export async function listarLeads(params: ListLeadsParams = {}) {
         created_at: true,
         webhook: { select: { id: true, nome: true } },
         campanha: { select: { id: true, nome: true } },
+        entradas_grupo: {
+          select: { grupo: { select: { nome_filtro: true } }, entrou_at: true },
+          orderBy: { entrou_at: "desc" },
+          take: 3,
+        },
       },
       orderBy: { created_at: "desc" },
       skip: (page - 1) * perPage,

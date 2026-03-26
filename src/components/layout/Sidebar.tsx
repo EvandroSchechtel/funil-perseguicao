@@ -1,10 +1,11 @@
 "use client"
 
-import React, { useEffect, useState } from "react"
+import React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { LayoutDashboard, Webhook, Zap, Shield, User, LogOut, Bot, Megaphone, Building2, Contact, Activity, MessageSquare, FileText, Rocket } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
+import { useAlertas } from "@/contexts/AlertasContext"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -108,25 +109,9 @@ const roleLabels: Record<Role, string> = {
 }
 
 export function Sidebar() {
-  const { user, logout, accessToken } = useAuth()
+  const { user, logout } = useAuth()
   const pathname = usePathname()
-  const [alertCount, setAlertCount] = useState(0)
-
-  useEffect(() => {
-    if (!accessToken) return
-    let cancelled = false
-    const check = () => {
-      fetch("/api/admin/alertas", { headers: { Authorization: `Bearer ${accessToken}` } })
-        .then((r) => r.json())
-        .then((json) => {
-          if (!cancelled) setAlertCount(json?.data?.ativos?.length ?? 0)
-        })
-        .catch(() => {})
-    }
-    check()
-    const id = setInterval(check, 60_000)
-    return () => { cancelled = true; clearInterval(id) }
-  }, [accessToken])
+  const { alertCount } = useAlertas()
 
   if (!user) return null
 

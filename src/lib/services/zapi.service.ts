@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/prisma"
 import { testZApiConnection, configureWebhook } from "@/lib/zapi/client"
+import { groupNameSimilarity, SIMILARITY_THRESHOLD } from "@/lib/utils/name-similarity"
 import { ServiceError } from "./errors"
 
 // ── Instâncias ─────────────────────────────────────────────────────────────────
@@ -188,7 +189,75 @@ export async function criarGrupo(data: CriarGrupoParams) {
     skipDuplicates: true,
   })
 
-  return { grupo, message: "Grupo configurado com sucesso." }
+  // ── Auto-link similar cached groups when auto_expand is enabled ──────────
+  const autoVinculados: string[] = []
+  const shouldAutoExpand = auto_expand ?? true
+  if (shouldAutoExpand) {
+    const cached = await prisma.grupoWaCache.findMany({
+      where: { instancia_id: data.instancia_id },
+    })
+
+    for (const cg of cached) {
+      const score = groupNameSimilarity(data.nome_filtro, cg.nome)
+      if (score < SIMILARITY_THRESHOLD) continue
+
+      // Skip if already monitored with this grupo_wa_id in this campaign
+      const existing = await prisma.grupoMonitoramento.findFirst({
+        where: {
+          instancia_id: data.instancia_id,
+          grupo_wa_id: cg.grupo_wa_id,
+          campanha_id: data.campanha_id,
+        },
+      })
+      if (existing) continue
+
+      // Also skip if exact name already exists for this campaign
+      const dupeName = await prisma.grupoMonitoramento.findFirst({
+        where: {
+          instancia_id: data.instancia_id,
+          campanha_id: data.campanha_id,
+          nome_filtro: { equals: cg.nome, mode: "insensitive" },
+        },
+      })
+      if (dupeName) continue
+
+      // Clone a new GrupoMonitoramento from the template
+      const novo = await prisma.grupoMonitoramento.create({
+        data: {
+          instancia_id: data.instancia_id,
+          campanha_id: data.campanha_id,
+          conta_manychat_id: data.conta_manychat_id,
+          nome_filtro: cg.nome,
+          grupo_wa_id: cg.grupo_wa_id,
+          tag_manychat_id: data.tag_manychat_id,
+          tag_manychat_nome: data.tag_manychat_nome,
+          auto_expand: false, // cloned groups don't auto-expand further
+        },
+      })
+
+      // Copy contas to the cloned group
+      if (dedupedContas.length > 0) {
+        await prisma.grupoMonitoramentoConta.createMany({
+          data: dedupedContas.map((c) => ({
+            id: crypto.randomUUID(),
+            grupo_id: novo.id,
+            conta_manychat_id: c.conta_id,
+            tag_manychat_id: c.tag_id,
+            tag_manychat_nome: c.tag_nome,
+          })),
+          skipDuplicates: true,
+        }).catch((err) => console.error("[AutoVincular] Erro ao copiar contas:", err))
+      }
+
+      autoVinculados.push(cg.nome)
+      console.log(
+        `[AutoVincular:criarGrupo] "${cg.nome}" vinculado automaticamente ` +
+        `(score=${score.toFixed(2)}, template="${data.nome_filtro}")`
+      )
+    }
+  }
+
+  return { grupo, autoVinculados, message: "Grupo configurado com sucesso." }
 }
 
 export interface BatchCriarGruposParams extends Omit<CriarGrupoParams, "nome_filtro" | "grupo_wa_id"> {
@@ -198,11 +267,15 @@ export interface BatchCriarGruposParams extends Omit<CriarGrupoParams, "nome_fil
 export async function batchCriarGrupos(params: BatchCriarGruposParams) {
   const { grupos, ...base } = params
   const results: Array<{ nome_filtro: string; status: "criado" | "duplicado" | "erro"; message?: string }> = []
+  const allAutoVinculados: string[] = []
 
   for (const g of grupos) {
     try {
-      await criarGrupo({ ...base, nome_filtro: g.nome, grupo_wa_id: g.phone || null })
+      const res = await criarGrupo({ ...base, nome_filtro: g.nome, grupo_wa_id: g.phone || null })
       results.push({ nome_filtro: g.nome, status: "criado" })
+      if (res.autoVinculados?.length) {
+        allAutoVinculados.push(...res.autoVinculados)
+      }
     } catch (err) {
       const isConflict = err instanceof ServiceError && err.code === "conflict"
       const message = err instanceof ServiceError ? err.message : "Erro desconhecido"
@@ -211,7 +284,13 @@ export async function batchCriarGrupos(params: BatchCriarGruposParams) {
   }
 
   const criados = results.filter((r) => r.status === "criado").length
-  return { results, criados, total: grupos.length, message: `${criados} de ${grupos.length} grupos criados.` }
+  return {
+    results,
+    criados,
+    total: grupos.length,
+    autoVinculados: allAutoVinculados,
+    message: `${criados} de ${grupos.length} grupos criados.`,
+  }
 }
 
 export async function atualizarGrupo(
@@ -283,7 +362,7 @@ export async function sincronizarGruposCache(
   })
 }
 
-export async function listarEntradas(instanciaId: string, grupoId?: string) {
+export async function listarEntradas(instanciaId: string, grupoId?: string, perPage?: number) {
   return prisma.entradaGrupo.findMany({
     where: {
       grupo: { instancia_id: instanciaId },
@@ -294,6 +373,6 @@ export async function listarEntradas(instanciaId: string, grupoId?: string) {
       lead: { select: { id: true, nome: true, status: true } },
     },
     orderBy: { entrou_at: "desc" },
-    take: 200,
+    take: perPage ?? 200,
   })
 }

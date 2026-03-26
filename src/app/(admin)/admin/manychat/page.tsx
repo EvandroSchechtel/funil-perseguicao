@@ -276,7 +276,10 @@ export default function ManychatPage() {
                             </div>
                           </div>
                         ) : (
-                          <span className="text-[#5A5A72] text-sm">{conta.uso_hoje > 0 ? conta.uso_hoje : "—"}</span>
+                          <span className="text-[#5A5A72] text-sm">
+                            {conta.uso_hoje > 0 ? conta.uso_hoje : "0"}
+                            <span className="text-[#3F3F58] text-xs ml-1">(sem limite)</span>
+                          </span>
                         )}
                       </div>
                     </td>

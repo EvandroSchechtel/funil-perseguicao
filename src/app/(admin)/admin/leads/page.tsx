@@ -10,6 +10,11 @@ import { Input } from "@/components/ui/input"
 import { Header } from "@/components/layout/Header"
 import { toast } from "sonner"
 
+interface EntradaGrupo {
+  grupo: { nome_filtro: string }
+  entrou_at: string
+}
+
 interface Lead {
   id: string
   nome: string
@@ -19,6 +24,7 @@ interface Lead {
   erro_msg: string | null
   tentativas: number
   grupo_entrou_at: string | null
+  entradas_grupo: EntradaGrupo[]
   processado_at: string | null
   created_at: string
   webhook: { id: string; nome: string }
@@ -315,17 +321,22 @@ export default function LeadsPage() {
           )}
         </div>
 
-        {/* Selection action bar */}
+        {/* Floating selection action bar */}
         {someSelected && canReprocess && (
-          <div className="mb-3 flex items-center gap-3 bg-[#1C1C28] border border-[#25D366]/30 rounded-xl px-4 py-2.5">
-            <span className="text-[#25D366] text-sm font-medium">{selected.size} selecionado{selected.size !== 1 ? "s" : ""}</span>
+          <div className="sticky top-0 z-30 mb-3 flex items-center gap-3 bg-[#1C1C28]/95 backdrop-blur-sm border border-[#25D366]/40 rounded-xl px-5 py-3 shadow-lg shadow-black/30">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center justify-center min-w-[24px] h-6 px-1.5 rounded-md bg-[#25D366] text-[#111118] text-xs font-bold">
+                {selected.size}
+              </span>
+              <span className="text-[#C4C4D4] text-sm font-medium">selecionado{selected.size !== 1 ? "s" : ""}</span>
+            </div>
             <Button
               size="sm"
               onClick={handleReprocessSelected}
               loading={reprocessingSelected}
-              className="h-8"
+              className="h-9 px-4 bg-[#25D366] hover:bg-[#1fb855] text-[#111118] font-semibold"
             >
-              <PlayCircle className="w-3.5 h-3.5 mr-1.5" />
+              <PlayCircle className="w-4 h-4 mr-1.5" />
               Executar Novamente
             </Button>
             <button
@@ -416,13 +427,28 @@ export default function LeadsPage() {
                           <span className="text-[#8B8B9E] text-sm">{lead.tentativas}</span>
                         </td>
                         <td className="px-5 py-3">
-                          {lead.grupo_entrou_at ? (
+                          {lead.entradas_grupo && lead.entradas_grupo.length > 0 ? (
+                            <div className="flex flex-col gap-0.5">
+                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[#25D366]">
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#25D366] shrink-0" />
+                                <span className="truncate max-w-[140px]" title={lead.entradas_grupo[0].grupo.nome_filtro}>
+                                  {lead.entradas_grupo[0].grupo.nome_filtro}
+                                </span>
+                                {lead.entradas_grupo.length > 1 && (
+                                  <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-[#25D366]/15 text-[#25D366]">
+                                    +{lead.entradas_grupo.length - 1}
+                                  </span>
+                                )}
+                              </span>
+                              <span className="text-[#5A5A72] text-[10px] ml-3">{formatDate(lead.entradas_grupo[0].entrou_at)}</span>
+                            </div>
+                          ) : lead.grupo_entrou_at ? (
                             <span className="inline-flex items-center gap-1 text-xs font-medium text-[#25D366]">
                               <span className="w-1.5 h-1.5 rounded-full bg-[#25D366] shrink-0" />
                               {formatDate(lead.grupo_entrou_at)}
                             </span>
                           ) : (
-                            <span className="text-[#5A5A72] text-xs">—</span>
+                            <span className="text-[#5A5A72] text-xs">{"\u2014"}</span>
                           )}
                         </td>
                         <td className="px-5 py-3">
