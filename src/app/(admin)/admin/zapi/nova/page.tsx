@@ -138,7 +138,7 @@ export default function NovaInstanciaPage() {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then((r) => r.json())
-      .then((d) => setClientes(d.clientes || []))
+      .then((d) => setClientes(d.data || []))
       .catch(() => {})
       .finally(() => setLoadingClientes(false))
   }, [accessToken])
