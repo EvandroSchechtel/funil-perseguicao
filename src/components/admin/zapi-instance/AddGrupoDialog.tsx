@@ -501,9 +501,11 @@ export function AddGrupoDialog({
                     )}
                   </div>
 
-                  {/* Conta select */}
+                  {/* Conta select — filtra contas já selecionadas em outras linhas */}
                   <SearchableSelect<ContaManychat>
-                    options={contas}
+                    options={contas.filter((c) =>
+                      c.id === row.contaId || !contaRows.some((r, i) => i !== index && r.contaId === c.id)
+                    )}
                     value={row.contaId}
                     getKey={(c) => c.id}
                     getLabel={(c) => c.nome}
