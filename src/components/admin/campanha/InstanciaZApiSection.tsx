@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useCallback } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import { Smartphone, Loader2, Save, ScanSearch, AlertTriangle, CheckCircle2, XCircle, Users2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
@@ -46,13 +46,19 @@ export function InstanciaZApiSection({
   const [showResultDialog, setShowResultDialog] = useState(false)
   const [progressStep, setProgressStep] = useState(0)
   const [localResult, setLocalResult] = useState<VarreduraResult | null>(null)
+  const wasVarrendoRef = useRef(false)
 
   // When varrendo starts, open the progress dialog
   useEffect(() => {
     if (varrendo) {
+      wasVarrendoRef.current = true
       setShowProgressDialog(true)
       setProgressStep(0)
       setLocalResult(null)
+    } else if (wasVarrendoRef.current) {
+      // varrendo just finished — close progress dialog
+      wasVarrendoRef.current = false
+      setShowProgressDialog(false)
     }
   }, [varrendo])
 
@@ -68,14 +74,14 @@ export function InstanciaZApiSection({
     return () => clearInterval(interval)
   }, [varrendo])
 
-  // When result arrives, show result dialog
+  // When result arrives, show result dialog (regardless of progress dialog state)
   useEffect(() => {
-    if (varreduraResult && showProgressDialog) {
+    if (varreduraResult) {
       setLocalResult(varreduraResult)
       setShowProgressDialog(false)
       setShowResultDialog(true)
     }
-  }, [varreduraResult, showProgressDialog])
+  }, [varreduraResult])
 
   // Block browser navigation while scanning (beforeunload)
   useEffect(() => {
