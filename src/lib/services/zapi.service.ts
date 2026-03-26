@@ -133,6 +133,7 @@ export interface CriarGrupoParams {
   nome_filtro: string
   tag_manychat_id: number
   tag_manychat_nome: string
+  auto_expand?: boolean               // default true
   contas?: Array<{                    // contas adicionais (opcional)
     conta_id: string
     tag_id: number
@@ -156,10 +157,10 @@ export async function criarGrupo(data: CriarGrupoParams) {
     throw new ServiceError("conflict", "Já existe um grupo com este nome de filtro nesta instância.")
   }
 
-  const { contas, ...grupoData } = data
+  const { contas, auto_expand, ...grupoData } = data
 
   const grupo = await prisma.grupoMonitoramento.create({
-    data: grupoData,
+    data: { ...grupoData, auto_expand: auto_expand ?? true },
     include: {
       campanha: { select: { id: true, nome: true } },
       conta_manychat: { select: { id: true, nome: true } },
@@ -187,6 +188,29 @@ export async function criarGrupo(data: CriarGrupoParams) {
   })
 
   return { grupo, message: "Grupo configurado com sucesso." }
+}
+
+export interface BatchCriarGruposParams extends Omit<CriarGrupoParams, "nome_filtro"> {
+  grupos: string[]  // array de nomes a usar como nome_filtro
+}
+
+export async function batchCriarGrupos(params: BatchCriarGruposParams) {
+  const { grupos, ...base } = params
+  const results: Array<{ nome_filtro: string; status: "criado" | "duplicado" | "erro"; message?: string }> = []
+
+  for (const nome_filtro of grupos) {
+    try {
+      await criarGrupo({ ...base, nome_filtro })
+      results.push({ nome_filtro, status: "criado" })
+    } catch (err) {
+      const isConflict = err instanceof ServiceError && err.code === "conflict"
+      const message = err instanceof ServiceError ? err.message : "Erro desconhecido"
+      results.push({ nome_filtro, status: isConflict ? "duplicado" : "erro", message })
+    }
+  }
+
+  const criados = results.filter((r) => r.status === "criado").length
+  return { results, criados, total: grupos.length, message: `${criados} de ${grupos.length} grupos criados.` }
 }
 
 export async function atualizarGrupo(

@@ -387,6 +387,7 @@ model GrupoMonitoramento {
   tag_manychat_id     Int           // ID da tag no Manychat
   tag_manychat_nome   String        // nome da tag (para exibição)
   status              Status        @default(ativo)
+  auto_expand         Boolean       @default(true)  // se true, usado como template para auto-criar grupos similares
   created_at          DateTime      @default(now())
   updated_at          DateTime      @updatedAt
 

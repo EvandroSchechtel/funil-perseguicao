@@ -196,9 +196,10 @@ export default function InstanciaDetailPage() {
   const [zapiGroupsLoading, setZapiGroupsLoading] = useState(false)
   const [manychatTags, setManychatTags] = useState<ManychatTag[]>([])
   const [tagsLoading, setTagsLoading] = useState(false)
-  const [grupoForm, setGrupoForm] = useState({
-    campanha_id: "", campanha_nome: "", nome_filtro: "",
-  })
+  const [grupoForm, setGrupoForm] = useState({ campanha_id: "", campanha_nome: "" })
+  const [gruposWaSelecionados, setGruposWaSelecionados] = useState<string[]>([])
+  const [grupoPickerFilter, setGrupoPickerFilter] = useState("")
+  const [autoExpand, setAutoExpand] = useState(true)
   // Multi-conta staging area
   const [contaStageId, setContaStageId] = useState("")
   const [contaStageNome, setContaStageNome] = useState("")
@@ -350,7 +351,10 @@ export default function InstanciaDetailPage() {
   }
 
   function openGrupoForm() {
-    setGrupoForm({ campanha_id: "", campanha_nome: "", nome_filtro: "" })
+    setGrupoForm({ campanha_id: "", campanha_nome: "" })
+    setGruposWaSelecionados([])
+    setGrupoPickerFilter("")
+    setAutoExpand(true)
     setContasAdicionadas([])
     setContaStageId(""); setContaStageNome("")
     setTagStageId(""); setTagStageNome("")
@@ -360,9 +364,9 @@ export default function InstanciaDetailPage() {
   }
 
   async function handleSaveGrupo() {
-    const { campanha_id, nome_filtro } = grupoForm
-    if (!campanha_id || !nome_filtro || contasAdicionadas.length === 0) {
-      toast.error("Preencha todos os campos e adicione pelo menos uma conta Manychat.")
+    const { campanha_id } = grupoForm
+    if (!campanha_id || gruposWaSelecionados.length === 0 || contasAdicionadas.length === 0) {
+      toast.error("Selecione campanha, ao menos um grupo e ao menos uma conta Manychat.")
       return
     }
     const [primary, ...rest] = contasAdicionadas
@@ -374,9 +378,10 @@ export default function InstanciaDetailPage() {
         body: JSON.stringify({
           campanha_id,
           conta_manychat_id: primary.contaId,
-          nome_filtro,
           tag_manychat_id: primary.tagId,
           tag_manychat_nome: primary.tagNome,
+          auto_expand: autoExpand,
+          grupos: gruposWaSelecionados,
           ...(rest.length > 0 && {
             contas_adicionais: rest.map((c) => ({
               conta_id: c.contaId,
@@ -388,11 +393,14 @@ export default function InstanciaDetailPage() {
       })
       const data = await res.json()
       if (res.ok) {
-        toast.success(data.message || "Grupo configurado.")
+        toast.success(data.message || "Grupos configurados.")
+        if (data.results?.some((r: { status: string }) => r.status === "duplicado")) {
+          toast.warning("Alguns grupos já existiam e foram ignorados.")
+        }
         setShowGrupoForm(false)
         fetchInst()
       } else {
-        toast.error(data.message || "Erro ao configurar grupo.")
+        toast.error(data.message || "Erro ao configurar grupos.")
       }
     } catch {
       toast.error("Erro de conexão.")
@@ -795,11 +803,11 @@ export default function InstanciaDetailPage() {
                     onChange={(val, label) => setGrupoForm((p) => ({ ...p, campanha_id: val, campanha_nome: label }))}
                   />
 
-                  {/* Row 2: Grupo WA */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
+                  {/* Row 2: Grupos WA — multi-select */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
                       <label className="text-[10px] font-semibold text-[#3F3F58] uppercase tracking-widest">
-                        Grupo WhatsApp *
+                        Grupos WhatsApp *
                       </label>
                       <button
                         type="button"
@@ -810,19 +818,91 @@ export default function InstanciaDetailPage() {
                         Recarregar
                       </button>
                     </div>
-                    <SearchableSelect<ZApiGroup>
-                      options={zapiGroups}
-                      value={grupoForm.nome_filtro}
-                      getKey={(g) => g.name}
-                      getLabel={(g) => g.name}
-                      placeholder={zapiGroupsLoading ? "Buscando grupos…" : "Selecionar grupo…"}
-                      searchPlaceholder="Filtrar por nome…"
-                      loading={zapiGroupsLoading}
-                      onChange={(val) => setGrupoForm((p) => ({ ...p, nome_filtro: val }))}
-                    />
-                    <p className="text-[11px] text-[#3F3F58] mt-1.5">
-                      Qualquer grupo cujo nome <span className="text-[#7F7F9E]">contenha</span> esse texto será monitorado automaticamente.
-                    </p>
+
+                    {/* Filter + select-all row */}
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-[#3F3F58]" />
+                      <input
+                        value={grupoPickerFilter}
+                        onChange={(e) => setGrupoPickerFilter(e.target.value)}
+                        placeholder="Filtrar por nome…"
+                        className="w-full h-8 pl-7 pr-3 rounded-lg border border-[#1C1C2C] bg-[#13131F] text-xs text-[#EEEEF5] placeholder-[#3F3F58] focus:outline-none focus:border-[#25D366]/50 transition-colors"
+                      />
+                    </div>
+
+                    {(() => {
+                      const filtered = zapiGroups.filter((g) =>
+                        g.name.toLowerCase().includes(grupoPickerFilter.toLowerCase())
+                      )
+                      const allSelected = filtered.length > 0 && filtered.every((g) => gruposWaSelecionados.includes(g.name))
+                      return filtered.length > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (allSelected) {
+                              setGruposWaSelecionados((prev) => prev.filter((n) => !filtered.some((g) => g.name === n)))
+                            } else {
+                              const newNames = filtered.map((g) => g.name).filter((n) => !gruposWaSelecionados.includes(n))
+                              setGruposWaSelecionados((prev) => [...prev, ...newNames])
+                            }
+                          }}
+                          className="text-[10px] font-medium text-[#25D366] hover:text-[#1DB954] transition-colors"
+                        >
+                          {allSelected ? `Desmarcar filtrados (${filtered.length})` : `Selecionar todos filtrados (${filtered.length})`}
+                        </button>
+                      ) : null
+                    })()}
+
+                    {/* Checkbox list */}
+                    <div className="max-h-48 overflow-y-auto rounded-lg border border-[#1C1C2C] bg-[#0A0A12] divide-y divide-[#1C1C2C]">
+                      {zapiGroupsLoading ? (
+                        <p className="text-center text-[#3F3F58] text-xs py-4">Carregando grupos…</p>
+                      ) : zapiGroups.filter((g) => g.name.toLowerCase().includes(grupoPickerFilter.toLowerCase())).length === 0 ? (
+                        <p className="text-center text-[#3F3F58] text-xs py-4">
+                          {zapiGroups.length === 0 ? "Nenhum grupo encontrado" : "Nenhum resultado"}
+                        </p>
+                      ) : (
+                        zapiGroups
+                          .filter((g) => g.name.toLowerCase().includes(grupoPickerFilter.toLowerCase()))
+                          .map((g) => {
+                            const checked = gruposWaSelecionados.includes(g.name)
+                            return (
+                              <label
+                                key={g.phone}
+                                className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-[#13131F] transition-colors"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() =>
+                                    setGruposWaSelecionados((prev) =>
+                                      checked ? prev.filter((n) => n !== g.name) : [...prev, g.name]
+                                    )
+                                  }
+                                  className="w-3.5 h-3.5 accent-[#25D366] shrink-0"
+                                />
+                                <span className="text-xs text-[#EEEEF5] truncate">{g.name}</span>
+                              </label>
+                            )
+                          })
+                      )}
+                    </div>
+
+                    {/* Counter + auto-expand */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-[#25D366]">
+                        {gruposWaSelecionados.length > 0 ? `${gruposWaSelecionados.length} selecionado(s)` : ""}
+                      </span>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={autoExpand}
+                          onChange={(e) => setAutoExpand(e.target.checked)}
+                          className="w-3 h-3 accent-[#25D366]"
+                        />
+                        <span className="text-[10px] text-[#7F7F9E]">Auto-expandir grupos similares</span>
+                      </label>
+                    </div>
                   </div>
 
                   {/* Multi-conta section */}

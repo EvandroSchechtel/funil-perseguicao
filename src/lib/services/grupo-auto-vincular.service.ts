@@ -39,7 +39,7 @@ export async function tentarAutoVincularGrupo(
 ): Promise<AutoVincularResult> {
   // Load all active monitoring groups for this instance as templates
   const templates = await prisma.grupoMonitoramento.findMany({
-    where: { instancia_id: instanciaId, status: "ativo" },
+    where: { instancia_id: instanciaId, status: "ativo", auto_expand: true },
     select: {
       id: true,
       nome_filtro: true,
