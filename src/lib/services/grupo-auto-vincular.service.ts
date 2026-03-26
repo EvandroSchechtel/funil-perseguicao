@@ -154,10 +154,15 @@ export async function tentarAutoVincularGrupo(
   } catch (err: unknown) {
     // P2002 = unique constraint violation — group already exists, skip
     if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "P2002") {
-      console.log(`[AutoVincular] Grupo já existe (constraint), pulando: "${grupoNome}"`)
+      console.log(`[AutoVincular] Grupo já existe (constraint P2002), pulando: "${grupoNome}"`)
+      // Try to find the existing group to return its ID
+      const existingByConstraint = await prisma.grupoMonitoramento.findFirst({
+        where: { instancia_id: instanciaId, campanha_id: bestTemplate.campanha_id },
+        select: { id: true },
+      }).catch(() => null)
       return {
         criado: false,
-        grupoId: null,
+        grupoId: existingByConstraint?.id ?? null,
         score: bestScore,
         templateId: bestTemplate.id,
         templateNomeFiltro: bestTemplate.nome_filtro,
