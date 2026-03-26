@@ -499,126 +499,133 @@ export default function LeadDetailPage() {
               )}
             </div>
 
-            {/* ── Histórico de Tentativas ── */}
-            <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-5">
-              <div className="flex items-center justify-between mb-1">
-                <h2 className="text-[#F1F1F3] font-semibold">Histórico de Tentativas</h2>
-                {lead.tentativas > 0 && (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-[#1E1E2A] text-[#5A5A72] border border-[#2A2A3A]">
-                    {lead.tentativas} tentativa{lead.tentativas !== 1 ? "s" : ""}
-                  </span>
-                )}
-              </div>
-              <p className="text-[#5A5A72] text-xs mb-5">Cada execução do worker registrada em ordem cronológica</p>
+            {/* ── Histórico ── */}
+            {(() => {
+              type TimelineEvent =
+                | { kind: "recebido"; date: string }
+                | { kind: "tentativa"; date: string; t: LeadTentativa }
+                | { kind: "entrada_grupo"; date: string; nome: string; tag_aplicada: boolean }
+                | { kind: "saida_grupo"; date: string; nome: string }
 
-              {/* Lead received event */}
-              <div className="flex gap-4">
-                <div className="flex flex-col items-center">
-                  <div className="w-8 h-8 rounded-full bg-[#1E1E2A] border border-[#2A2A3A] flex items-center justify-center shrink-0">
-                    <Webhook className="w-3.5 h-3.5 text-[#60A5FA]" />
-                  </div>
-                  {(lead.tentativas_hist.length > 0) && <div className="w-px flex-1 bg-[#1E1E2A] my-1" />}
-                </div>
-                <div className="pb-5 flex-1 min-w-0">
-                  <p className="text-[#F1F1F3] text-sm font-medium">Lead recebido</p>
-                  <p className="text-[#8B8B9E] text-xs mt-0.5">
-                    {lead.webhook.nome}{lead.campanha ? ` · ${lead.campanha.nome}` : ""}
-                    {lead.webhook_flow && ` · Flow: ${lead.webhook_flow.flow_nome || lead.webhook_flow.flow_ns}`}
-                  </p>
-                  <p className="text-[#3A3A52] text-xs mt-1">{formatDate(lead.created_at)}</p>
-                </div>
-              </div>
-
-              {lead.tentativas_hist.length === 0 ? (
-                <p className="text-[#5A5A72] text-xs text-center py-4">Nenhuma tentativa registrada ainda</p>
-              ) : (
-                lead.tentativas_hist.map((t, i) => {
-                  const cfg = TENTATIVA_STATUS_CONFIG[t.status] ?? TENTATIVA_STATUS_CONFIG.falha
-                  const Icon = cfg.icon
-                  const isLast = i === lead.tentativas_hist.length - 1
-                  return (
-                    <div key={t.id} className="flex gap-4">
-                      <div className="flex flex-col items-center">
-                        <div className="w-8 h-8 rounded-full bg-[#1E1E2A] border border-[#2A2A3A] flex items-center justify-center shrink-0">
-                          <Icon className={`w-3.5 h-3.5 ${cfg.color}`} />
-                        </div>
-                        {!isLast && <div className="w-px flex-1 bg-[#1E1E2A] my-1" />}
-                      </div>
-                      <div className="pb-5 flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className={`text-sm font-medium ${cfg.color}`}>Tentativa {t.numero} — {cfg.label}</p>
-                        </div>
-                        {t.conta_nome && (
-                          <p className="text-[#8B8B9E] text-xs mt-0.5">Conta: {t.conta_nome}</p>
-                        )}
-                        {t.flow_ns && (
-                          <p className="font-mono text-xs text-[#5A5A72] mt-0.5">{t.flow_ns}</p>
-                        )}
-                        {t.subscriber_id && (
-                          <p className="text-xs text-[#25D366] mt-0.5">subscriber_id: <span className="font-mono">{t.subscriber_id}</span></p>
-                        )}
-                        {t.erro_msg && (
-                          <p className="text-xs font-mono text-[#F87171] bg-[#1A1010] border border-[#F87171]/20 rounded px-2 py-1 mt-1.5 break-all">
-                            {t.erro_msg}
-                          </p>
-                        )}
-                        <p className="text-[#3A3A52] text-xs mt-1.5">{formatDate(t.executado_at)}</p>
-                      </div>
-                    </div>
-                  )
-                })
-              )}
-            </div>
-
-            {/* ── Histórico de Grupos ── */}
-            {(lead.entradas_grupo.length > 0 || lead.saidas_grupo.length > 0) && (() => {
-              const historico = [
+              const timeline: TimelineEvent[] = [
+                { kind: "recebido" as const, date: lead.created_at },
+                ...lead.tentativas_hist.map((t) => ({ kind: "tentativa" as const, date: t.executado_at, t })),
                 ...lead.entradas_grupo.map((e) => ({
-                  id: e.id, tipo: "entrada" as const,
-                  data: e.entrou_at, grupo: e.grupo.nome_filtro, tag_aplicada: e.tag_aplicada,
+                  kind: "entrada_grupo" as const, date: e.entrou_at,
+                  nome: e.grupo.nome_filtro, tag_aplicada: e.tag_aplicada,
                 })),
                 ...lead.saidas_grupo.map((s) => ({
-                  id: s.id, tipo: "saida" as const,
-                  data: s.saiu_at, grupo: s.grupo.nome_filtro, tag_aplicada: null,
+                  kind: "saida_grupo" as const, date: s.saiu_at, nome: s.grupo.nome_filtro,
                 })),
-              ].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
+              ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
               return (
-                <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-hidden">
-                  <div className="px-5 pt-5 pb-3">
-                    <h2 className="text-[#F1F1F3] font-semibold">Histórico de Grupos</h2>
-                    <p className="text-[#5A5A72] text-xs mt-1">Entradas e saídas registradas nos grupos monitorados</p>
+                <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl p-5">
+                  <div className="flex items-center justify-between mb-1">
+                    <h2 className="text-[#F1F1F3] font-semibold">Histórico</h2>
+                    {lead.tentativas > 0 && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-[#1E1E2A] text-[#5A5A72] border border-[#2A2A3A]">
+                        {lead.tentativas} tentativa{lead.tentativas !== 1 ? "s" : ""}
+                      </span>
+                    )}
                   </div>
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-t border-[#1E1E2A]">
-                        {["Evento", "Grupo", "Data"].map((h) => (
-                          <th key={h} className="text-left text-[10px] font-semibold text-[#3F3F58] uppercase tracking-wider px-5 py-3">
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {historico.map((ev) => (
-                        <tr key={`${ev.tipo}-${ev.id}`} className="border-t border-[#1E1E2A] hover:bg-[#121220] transition-colors">
-                          <td className="px-5 py-3">
-                            {ev.tipo === "entrada" ? (
-                              <span className="inline-flex items-center gap-1.5 text-[#22C55E] text-sm font-medium">
-                                <LogIn className="w-3.5 h-3.5" /> Entrada
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1.5 text-[#EF4444] text-sm font-medium">
-                                <LogOut className="w-3.5 h-3.5" /> Saída
-                              </span>
+                  <p className="text-[#5A5A72] text-xs mb-5">Execuções do worker e entradas/saídas de grupos em ordem cronológica</p>
+
+                  {timeline.map((ev, i) => {
+                    const isLast = i === timeline.length - 1
+
+                    if (ev.kind === "recebido") {
+                      return (
+                        <div key="recebido" className="flex gap-4">
+                          <div className="flex flex-col items-center">
+                            <div className="w-8 h-8 rounded-full bg-[#1E1E2A] border border-[#2A2A3A] flex items-center justify-center shrink-0">
+                              <Webhook className="w-3.5 h-3.5 text-[#60A5FA]" />
+                            </div>
+                            {!isLast && <div className="w-px flex-1 bg-[#1E1E2A] my-1" />}
+                          </div>
+                          <div className="pb-5 flex-1 min-w-0">
+                            <p className="text-[#F1F1F3] text-sm font-medium">Lead recebido</p>
+                            <p className="text-[#8B8B9E] text-xs mt-0.5">
+                              {lead.webhook.nome}{lead.campanha ? ` · ${lead.campanha.nome}` : ""}
+                              {lead.webhook_flow && ` · Flow: ${lead.webhook_flow.flow_nome || lead.webhook_flow.flow_ns}`}
+                            </p>
+                            <p className="text-[#3A3A52] text-xs mt-1">{formatDate(ev.date)}</p>
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    if (ev.kind === "tentativa") {
+                      const cfg = TENTATIVA_STATUS_CONFIG[ev.t.status] ?? TENTATIVA_STATUS_CONFIG.falha
+                      const Icon = cfg.icon
+                      return (
+                        <div key={ev.t.id} className="flex gap-4">
+                          <div className="flex flex-col items-center">
+                            <div className="w-8 h-8 rounded-full bg-[#1E1E2A] border border-[#2A2A3A] flex items-center justify-center shrink-0">
+                              <Icon className={`w-3.5 h-3.5 ${cfg.color}`} />
+                            </div>
+                            {!isLast && <div className="w-px flex-1 bg-[#1E1E2A] my-1" />}
+                          </div>
+                          <div className="pb-5 flex-1 min-w-0">
+                            <p className={`text-sm font-medium ${cfg.color}`}>Tentativa {ev.t.numero} — {cfg.label}</p>
+                            {ev.t.conta_nome && (
+                              <p className="text-[#8B8B9E] text-xs mt-0.5">Conta: {ev.t.conta_nome}</p>
                             )}
-                          </td>
-                          <td className="px-5 py-3 text-[#9898B0] text-sm">{ev.grupo}</td>
-                          <td className="px-5 py-3 text-[#7F7F9E] text-sm whitespace-nowrap">{formatDate(ev.data)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                            {ev.t.flow_ns && (
+                              <p className="font-mono text-xs text-[#5A5A72] mt-0.5">{ev.t.flow_ns}</p>
+                            )}
+                            {ev.t.subscriber_id && (
+                              <p className="text-xs text-[#25D366] mt-0.5">subscriber_id: <span className="font-mono">{ev.t.subscriber_id}</span></p>
+                            )}
+                            {ev.t.erro_msg && (
+                              <p className="text-xs font-mono text-[#F87171] bg-[#1A1010] border border-[#F87171]/20 rounded px-2 py-1 mt-1.5 break-all">
+                                {ev.t.erro_msg}
+                              </p>
+                            )}
+                            <p className="text-[#3A3A52] text-xs mt-1.5">{formatDate(ev.date)}</p>
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    if (ev.kind === "entrada_grupo") {
+                      return (
+                        <div key={`entrada-${ev.date}-${ev.nome}`} className="flex gap-4">
+                          <div className="flex flex-col items-center">
+                            <div className="w-8 h-8 rounded-full bg-[#162516] border border-[#25D366]/30 flex items-center justify-center shrink-0">
+                              <LogIn className="w-3.5 h-3.5 text-[#25D366]" />
+                            </div>
+                            {!isLast && <div className="w-px flex-1 bg-[#1E1E2A] my-1" />}
+                          </div>
+                          <div className="pb-5 flex-1 min-w-0">
+                            <p className="text-sm font-medium text-[#25D366]">Entrou no grupo</p>
+                            <p className="text-[#8B8B9E] text-xs mt-0.5">{ev.nome}</p>
+                            <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded mt-1 ${ev.tag_aplicada ? "bg-[#162516] text-[#25D366] border border-[#25D366]/30" : "bg-[#1A1A1A] text-[#5A5A72] border border-[#2A2A3A]"}`}>
+                              {ev.tag_aplicada ? "Tag aplicada" : "Sem tag"}
+                            </span>
+                            <p className="text-[#3A3A52] text-xs mt-1">{formatDate(ev.date)}</p>
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    // saida_grupo
+                    return (
+                      <div key={`saida-${ev.date}-${ev.nome}`} className="flex gap-4">
+                        <div className="flex flex-col items-center">
+                          <div className="w-8 h-8 rounded-full bg-[#2A1616] border border-[#EF4444]/30 flex items-center justify-center shrink-0">
+                            <LogOut className="w-3.5 h-3.5 text-[#EF4444]" />
+                          </div>
+                          {!isLast && <div className="w-px flex-1 bg-[#1E1E2A] my-1" />}
+                        </div>
+                        <div className="pb-5 flex-1 min-w-0">
+                          <p className="text-sm font-medium text-[#EF4444]">Saiu do grupo</p>
+                          <p className="text-[#8B8B9E] text-xs mt-0.5">{ev.nome}</p>
+                          <p className="text-[#3A3A52] text-xs mt-1">{formatDate(ev.date)}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               )
             })()}

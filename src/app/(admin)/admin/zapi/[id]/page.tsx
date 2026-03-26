@@ -214,6 +214,7 @@ export default function InstanciaDetailPage() {
   const [deleteGrupoDialog, setDeleteGrupoDialog] = useState<GrupoMonitoramento | null>(null)
   const [deletingGrupo, setDeletingGrupo] = useState(false)
   const [scanning, setScanning] = useState(false)
+  const [confirmScan, setConfirmScan] = useState(false)
   const [scanResult, setScanResult] = useState<EscanearResult | null>(null)
   const [scanFilter, setScanFilter] = useState("")
   const [showEditInstancia, setShowEditInstancia] = useState(false)
@@ -742,7 +743,7 @@ export default function InstanciaDetailPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={handleScanGrupos}
+                    onClick={() => setConfirmScan(true)}
                     loading={scanning}
                     title="Busca todos os grupos do Z-API e auto-vincula os similares"
                   >
@@ -1271,6 +1272,25 @@ export default function InstanciaDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Scan confirmation dialog */}
+      <Dialog open={confirmScan} onOpenChange={setConfirmScan}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Escanear grupos?</DialogTitle>
+            <DialogDescription>
+              Busca todos os grupos e comunidades do Z-API e vincula automaticamente os similares
+              aos grupos já configurados. A operação pode levar alguns segundos.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmScan(false)}>Cancelar</Button>
+            <Button onClick={() => { setConfirmScan(false); handleScanGrupos() }} loading={scanning}>
+              Escanear
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Scan result modal */}
       <Dialog open={!!scanResult} onOpenChange={() => { setScanResult(null); setScanFilter("") }}>
