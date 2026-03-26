@@ -131,6 +131,7 @@ export interface CriarGrupoParams {
   campanha_id: string
   conta_manychat_id: string           // primeira conta (backward compat — required)
   nome_filtro: string
+  grupo_wa_id?: string | null         // ID Z-API do grupo (phone) — preenchido na criação via form
   tag_manychat_id: number
   tag_manychat_nome: string
   auto_expand?: boolean               // default true
@@ -190,22 +191,22 @@ export async function criarGrupo(data: CriarGrupoParams) {
   return { grupo, message: "Grupo configurado com sucesso." }
 }
 
-export interface BatchCriarGruposParams extends Omit<CriarGrupoParams, "nome_filtro"> {
-  grupos: string[]  // array de nomes a usar como nome_filtro
+export interface BatchCriarGruposParams extends Omit<CriarGrupoParams, "nome_filtro" | "grupo_wa_id"> {
+  grupos: Array<{ nome: string; phone: string }>  // nome → nome_filtro, phone → grupo_wa_id
 }
 
 export async function batchCriarGrupos(params: BatchCriarGruposParams) {
   const { grupos, ...base } = params
   const results: Array<{ nome_filtro: string; status: "criado" | "duplicado" | "erro"; message?: string }> = []
 
-  for (const nome_filtro of grupos) {
+  for (const g of grupos) {
     try {
-      await criarGrupo({ ...base, nome_filtro })
-      results.push({ nome_filtro, status: "criado" })
+      await criarGrupo({ ...base, nome_filtro: g.nome, grupo_wa_id: g.phone || null })
+      results.push({ nome_filtro: g.nome, status: "criado" })
     } catch (err) {
       const isConflict = err instanceof ServiceError && err.code === "conflict"
       const message = err instanceof ServiceError ? err.message : "Erro desconhecido"
-      results.push({ nome_filtro, status: isConflict ? "duplicado" : "erro", message })
+      results.push({ nome_filtro: g.nome, status: isConflict ? "duplicado" : "erro", message })
     }
   }
 

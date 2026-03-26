@@ -14,6 +14,7 @@ export interface VarreduraResult {
   tags_aplicadas: number      // leads que receberam tag agora
   erros: number               // falhas de getGroupMetadata ou outras
   proxima_varredura_em: string // ISO8601
+  aviso_24h: string | null    // aviso quando varredura recente, mas não bloqueia
 }
 
 /**
@@ -44,18 +45,19 @@ export async function varredarGruposCampanha(campanhaId: string): Promise<Varred
     throw new ServiceError("bad_request", "Campanha não tem instância Z-API vinculada. Vincule uma instância antes de varrer.")
   }
 
-  // 2. Trava 24h
+  // 2. Aviso de 24h (não bloqueia mais — apenas informa)
+  let aviso_24h: string | null = null
   if (campanha.ultima_varredura_at) {
     const diff = Date.now() - new Date(campanha.ultima_varredura_at).getTime()
     const restante = LOCK_HOURS * 3_600_000 - diff
     if (restante > 0) {
       const horas = Math.ceil(restante / 3_600_000)
       const label = horas === 1 ? "1 hora" : `${horas} horas`
-      throw new ServiceError("conflict", `A última varredura foi há menos de 24h. Aguarde ${label} antes de varrer novamente.`)
+      aviso_24h = `Varredura recente (faltam ${label} para o próximo ciclo). Resultados podem estar duplicados.`
     }
   }
 
-  // 3. Grava trava imediatamente (evita runs concorrentes)
+  // 3. Grava timestamp imediatamente (evita runs concorrentes)
   await prisma.campanha.update({
     where: { id: campanhaId },
     data: { ultima_varredura_at: new Date() },
@@ -82,6 +84,7 @@ export async function varredarGruposCampanha(campanhaId: string): Promise<Varred
     tags_aplicadas: 0,
     erros: 0,
     proxima_varredura_em: new Date(Date.now() + LOCK_HOURS * 3_600_000).toISOString(),
+    aviso_24h,
   }
 
   // 5. Para cada grupo: busca membros e processa

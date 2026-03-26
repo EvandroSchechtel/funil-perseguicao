@@ -199,7 +199,7 @@ export default function InstanciaDetailPage() {
   const [manychatTags, setManychatTags] = useState<ManychatTag[]>([])
   const [tagsLoading, setTagsLoading] = useState(false)
   const [grupoForm, setGrupoForm] = useState({ campanha_id: "", campanha_nome: "" })
-  const [gruposWaSelecionados, setGruposWaSelecionados] = useState<string[]>([])
+  const [gruposWaSelecionados, setGruposWaSelecionados] = useState<Array<{nome: string; phone: string}>>([])
   const [grupoPickerFilter, setGrupoPickerFilter] = useState("")
   const [autoExpand, setAutoExpand] = useState(true)
   // Multi-conta staging area
@@ -837,16 +837,18 @@ export default function InstanciaDetailPage() {
                       const filtered = zapiGroups.filter((g) =>
                         g.name.toLowerCase().includes(grupoPickerFilter.toLowerCase())
                       )
-                      const allSelected = filtered.length > 0 && filtered.every((g) => gruposWaSelecionados.includes(g.name))
+                      const allSelected = filtered.length > 0 && filtered.every((g) => gruposWaSelecionados.some((s) => s.nome === g.name))
                       return filtered.length > 0 ? (
                         <button
                           type="button"
                           onClick={() => {
                             if (allSelected) {
-                              setGruposWaSelecionados((prev) => prev.filter((n) => !filtered.some((g) => g.name === n)))
+                              setGruposWaSelecionados((prev) => prev.filter((s) => !filtered.some((g) => g.name === s.nome)))
                             } else {
-                              const newNames = filtered.map((g) => g.name).filter((n) => !gruposWaSelecionados.includes(n))
-                              setGruposWaSelecionados((prev) => [...prev, ...newNames])
+                              const newEntries = filtered
+                                .filter((g) => !gruposWaSelecionados.some((s) => s.nome === g.name))
+                                .map((g) => ({ nome: g.name, phone: g.phone }))
+                              setGruposWaSelecionados((prev) => [...prev, ...newEntries])
                             }
                           }}
                           className="text-[10px] font-medium text-[#25D366] hover:text-[#1DB954] transition-colors"
@@ -868,7 +870,7 @@ export default function InstanciaDetailPage() {
                         zapiGroups
                           .filter((g) => g.name.toLowerCase().includes(grupoPickerFilter.toLowerCase()))
                           .map((g) => {
-                            const checked = gruposWaSelecionados.includes(g.name)
+                            const checked = gruposWaSelecionados.some((s) => s.nome === g.name)
                             return (
                               <label
                                 key={g.phone}
@@ -879,7 +881,7 @@ export default function InstanciaDetailPage() {
                                   checked={checked}
                                   onChange={() =>
                                     setGruposWaSelecionados((prev) =>
-                                      checked ? prev.filter((n) => n !== g.name) : [...prev, g.name]
+                                      checked ? prev.filter((s) => s.nome !== g.name) : [...prev, { nome: g.name, phone: g.phone }]
                                     )
                                   }
                                   className="w-3.5 h-3.5 accent-[#25D366] shrink-0"

@@ -221,6 +221,54 @@ export function startWebhookWorker(): Worker {
           setWhatsappIdField(conta.api_key, result.subscriber_id, telefone, conta.whatsapp_field_id).catch(() => {})
         }
 
+        // Best-effort: retro-apply group entry tags for entries where subscriber wasn't known yet
+        if (updated.contato_id && result.subscriber_id) {
+          ;(async () => {
+            try {
+              const entradasSemTag = await prisma.entradaGrupo.findMany({
+                where: { lead_id: leadId, tag_aplicada: false },
+                include: {
+                  grupo: {
+                    include: {
+                      conta_manychat: { select: { id: true, api_key: true } },
+                      contas_monitoramento: {
+                        include: { conta_manychat: { select: { id: true, api_key: true } } },
+                      },
+                    },
+                  },
+                },
+              })
+              for (const entrada of entradasSemTag) {
+                const contasToTag = entrada.grupo.contas_monitoramento.length > 0
+                  ? entrada.grupo.contas_monitoramento
+                  : [{ conta_manychat: entrada.grupo.conta_manychat, tag_manychat_id: entrada.grupo.tag_manychat_id }]
+
+                const tagResults = await Promise.allSettled(
+                  contasToTag.map(async (ct) => {
+                    const cc = await prisma.contatoConta.findFirst({
+                      where: { contato_id: updated.contato_id!, conta_id: ct.conta_manychat.id, subscriber_id: { not: null } },
+                      select: { subscriber_id: true },
+                    })
+                    if (!cc?.subscriber_id) return { ok: false }
+                    const { addTag } = await import("@/lib/manychat/tags")
+                    return addTag(ct.conta_manychat.api_key, cc.subscriber_id, ct.tag_manychat_id)
+                  })
+                )
+                const tagAplicada = tagResults.some((r) => r.status === "fulfilled" && (r.value as { ok: boolean }).ok)
+                if (tagAplicada) {
+                  await prisma.entradaGrupo.update({
+                    where: { id: entrada.id },
+                    data: { tag_aplicada: true, tag_erro: null },
+                  }).catch(() => {})
+                  console.log(`[Worker] Retro-tag aplicada EntradaGrupo ${entrada.id} lead=${leadId}`)
+                }
+              }
+            } catch (err) {
+              console.error("[Worker] Retro-tag falhou:", err)
+            }
+          })()
+        }
+
         console.log(`[Worker] Lead ${leadId} processed successfully (subscriber: ${result.subscriber_id})`)
 
       } else if (result.sem_optin) {

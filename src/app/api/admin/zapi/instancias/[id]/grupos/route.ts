@@ -26,7 +26,7 @@ const singleSchema = baseSchema.extend({
 })
 
 const batchSchema = baseSchema.extend({
-  grupos: z.array(z.string().min(1)).min(1, "Selecione ao menos um grupo"),
+  grupos: z.array(z.object({ nome: z.string().min(1), phone: z.string() })).min(1, "Selecione ao menos um grupo"),
 })
 
 export async function POST(request: NextRequest, { params }: Ctx) {

@@ -48,6 +48,9 @@ export async function tentarAutoVincularGrupo(
       conta_manychat_id: true,
       tag_manychat_id: true,
       tag_manychat_nome: true,
+      contas_monitoramento: {
+        select: { conta_manychat_id: true, tag_manychat_id: true, tag_manychat_nome: true },
+      },
     },
   })
 
@@ -130,6 +133,20 @@ export async function tentarAutoVincularGrupo(
     },
     select: { id: true },
   })
+
+  // Copy contas_monitoramento junction records from template (multi-conta support)
+  if (bestTemplate.contas_monitoramento.length > 0) {
+    await prisma.grupoMonitoramentoConta.createMany({
+      data: bestTemplate.contas_monitoramento.map((cm) => ({
+        id: crypto.randomUUID(),
+        grupo_id: novo.id,
+        conta_manychat_id: cm.conta_manychat_id,
+        tag_manychat_id: cm.tag_manychat_id,
+        tag_manychat_nome: cm.tag_manychat_nome,
+      })),
+      skipDuplicates: true,
+    }).catch((err) => console.error("[AutoVincular] Erro ao copiar contas_monitoramento:", err))
+  }
 
   console.log(
     `[AutoVincular] Grupo auto-vinculado: "${grupoNome}" → ` +

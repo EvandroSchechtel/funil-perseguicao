@@ -8,7 +8,7 @@ import {
   Plus, Trash2, ToggleLeft, ToggleRight, Info, GripVertical, FlaskConical,
   Building2, Calendar, ChevronDown, ChevronRight, PauseCircle, PlayCircle,
   ListOrdered, ChevronsRight, DoorOpen, Tag, ExternalLink, Smartphone, Save,
-  ScanSearch, MessageSquare,
+  ScanSearch, MessageSquare, AlertTriangle,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { hasPermission } from "@/lib/auth/rbac"
@@ -102,6 +102,12 @@ interface GrupoMonitoramento {
   created_at: string
   instancia: { id: string; nome: string }
   conta_manychat: { id: string; nome: string }
+  contas_monitoramento: Array<{
+    conta_manychat_id: string
+    conta_manychat: { id: string; nome: string }
+    tag_manychat_id: number
+    tag_manychat_nome: string
+  }>
   _count: { entradas: number }
 }
 
@@ -114,6 +120,7 @@ interface VarreduraResult {
   tags_aplicadas: number
   erros: number
   proxima_varredura_em: string
+  aviso_24h?: string | null
 }
 
 const LEADS_PREVIEW = 5
@@ -195,6 +202,10 @@ export default function CampanhaDetailPage() {
   const [grupos, setGrupos] = useState<GrupoMonitoramento[]>([])
   const [loadingGrupos, setLoadingGrupos] = useState(false)
   const [deletingGrupo, setDeletingGrupo] = useState<string | null>(null)
+  const [expandedGrupo, setExpandedGrupo] = useState<string | null>(null)
+  const [editingGrupoId, setEditingGrupoId] = useState<string | null>(null)
+  const [editingGrupoNome, setEditingGrupoNome] = useState("")
+  const [savingEditGrupo, setSavingEditGrupo] = useState(false)
 
   // Pause actions
   const [pauseLoading, setPauseLoading] = useState<string | null>(null)
@@ -451,6 +462,22 @@ export default function CampanhaDetailPage() {
       else toast.error(data.message || "Erro ao remover grupo.")
     } catch { toast.error("Erro de conexão.") }
     finally { setDeletingGrupo(null) }
+  }
+
+  async function handleEditGrupoSave(grupo: GrupoMonitoramento) {
+    if (!accessToken) return
+    setSavingEditGrupo(true)
+    try {
+      const res = await fetch(`/api/admin/zapi/instancias/${grupo.instancia.id}/grupos/${grupo.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ nome_filtro: editingGrupoNome }),
+      })
+      const data = await res.json()
+      if (res.ok) { toast.success(data.message || "Grupo atualizado."); setEditingGrupoId(null); fetchGrupos() }
+      else toast.error(data.message || "Erro ao atualizar grupo.")
+    } catch { toast.error("Erro de conexão.") }
+    finally { setSavingEditGrupo(false) }
   }
 
   // ── Varredura de grupos ─────────────────────────────────────────────────────
@@ -760,6 +787,12 @@ export default function CampanhaDetailPage() {
                   {varreduraResult && (
                     <div className="mt-3 p-3 bg-[#0A1A12] border border-[#25D366]/30 rounded-lg text-xs">
                       <p className="text-[#25D366] font-semibold mb-2">Varredura concluída</p>
+                      {varreduraResult.aviso_24h && (
+                        <div className="mb-2 flex items-start gap-1.5 text-[#F59E0B]">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                          <p>{varreduraResult.aviso_24h}</p>
+                        </div>
+                      )}
                       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[#8B8B9E]">
                         <span>Grupos varridos: <strong className="text-[#EEEEF5]">{varreduraResult.grupos_varridos}</strong></span>
                         <span>Membros lidos: <strong className="text-[#EEEEF5]">{varreduraResult.total_membros}</strong></span>
@@ -773,7 +806,6 @@ export default function CampanhaDetailPage() {
                           <span>Erros: <strong className="text-[#F87171]">{varreduraResult.erros}</strong></span>
                         )}
                       </div>
-                      <p className="text-[#3F3F58] mt-2">Próxima varredura disponível em 24h</p>
                     </div>
                   )}
                 </div>
@@ -816,43 +848,104 @@ export default function CampanhaDetailPage() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {grupos.map((g) => (
-                    <div
-                      key={g.id}
-                      className="bg-[#16161E] border border-[#1E1E2A] rounded-xl px-4 py-3 flex items-center gap-3"
-                    >
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${g.status === "ativo" ? "bg-[#25D366]" : "bg-[#3F3F58]"}`} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[#EEEEF5] text-sm font-medium truncate">{g.nome_filtro}</p>
-                        <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                          <span className="text-[#5A5A72] text-xs flex items-center gap-1">
-                            <Building2 className="w-2.5 h-2.5" />
-                            {g.conta_manychat.nome}
-                          </span>
-                          <span className="text-[#5A5A72] text-xs flex items-center gap-1">
-                            <Tag className="w-2.5 h-2.5" />
-                            {g.tag_manychat_nome}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <p className="text-[#EEEEF5] text-sm font-bold">{g._count.entradas}</p>
-                        <p className="text-[#3F3F58] text-[10px] uppercase">entradas</p>
-                      </div>
-                      {canWrite && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteGrupo(g)}
-                          disabled={deletingGrupo === g.id}
-                          className="w-7 h-7 shrink-0 flex items-center justify-center rounded-lg text-[#3F3F58] hover:text-[#F87171] hover:bg-[#F87171]/10 transition-all disabled:opacity-50"
+                  {grupos.map((g) => {
+                    const expanded = expandedGrupo === g.id
+                    const isEditing = editingGrupoId === g.id
+                    const contasExibir = g.contas_monitoramento.length > 0
+                      ? g.contas_monitoramento
+                      : [{ conta_manychat: g.conta_manychat, tag_manychat_id: 0, tag_manychat_nome: g.tag_manychat_nome, conta_manychat_id: g.conta_manychat.id }]
+                    return (
+                      <div key={g.id} className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-hidden">
+                        {/* Header */}
+                        <div
+                          className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-[#1C1C28] transition-colors"
+                          onClick={() => setExpandedGrupo(expanded ? null : g.id)}
                         >
-                          {deletingGrupo === g.id
-                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            : <Trash2 className="w-3.5 h-3.5" />}
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${g.status === "ativo" ? "bg-[#25D366]" : "bg-[#3F3F58]"}`} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[#EEEEF5] text-sm font-medium truncate">{g.nome_filtro}</p>
+                            <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                              <span className="text-[#5A5A72] text-xs flex items-center gap-1">
+                                <Building2 className="w-2.5 h-2.5" />
+                                {g.conta_manychat.nome}
+                              </span>
+                              <span className="text-[#5A5A72] text-xs flex items-center gap-1">
+                                <Tag className="w-2.5 h-2.5" />
+                                {g.tag_manychat_nome}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="shrink-0 text-right mr-1">
+                            <p className="text-[#EEEEF5] text-sm font-bold">{g._count.entradas}</p>
+                            <p className="text-[#3F3F58] text-[10px] uppercase">entradas</p>
+                          </div>
+                          {expanded ? <ChevronDown className="w-4 h-4 text-[#5A5A72] shrink-0" /> : <ChevronRight className="w-4 h-4 text-[#5A5A72] shrink-0" />}
+                        </div>
+
+                        {/* Expanded area */}
+                        {expanded && (
+                          <div className="border-t border-[#1E1E2A] px-4 py-3 space-y-3">
+                            {/* Inline edit or info */}
+                            {isEditing ? (
+                              <div className="flex items-center gap-2">
+                                <input
+                                  className="flex-1 bg-[#0A0A12] border border-[#2A2A3A] rounded-lg px-3 py-1.5 text-sm text-[#EEEEF5] focus:outline-none focus:border-[#25D366]"
+                                  value={editingGrupoNome}
+                                  onChange={(e) => setEditingGrupoNome(e.target.value)}
+                                  onKeyDown={(e) => { if (e.key === "Enter") handleEditGrupoSave(g); if (e.key === "Escape") setEditingGrupoId(null) }}
+                                  autoFocus
+                                />
+                                <Button size="sm" onClick={() => handleEditGrupoSave(g)} loading={savingEditGrupo} disabled={savingEditGrupo}>
+                                  <Save className="w-3.5 h-3.5 mr-1" />Salvar
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => setEditingGrupoId(null)} disabled={savingEditGrupo}>
+                                  Cancelar
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="space-y-1.5 text-xs text-[#8B8B9E]">
+                                {g.grupo_wa_id && (
+                                  <p>ID Z-API: <span className="text-[#EEEEF5] font-mono">{g.grupo_wa_id}</span></p>
+                                )}
+                                <p className="text-[#5A5A72] uppercase tracking-wider font-semibold mt-1">Contas monitoradas</p>
+                                {contasExibir.map((cm, i) => (
+                                  <div key={i} className="flex items-center gap-2">
+                                    <Building2 className="w-3 h-3 shrink-0" />
+                                    <span>{cm.conta_manychat.nome}</span>
+                                    <Tag className="w-3 h-3 shrink-0 ml-1" />
+                                    <span className="text-[#EEEEF5]">{cm.tag_manychat_nome}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Action buttons */}
+                            {canWrite && !isEditing && (
+                              <div className="flex items-center gap-2 pt-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={(e) => { e.stopPropagation(); setEditingGrupoId(g.id); setEditingGrupoNome(g.nome_filtro) }}
+                                >
+                                  <Pencil className="w-3.5 h-3.5 mr-1" />Editar nome
+                                </Button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteGrupo(g)}
+                                  disabled={deletingGrupo === g.id}
+                                  className="w-7 h-7 flex items-center justify-center rounded-lg text-[#3F3F58] hover:text-[#F87171] hover:bg-[#F87171]/10 transition-all disabled:opacity-50"
+                                >
+                                  {deletingGrupo === g.id
+                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    : <Trash2 className="w-3.5 h-3.5" />}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </section>
