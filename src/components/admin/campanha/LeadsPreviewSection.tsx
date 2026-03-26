@@ -193,8 +193,8 @@ export function LeadsPreviewSection({ campanhaId, accessToken, canReprocess }: L
       ) : (
         <>
           {/* Table */}
-          <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-hidden">
-            <table className="w-full">
+          <div className="bg-[#16161E] border border-[#1E1E2A] rounded-xl overflow-x-auto">
+            <table className="w-full min-w-[700px]">
               <thead>
                 <tr className="border-b border-[#1E1E2A]">
                   <th className="text-left text-[10px] font-semibold text-[#5A5A72] uppercase tracking-wider px-4 py-2.5">Nome / Telefone</th>

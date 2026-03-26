@@ -384,7 +384,7 @@ export default function CampanhaDetailPage() {
         </div>
 
         {/* ── Unified scrollable content ─────────────────────────────────── */}
-        <div className="px-6 pb-10 max-w-3xl space-y-10">
+        <div className="px-6 pb-10 max-w-5xl space-y-10">
           <PauseBanner campanha={campanha} canWrite={canWrite} pauseLoading={pauseLoading} onAction={callPauseAction} />
           <VisaoGeralSection campanha={campanha} />
           <InstanciaZApiSection
