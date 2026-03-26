@@ -26,30 +26,22 @@ export async function getGroups(
   clientToken: string
 ): Promise<ZApiGroup[]> {
   const allGroups: ZApiGroup[] = []
-  const pageSize = 100
-  let page = 1
-
-  while (true) {
-    const { signal, clear } = withTimeout(15000)
-    let data: ZApiGroup[]
-    try {
-      // Usar /groups (retorna só grupos) em vez de /chats (retorna tudo)
-      const res = await fetch(
-        zapiUrl(instanceId, token, `/groups?page=${page}&pageSize=${pageSize}`),
-        { headers: { "Client-Token": clientToken }, signal }
-      )
-      clear()
-      if (!res.ok) break
-      data = await res.json().catch(() => [])
-    } catch {
-      clear()
-      break
+  // Single request — max 100 groups (sufficient for all use cases)
+  const { signal, clear } = withTimeout(10000)
+  try {
+    const res = await fetch(
+      zapiUrl(instanceId, token, `/groups?page=1&pageSize=100`),
+      { headers: { "Client-Token": clientToken }, signal }
+    )
+    clear()
+    if (res.ok) {
+      const data: ZApiGroup[] = await res.json().catch(() => [])
+      if (Array.isArray(data)) {
+        allGroups.push(...data.filter((c) => c.isGroup))
+      }
     }
-
-    if (!Array.isArray(data) || data.length === 0) break
-    allGroups.push(...data.filter((c) => c.isGroup))
-    if (data.length < pageSize) break  // last page
-    page++
+  } catch {
+    clear()
   }
 
   return allGroups
@@ -65,29 +57,23 @@ export async function getCommunities(
   clientToken: string
 ): Promise<ZApiGroup[]> {
   const allCommunities: ZApiGroup[] = []
-  const pageSize = 100
-  let page = 1
 
-  while (true) {
-    const { signal, clear } = withTimeout(15000)
-    let data: ZApiGroup[]
-    try {
-      const res = await fetch(
-        zapiUrl(instanceId, token, `/community-chats?page=${page}&pageSize=${pageSize}`),
-        { headers: { "Client-Token": clientToken }, signal }
-      )
-      clear()
-      if (!res.ok) break
-      data = await res.json().catch(() => [])
-    } catch {
-      clear()
-      break
+  // Single request — max 100 communities
+  const { signal, clear } = withTimeout(10000)
+  try {
+    const res = await fetch(
+      zapiUrl(instanceId, token, `/community-chats?page=1&pageSize=100`),
+      { headers: { "Client-Token": clientToken }, signal }
+    )
+    clear()
+    if (res.ok) {
+      const data: ZApiGroup[] = await res.json().catch(() => [])
+      if (Array.isArray(data)) {
+        allCommunities.push(...data)
+      }
     }
-
-    if (!Array.isArray(data) || data.length === 0) break
-    allCommunities.push(...data)
-    if (data.length < pageSize) break
-    page++
+  } catch {
+    clear()
   }
 
   return allCommunities
