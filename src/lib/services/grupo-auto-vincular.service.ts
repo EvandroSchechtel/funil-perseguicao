@@ -137,18 +137,34 @@ export async function tentarAutoVincularGrupo(
   }
 
   // Auto-create new GrupoMonitoramento cloning the template
-  const novo = await prisma.grupoMonitoramento.create({
-    data: {
-      instancia_id: instanciaId,
-      campanha_id: bestTemplate.campanha_id,
-      conta_manychat_id: bestTemplate.conta_manychat_id,
-      nome_filtro: grupoNome,
-      grupo_wa_id: grupoWaId || null,
-      tag_manychat_id: bestTemplate.tag_manychat_id,
-      tag_manychat_nome: bestTemplate.tag_manychat_nome,
-    },
-    select: { id: true },
-  })
+  let novo: { id: string }
+  try {
+    novo = await prisma.grupoMonitoramento.create({
+      data: {
+        instancia_id: instanciaId,
+        campanha_id: bestTemplate.campanha_id,
+        conta_manychat_id: bestTemplate.conta_manychat_id,
+        nome_filtro: grupoNome,
+        grupo_wa_id: grupoWaId || null,
+        tag_manychat_id: bestTemplate.tag_manychat_id,
+        tag_manychat_nome: bestTemplate.tag_manychat_nome,
+      },
+      select: { id: true },
+    })
+  } catch (err: unknown) {
+    // P2002 = unique constraint violation — group already exists, skip
+    if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "P2002") {
+      console.log(`[AutoVincular] Grupo já existe (constraint), pulando: "${grupoNome}"`)
+      return {
+        criado: false,
+        grupoId: null,
+        score: bestScore,
+        templateId: bestTemplate.id,
+        templateNomeFiltro: bestTemplate.nome_filtro,
+      }
+    }
+    throw err // Re-throw other errors
+  }
 
   // Copy contas_monitoramento junction records from template (multi-conta support)
   if (bestTemplate.contas_monitoramento.length > 0) {
