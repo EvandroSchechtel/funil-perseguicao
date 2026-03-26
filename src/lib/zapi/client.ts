@@ -54,6 +54,70 @@ export async function getGroups(
   return allGroups
 }
 
+/**
+ * Returns all WhatsApp communities from the Z-API instance.
+ * Communities use the /community-chats endpoint (paginated, same shape as /chats).
+ */
+export async function getCommunities(
+  instanceId: string,
+  token: string,
+  clientToken: string
+): Promise<ZApiGroup[]> {
+  const allCommunities: ZApiGroup[] = []
+  const pageSize = 100
+  let page = 1
+
+  while (true) {
+    const { signal, clear } = withTimeout(15000)
+    let data: ZApiGroup[]
+    try {
+      const res = await fetch(
+        zapiUrl(instanceId, token, `/community-chats?page=${page}&pageSize=${pageSize}`),
+        { headers: { "Client-Token": clientToken }, signal }
+      )
+      clear()
+      if (!res.ok) break
+      data = await res.json().catch(() => [])
+    } catch {
+      clear()
+      break
+    }
+
+    if (!Array.isArray(data) || data.length === 0) break
+    allCommunities.push(...data)
+    if (data.length < pageSize) break
+    page++
+  }
+
+  return allCommunities
+}
+
+/**
+ * Returns all WhatsApp groups AND communities merged.
+ * Both are treated as monitoring targets in this app.
+ * Deduped by phone to prevent duplicates if Z-API overlaps.
+ */
+export async function getGroupsAndCommunities(
+  instanceId: string,
+  token: string,
+  clientToken: string
+): Promise<ZApiGroup[]> {
+  const [groups, communities] = await Promise.all([
+    getGroups(instanceId, token, clientToken),
+    getCommunities(instanceId, token, clientToken),
+  ])
+
+  const seen = new Set(groups.map((g) => g.phone))
+  const merged = [...groups]
+  for (const c of communities) {
+    if (!seen.has(c.phone)) {
+      seen.add(c.phone)
+      merged.push(c)
+    }
+  }
+  return merged
+}
+
 export interface ZApiGroupMetadata {
   phone: string
   name: string

@@ -2,7 +2,7 @@ import { NextRequest } from "next/server"
 import { getAuthContext } from "@/lib/api/auth-guard"
 import { ok, forbidden, serverError, handleServiceError } from "@/lib/api/response"
 import { prisma } from "@/lib/db/prisma"
-import { getGroups } from "@/lib/zapi/client"
+import { getGroupsAndCommunities } from "@/lib/zapi/client"
 import { sincronizarGruposCache } from "@/lib/services/zapi.service"
 
 type Ctx = { params: Promise<{ id: string }> }
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest, { params }: Ctx) {
     }
 
     // Cache miss or forced refresh → call Z-API and persist
-    const grupos = await getGroups(inst.instance_id, inst.token, inst.client_token)
+    const grupos = await getGroupsAndCommunities(inst.instance_id, inst.token, inst.client_token)
     try { await sincronizarGruposCache(id, grupos) } catch { /* best-effort */ }
     return ok({ grupos: grupos.filter((g) => g.name?.trim()), from_cache: false })
   } catch (error) {
