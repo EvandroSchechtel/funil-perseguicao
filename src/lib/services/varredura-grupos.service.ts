@@ -89,9 +89,25 @@ export async function varredarGruposCampanha(campanhaId: string): Promise<Varred
 
   // 5. Para cada grupo: busca membros e processa
   for (const grupo of grupos) {
+    // Try to resolve grupo_wa_id from cache if missing
     if (!grupo.grupo_wa_id) {
-      result.grupos_sem_id++
-      continue
+      const cached = await prisma.grupoWaCache.findFirst({
+        where: {
+          instancia_id: inst.id,
+          nome: { contains: grupo.nome_filtro, mode: "insensitive" },
+        },
+        select: { grupo_wa_id: true },
+      })
+      if (cached) {
+        await prisma.grupoMonitoramento.update({
+          where: { id: grupo.id },
+          data: { grupo_wa_id: cached.grupo_wa_id },
+        })
+        grupo.grupo_wa_id = cached.grupo_wa_id
+      } else {
+        result.grupos_sem_id++
+        continue
+      }
     }
 
     const metadata = await getGroupMetadata(inst.instance_id, inst.token, inst.client_token, grupo.grupo_wa_id)

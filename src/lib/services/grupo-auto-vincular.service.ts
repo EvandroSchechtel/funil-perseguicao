@@ -58,11 +58,12 @@ export async function tentarAutoVincularGrupo(
     return { criado: false, grupoId: null, score: 0, templateId: null, templateNomeFiltro: null }
   }
 
-  // Check if already configured (by WA ID or exact name)
+  // Check if already configured (by WA ID, exact name, or contains match)
   const existing = templates.find(
     (t) =>
       (grupoWaId && t.grupo_wa_id === grupoWaId) ||
-      t.nome_filtro.toLowerCase() === grupoNome.toLowerCase()
+      t.nome_filtro.toLowerCase() === grupoNome.toLowerCase() ||
+      grupoNome.toLowerCase().includes(t.nome_filtro.toLowerCase())
   )
   if (existing) {
     // Back-fill grupo_wa_id if it wasn't set yet
@@ -81,6 +82,10 @@ export async function tentarAutoVincularGrupo(
     }
   }
 
+  // Back-fill grupo_wa_id on best-matching template if it doesn't have one
+  // This handles the case where a template was created with a generic nome_filtro
+  // and a WA group with a similar name is found later
+
   // Find best matching template by semantic similarity
   let bestScore = 0
   let bestTemplate: (typeof templates)[0] | null = null
@@ -98,6 +103,17 @@ export async function tentarAutoVincularGrupo(
       `[AutoVincular] Sem match para "${grupoNome}" — melhor score: ${bestScore.toFixed(2)}`
     )
     return { criado: false, grupoId: null, score: bestScore, templateId: null, templateNomeFiltro: null }
+  }
+
+  // Back-fill grupo_wa_id on the template if it doesn't have one and this is a good match
+  // This handles templates created with generic nome_filtro (e.g. "OFICINA POP 2026")
+  // that should be linked to a specific WA group (e.g. "OFICINA POP 2026 - #10")
+  if (!bestTemplate.grupo_wa_id && grupoWaId && bestScore >= SIMILARITY_THRESHOLD) {
+    await prisma.grupoMonitoramento.update({
+      where: { id: bestTemplate.id },
+      data: { grupo_wa_id: grupoWaId },
+    }).catch((err) => console.error("[AutoVincular] Erro ao back-fill grupo_wa_id no template:", err))
+    console.log(`[AutoVincular] Back-fill grupo_wa_id="${grupoWaId}" no template "${bestTemplate.nome_filtro}"`)
   }
 
   // Check if a group with this same nome_filtro already exists for this campanha
