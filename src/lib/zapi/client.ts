@@ -33,8 +33,9 @@ export async function getGroups(
     const { signal, clear } = withTimeout(15000)
     let data: ZApiGroup[]
     try {
+      // Usar /groups (retorna só grupos) em vez de /chats (retorna tudo)
       const res = await fetch(
-        zapiUrl(instanceId, token, `/chats?page=${page}&pageSize=${pageSize}`),
+        zapiUrl(instanceId, token, `/groups?page=${page}&pageSize=${pageSize}`),
         { headers: { "Client-Token": clientToken }, signal }
       )
       clear()
