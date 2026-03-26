@@ -1,35 +1,60 @@
 import { prisma } from "@/lib/db/prisma"
 import { addTag } from "@/lib/manychat/tags"
-import { getGroupMetadata, normalizePhone } from "@/lib/zapi/client"
+import { getGroupMetadata, normalizePhone, type ZApiGroupMetadata } from "@/lib/zapi/client"
 import { ServiceError } from "./errors"
 
 const LOCK_HOURS = 24
 
 export interface VarreduraResult {
   grupos_varridos: number
-  grupos_sem_id: number       // grupos sem grupo_wa_id (ainda não vinculados ao WA)
-  total_membros: number       // participantes únicos lidos do Z-API
-  leads_encontrados: number   // membros que têm Lead nesta campanha
+  grupos_sem_id: number       // grupos sem grupo_wa_id (ainda nao vinculados ao WA)
+  total_membros: number       // participantes unicos lidos do Z-API
+  leads_encontrados: number   // membros que tem Lead nesta campanha
   ja_processados: number      // leads com tag_aplicada=true (skip)
   tags_aplicadas: number      // leads que receberam tag agora
   erros: number               // falhas de getGroupMetadata ou outras
   proxima_varredura_em: string // ISO8601
-  aviso_24h: string | null    // aviso quando varredura recente, mas não bloqueia
+  aviso_24h: string | null    // aviso quando varredura recente, mas nao bloqueia
 }
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Runs promises in batches of `size`, returning all settled results in order. */
+async function batchAllSettled<T>(
+  items: (() => Promise<T>)[],
+  size: number
+): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = []
+  for (let i = 0; i < items.length; i += size) {
+    const batch = items.slice(i, i + size)
+    const settled = await Promise.allSettled(batch.map((fn) => fn()))
+    results.push(...settled)
+  }
+  return results
+}
+
+/** For a phone like "5542998234664", returns search variants: itself, "+5542...", and "42..." */
+function phoneVariants(phone: string): string[] {
+  const variants = [phone, `+${phone}`]
+  if (phone.startsWith("55")) variants.push(phone.slice(2))
+  return variants
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
 
 /**
  * Varredura retroativa de grupos: percorre todos os membros atuais dos grupos
- * WhatsApp vinculados à campanha e aplica tags Manychat para leads que ainda
- * não foram processados.
+ * WhatsApp vinculados a campanha e aplica tags Manychat para leads que ainda
+ * nao foram processados.
  *
  * Regras:
- * - Só pode rodar uma vez a cada 24h por campanha (trava via ultima_varredura_at)
- * - Só processa leads já existentes na campanha (não cria leads novos)
+ * - So pode rodar uma vez a cada 24h por campanha (trava via ultima_varredura_at)
+ * - So processa leads ja existentes na campanha (nao cria leads novos)
  * - Aplica tags em todas as contas Manychat vinculadas ao grupo (multi-conta)
  * - Usa ContatoConta(contato_id, conta_id) — nunca Lead.subscriber_id
  */
 export async function varredarGruposCampanha(campanhaId: string): Promise<VarreduraResult> {
-  // 1. Busca campanha com credenciais da instância Z-API
+  // 1. Busca campanha com credenciais da instancia Z-API
   const campanha = await prisma.campanha.findFirst({
     where: { id: campanhaId, deleted_at: null },
     select: {
@@ -45,7 +70,7 @@ export async function varredarGruposCampanha(campanhaId: string): Promise<Varred
     throw new ServiceError("bad_request", "Campanha não tem instância Z-API vinculada. Vincule uma instância antes de varrer.")
   }
 
-  // 2. Aviso de 24h (não bloqueia mais — apenas informa)
+  // 2. Aviso de 24h (nao bloqueia — apenas informa)
   let aviso_24h: string | null = null
   if (campanha.ultima_varredura_at) {
     const diff = Date.now() - new Date(campanha.ultima_varredura_at).getTime()
@@ -87,142 +112,428 @@ export async function varredarGruposCampanha(campanhaId: string): Promise<Varred
     aviso_24h,
   }
 
-  // 5. Para cada grupo: busca membros e processa
-  for (const grupo of grupos) {
-    // Try to resolve grupo_wa_id from cache if missing
-    if (!grupo.grupo_wa_id) {
-      const cached = await prisma.grupoWaCache.findFirst({
-        where: {
-          instancia_id: inst.id,
-          nome: { contains: grupo.nome_filtro, mode: "insensitive" },
-        },
-        select: { grupo_wa_id: true },
-      })
-      if (cached) {
+  // ── Phase 1: Resolve grupo_wa_id from cache for groups missing it ──────
+
+  const gruposSemId = grupos.filter((g) => !g.grupo_wa_id)
+  if (gruposSemId.length > 0) {
+    const cachedEntries = await prisma.grupoWaCache.findMany({
+      where: {
+        instancia_id: inst.id,
+        OR: gruposSemId.map((g) => ({
+          nome: { contains: g.nome_filtro, mode: "insensitive" as const },
+        })),
+      },
+      select: { grupo_wa_id: true, nome: true },
+    })
+
+    // Match each grupo sem id against cache
+    for (const grupo of gruposSemId) {
+      const match = cachedEntries.find((c) =>
+        c.nome.toLowerCase().includes(grupo.nome_filtro.toLowerCase())
+      )
+      if (match) {
         await prisma.grupoMonitoramento.update({
           where: { id: grupo.id },
-          data: { grupo_wa_id: cached.grupo_wa_id },
+          data: { grupo_wa_id: match.grupo_wa_id },
         })
-        grupo.grupo_wa_id = cached.grupo_wa_id
+        grupo.grupo_wa_id = match.grupo_wa_id
       } else {
         result.grupos_sem_id++
-        continue
       }
     }
+  }
 
-    const metadata = await getGroupMetadata(inst.instance_id, inst.token, inst.client_token, grupo.grupo_wa_id)
-    if (!metadata) {
+  // Filter to groups that have grupo_wa_id resolved
+  const gruposComId = grupos.filter((g) => g.grupo_wa_id)
+
+  // ── Phase 2: Fetch group metadata in parallel batches of 3 ─────────────
+
+  console.log(`[Varredura] Buscando metadados de ${gruposComId.length} grupos (batches de 3)...`)
+
+  type GrupoComMeta = {
+    grupo: (typeof gruposComId)[number]
+    metadata: ZApiGroupMetadata
+  }
+
+  const gruposComMeta: GrupoComMeta[] = []
+
+  const metadataFetchers = gruposComId.map((grupo) => () =>
+    getGroupMetadata(inst.instance_id, inst.token, inst.client_token, grupo.grupo_wa_id!)
+  )
+
+  const metadataResults = await batchAllSettled(metadataFetchers, 3)
+
+  for (let i = 0; i < gruposComId.length; i++) {
+    const grupo = gruposComId[i]
+    const settled = metadataResults[i]
+
+    if (settled.status === "rejected" || !settled.value) {
       console.warn(`[Varredura] getGroupMetadata falhou para grupo ${grupo.id} (${grupo.grupo_wa_id})`)
       result.erros++
       continue
     }
 
     result.grupos_varridos++
+    const metadata = settled.value
     console.log(`[Varredura] Grupo "${metadata.name}" — ${metadata.participants.length} participantes`)
+    gruposComMeta.push({ grupo, metadata })
+  }
 
-    // Contas a taggear: multi-conta ou fallback para conta principal
+  // ── Phase 3: Collect all unique phones from all groups ─────────────────
+
+  // Map: normalizedPhone -> { participant, grupo, metadata, contasToTag }
+  interface ParticipantInfo {
+    telefoneNorm: string
+    participantName: string | undefined
+    grupo: (typeof gruposComId)[number]
+    metadata: ZApiGroupMetadata
+    contasToTag: Array<{
+      conta_manychat: { id: string; api_key: string }
+      tag_manychat_id: number
+    }>
+  }
+
+  const allParticipants: ParticipantInfo[] = []
+  const allPhones = new Set<string>()
+  const allGrupoIds = new Set<string>()
+
+  for (const { grupo, metadata } of gruposComMeta) {
     const contasToTag = grupo.contas_monitoramento.length > 0
       ? grupo.contas_monitoramento
       : [{ conta_manychat: grupo.conta_manychat, tag_manychat_id: grupo.tag_manychat_id }]
 
+    allGrupoIds.add(grupo.id)
+
     for (const participant of metadata.participants) {
       const telefoneNorm = normalizePhone(participant.phone)
       if (!telefoneNorm) continue
+      allPhones.add(telefoneNorm)
+      allParticipants.push({
+        telefoneNorm,
+        participantName: participant.name,
+        grupo,
+        metadata,
+        contasToTag,
+      })
+    }
+  }
 
-      result.total_membros++
+  result.total_membros = allParticipants.length
 
-      // Busca Contato (multi-formato: 5542xxx, +5542xxx, 42xxx)
-      const contato = await prisma.contato.findFirst({
+  if (allParticipants.length === 0) {
+    console.log(`[Varredura] campanhaId=${campanhaId} result=`, result)
+    return result
+  }
+
+  // ── Phase 4: Batch queries — contatos, leads, entradas, contatoContas ──
+
+  console.log(`[Varredura] Batch queries: ${allPhones.size} telefones unicos, ${allGrupoIds.size} grupos`)
+
+  // Build all phone variants for the WHERE IN query
+  const allPhoneVariants: string[] = []
+  for (const phone of allPhones) {
+    allPhoneVariants.push(...phoneVariants(phone))
+  }
+
+  // 4a. All contatos matching any phone variant
+  const contatosArr = await prisma.contato.findMany({
+    where: { telefone: { in: allPhoneVariants } },
+    select: { id: true, telefone: true },
+  })
+
+  // Build phone -> contato map (normalize keys for quick lookup)
+  const contatoByPhone = new Map<string, { id: string; telefone: string }>()
+  for (const c of contatosArr) {
+    // Index by normalized digits
+    const digits = c.telefone.replace(/\D/g, "")
+    contatoByPhone.set(digits, c)
+    contatoByPhone.set(c.telefone, c) // also index by raw value
+  }
+
+  // Lookup helper: find contato for a normalized phone
+  function findContato(telefoneNorm: string) {
+    // Try exact digits match first, then with +, then without country code
+    return contatoByPhone.get(telefoneNorm)
+      ?? contatoByPhone.get(`+${telefoneNorm}`)
+      ?? (telefoneNorm.startsWith("55") ? contatoByPhone.get(telefoneNorm.slice(2)) : undefined)
+      ?? undefined
+  }
+
+  // Collect all contato IDs that we found
+  const foundContatoIds = new Set<string>()
+  for (const phone of allPhones) {
+    const c = findContato(phone)
+    if (c) foundContatoIds.add(c.id)
+  }
+
+  // 4b. All leads for these contatos in this campanha
+  const leadsArr = foundContatoIds.size > 0
+    ? await prisma.lead.findMany({
+        where: { contato_id: { in: [...foundContatoIds] }, campanha_id: campanhaId },
+        select: { id: true, contato_id: true },
+      })
+    : []
+
+  const leadByContatoId = new Map<string, { id: string; contato_id: string }>()
+  for (const l of leadsArr) {
+    leadByContatoId.set(l.contato_id, l)
+  }
+
+  // 4c. All existing entradas for these grupos
+  const entradasArr = allGrupoIds.size > 0
+    ? await prisma.entradaGrupo.findMany({
+        where: { grupo_id: { in: [...allGrupoIds] } },
+        select: { grupo_id: true, telefone: true, tag_aplicada: true },
+      })
+    : []
+
+  // Key: "grupo_id|telefone"
+  const entradaMap = new Map<string, { tag_aplicada: boolean }>()
+  for (const e of entradasArr) {
+    entradaMap.set(`${e.grupo_id}|${e.telefone}`, { tag_aplicada: e.tag_aplicada })
+  }
+
+  // 4d. All ContatoContas for found contatos (with subscriber_id)
+  // Collect all conta IDs we might need
+  const allContaIds = new Set<string>()
+  for (const { grupo } of gruposComMeta) {
+    const contas = grupo.contas_monitoramento.length > 0
+      ? grupo.contas_monitoramento
+      : [{ conta_manychat: grupo.conta_manychat, tag_manychat_id: grupo.tag_manychat_id }]
+    for (const c of contas) {
+      allContaIds.add(c.conta_manychat.id)
+    }
+  }
+
+  const contatoContasArr = (foundContatoIds.size > 0 && allContaIds.size > 0)
+    ? await prisma.contatoConta.findMany({
         where: {
-          OR: [
-            { telefone: telefoneNorm },
-            { telefone: `+${telefoneNorm}` },
-            ...(telefoneNorm.startsWith("55") ? [{ telefone: telefoneNorm.slice(2) }] : []),
-          ],
+          contato_id: { in: [...foundContatoIds] },
+          conta_id: { in: [...allContaIds] },
+          subscriber_id: { not: null },
         },
+        select: { contato_id: true, conta_id: true, subscriber_id: true },
       })
-      if (!contato) continue // não é um contato nosso
+    : []
 
-      // Busca Lead nesta campanha
-      const lead = await prisma.lead.findFirst({
-        where: { contato_id: contato.id, campanha_id: campanhaId },
-        select: { id: true },
-      })
-      if (!lead) continue // não é um lead desta campanha
+  // Key: "contato_id|conta_id" -> subscriber_id
+  const ccMap = new Map<string, string>()
+  for (const cc of contatoContasArr) {
+    if (cc.subscriber_id) {
+      ccMap.set(`${cc.contato_id}|${cc.conta_id}`, cc.subscriber_id)
+    }
+  }
 
-      result.leads_encontrados++
+  console.log(`[Varredura] Batch results: ${contatosArr.length} contatos, ${leadsArr.length} leads, ${entradasArr.length} entradas, ${contatoContasArr.length} contatoContas`)
 
-      // Verifica EntradaGrupo existente com tag já aplicada
-      const entradaExistente = await prisma.entradaGrupo.findFirst({
-        where: { grupo_id: grupo.id, telefone: telefoneNorm },
-      })
-      if (entradaExistente?.tag_aplicada) {
-        result.ja_processados++
-        continue
-      }
+  // ── Phase 5: Process participants, apply tags, collect upserts ─────────
 
-      // Aplica tags em todas as contas (parallel por conta, best-effort)
-      const tagResults = await Promise.allSettled(
-        contasToTag.map(async (entry) => {
-          const cc = await prisma.contatoConta.findFirst({
-            where: {
-              contato_id: contato.id,
-              conta_id: entry.conta_manychat.id,
-              subscriber_id: { not: null },
-            },
-            select: { subscriber_id: true },
+  interface UpsertEntry {
+    grupo_id: string
+    lead_id: string
+    contato_id: string
+    telefone: string
+    nome_whatsapp: string | null
+    grupo_wa_id: string
+    grupo_wa_nome: string
+    subscriber_id: string | null
+    tag_aplicada: boolean
+    tag_erro: string | null
+  }
+
+  const upserts: UpsertEntry[] = []
+  const leadIdsToUpdateGrupoEntrou: string[] = []
+
+  // Collect tag calls to run in batches of 5
+  interface TagCall {
+    apiKey: string
+    subscriberId: string
+    tagId: number
+    participantIndex: number // to correlate results
+  }
+
+  // Process each participant — group by participant to collect tag calls
+  interface PendingParticipant {
+    info: ParticipantInfo
+    contato: { id: string }
+    lead: { id: string }
+    tagCalls: TagCall[]
+  }
+
+  const pendingParticipants: PendingParticipant[] = []
+  let participantIndex = 0
+
+  for (let gi = 0; gi < gruposComMeta.length; gi++) {
+    const { grupo, metadata } = gruposComMeta[gi]
+    const participants = metadata.participants
+    const grupoParticipants = allParticipants.filter((p) => p.grupo.id === grupo.id)
+
+    console.log(`[Varredura] Progresso: grupo ${gi + 1}/${gruposComMeta.length} "${metadata.name}" — ${grupoParticipants.length} membros`)
+
+    try {
+      for (let mi = 0; mi < grupoParticipants.length; mi++) {
+        const pInfo = grupoParticipants[mi]
+
+        if (mi > 0 && mi % 50 === 0) {
+          console.log(`[Varredura] Progresso: grupo ${gi + 1}/${gruposComMeta.length}, membro ${mi}/${grupoParticipants.length}`)
+        }
+
+        // Lookup contato
+        const contato = findContato(pInfo.telefoneNorm)
+        if (!contato) continue
+
+        // Lookup lead
+        const lead = leadByContatoId.get(contato.id)
+        if (!lead) continue
+
+        result.leads_encontrados++
+
+        // Check existing entrada
+        const entradaKey = `${grupo.id}|${pInfo.telefoneNorm}`
+        const existingEntrada = entradaMap.get(entradaKey)
+        if (existingEntrada?.tag_aplicada) {
+          result.ja_processados++
+          continue
+        }
+
+        // Build tag calls for this participant
+        const tagCalls: TagCall[] = []
+        for (const entry of pInfo.contasToTag) {
+          const subscriberId = ccMap.get(`${contato.id}|${entry.conta_manychat.id}`)
+          if (!subscriberId) continue
+          tagCalls.push({
+            apiKey: entry.conta_manychat.api_key,
+            subscriberId,
+            tagId: entry.tag_manychat_id,
+            participantIndex,
           })
-          if (!cc?.subscriber_id) return { ok: false, subscriberId: null, error: "sem subscriber_id" }
-          const res = await addTag(entry.conta_manychat.api_key, cc.subscriber_id, entry.tag_manychat_id)
-          return { ok: res.ok, subscriberId: cc.subscriber_id, error: res.error ?? null }
+        }
+
+        pendingParticipants.push({
+          info: pInfo,
+          contato,
+          lead,
+          tagCalls,
         })
-      )
-
-      const tagAplicada = tagResults.some((r) => r.status === "fulfilled" && r.value.ok)
-      const tagErro = tagResults
-        .filter((r) => r.status === "fulfilled" && !r.value.ok)
-        .map((r) => (r as PromiseFulfilledResult<{ error: string | null }>).value.error)
-        .filter(Boolean)
-        .join("; ") || null
-
-      const subscriberId = tagResults
-        .map((r) => r.status === "fulfilled" ? r.value.subscriberId : null)
-        .find((s) => s != null) ?? null
-
-      if (tagAplicada) {
-        result.tags_aplicadas++
+        participantIndex++
       }
+    } catch (err) {
+      console.error(`[Varredura] Erro processando grupo "${metadata.name}":`, err)
+      result.erros++
+    }
+  }
 
-      console.log(`[Varredura] telefone=${telefoneNorm} tag=${tagAplicada ? "ok" : "falhou"} erro=${tagErro}`)
+  // ── Phase 6: Batch tag API calls (5 concurrent) ───────────────────────
 
-      // Upsert EntradaGrupo
-      await prisma.entradaGrupo.upsert({
-        where: { grupo_id_telefone: { grupo_id: grupo.id, telefone: telefoneNorm } },
-        create: {
-          grupo_id: grupo.id,
-          lead_id: lead.id,
-          contato_id: contato.id,
-          telefone: telefoneNorm,
-          nome_whatsapp: participant.name ?? null,
-          grupo_wa_id: grupo.grupo_wa_id,
-          grupo_wa_nome: metadata.name,
-          subscriber_id: subscriberId,
-          tag_aplicada: tagAplicada,
-          tag_erro: tagErro,
-        },
-        update: {
-          lead_id: lead.id,
-          contato_id: contato.id,
-          subscriber_id: subscriberId,
-          tag_aplicada: tagAplicada,
-          tag_erro: tagErro,
-          entrou_at: new Date(),
-        },
-      })
+  console.log(`[Varredura] Aplicando tags para ${pendingParticipants.length} participantes pendentes...`)
 
-      // Atualiza grupo_entrou_at no lead se ainda não preenchido
+  // Flatten all tag calls
+  const allTagCalls = pendingParticipants.flatMap((p) => p.tagCalls)
+
+  const tagCallFunctions = allTagCalls.map((tc) => () =>
+    addTag(tc.apiKey, tc.subscriberId, tc.tagId)
+  )
+
+  const tagResults = await batchAllSettled(tagCallFunctions, 5)
+
+  // Map participantIndex -> tag results
+  const tagResultsByParticipant = new Map<number, { ok: boolean; subscriberId: string; error: string | null }[]>()
+
+  for (let i = 0; i < allTagCalls.length; i++) {
+    const tc = allTagCalls[i]
+    const settled = tagResults[i]
+
+    const value = settled.status === "fulfilled"
+      ? { ok: settled.value.ok, subscriberId: tc.subscriberId, error: settled.value.error ?? null }
+      : { ok: false, subscriberId: tc.subscriberId, error: "Promise rejected" }
+
+    const existing = tagResultsByParticipant.get(tc.participantIndex) ?? []
+    existing.push(value)
+    tagResultsByParticipant.set(tc.participantIndex, existing)
+  }
+
+  // ── Phase 7: Build upsert list from results ───────────────────────────
+
+  for (let pi = 0; pi < pendingParticipants.length; pi++) {
+    const pp = pendingParticipants[pi]
+    const pTagResults = tagResultsByParticipant.get(pi) ?? []
+
+    // If no tag calls were made (no subscriber_id found), still upsert with tag_aplicada=false
+    const tagAplicada = pTagResults.some((r) => r.ok)
+    const tagErro = pTagResults
+      .filter((r) => !r.ok)
+      .map((r) => r.error)
+      .filter(Boolean)
+      .join("; ") || null
+
+    const subscriberId = pTagResults.find((r) => r.subscriberId)?.subscriberId ?? null
+
+    if (tagAplicada) {
+      result.tags_aplicadas++
+    }
+
+    upserts.push({
+      grupo_id: pp.info.grupo.id,
+      lead_id: pp.lead.id,
+      contato_id: pp.contato.id,
+      telefone: pp.info.telefoneNorm,
+      nome_whatsapp: pp.info.participantName ?? null,
+      grupo_wa_id: pp.info.grupo.grupo_wa_id!,
+      grupo_wa_nome: pp.info.metadata.name,
+      subscriber_id: subscriberId,
+      tag_aplicada: tagAplicada,
+      tag_erro: tagErro,
+    })
+
+    leadIdsToUpdateGrupoEntrou.push(pp.lead.id)
+  }
+
+  // ── Phase 8: Batch upserts via $transaction ───────────────────────────
+
+  if (upserts.length > 0) {
+    console.log(`[Varredura] Executando ${upserts.length} upserts em transacao...`)
+
+    // Prisma doesn't support bulk upserts natively, so batch in transaction
+    // Process in chunks of 50 to keep transactions manageable
+    const UPSERT_CHUNK = 50
+    for (let i = 0; i < upserts.length; i += UPSERT_CHUNK) {
+      const chunk = upserts.slice(i, i + UPSERT_CHUNK)
+      await prisma.$transaction(
+        chunk.map((u) =>
+          prisma.entradaGrupo.upsert({
+            where: { grupo_id_telefone: { grupo_id: u.grupo_id, telefone: u.telefone } },
+            create: {
+              grupo_id: u.grupo_id,
+              lead_id: u.lead_id,
+              contato_id: u.contato_id,
+              telefone: u.telefone,
+              nome_whatsapp: u.nome_whatsapp,
+              grupo_wa_id: u.grupo_wa_id,
+              grupo_wa_nome: u.grupo_wa_nome,
+              subscriber_id: u.subscriber_id,
+              tag_aplicada: u.tag_aplicada,
+              tag_erro: u.tag_erro,
+            },
+            update: {
+              lead_id: u.lead_id,
+              contato_id: u.contato_id,
+              subscriber_id: u.subscriber_id,
+              tag_aplicada: u.tag_aplicada,
+              tag_erro: u.tag_erro,
+              entrou_at: new Date(),
+            },
+          })
+        )
+      )
+    }
+
+    // Batch update grupo_entrou_at for leads
+    if (leadIdsToUpdateGrupoEntrou.length > 0) {
       await prisma.lead.updateMany({
-        where: { id: lead.id, grupo_entrou_at: null },
+        where: {
+          id: { in: leadIdsToUpdateGrupoEntrou },
+          grupo_entrou_at: null,
+        },
         data: { grupo_entrou_at: new Date() },
       })
     }
