@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db/prisma"
-import { isGroupJoinEvent, isGroupExitEvent, type ZApiWebhookPayload } from "@/lib/zapi/client"
+import { isGroupJoinEvent, isGroupExitEvent, isGroupCreateEvent, type ZApiWebhookPayload } from "@/lib/zapi/client"
 import { addGrupoEventoJob } from "@/lib/queue/queues"
+import { tentarAutoVincularGrupo } from "@/lib/services/grupo-auto-vincular.service"
 
 // Always return 200 to Z-API — never 4xx/5xx to avoid retry storms
 function ok() {
@@ -200,6 +201,36 @@ export async function POST(
   // 5. GROUP_PARTICIPANT_REMOVE / LEAVE — enqueue exit (retry + dedup via BullMQ)
   if (isGroupExitEvent(payload)) {
     await addGrupoEventoJob({ tipo: "saida", instanciaId: instancia.id, payload })
+  }
+
+  // 6. GROUP_CREATE — new group created or user added to existing group
+  //    Auto-link to monitored groups via semantic similarity
+  if (isGroupCreateEvent(payload)) {
+    const chatId = getGroupChatId(payload)
+    const groupName = payload.chatName ?? null
+    if (chatId && groupName) {
+      // Convert chatId format: "120363...@g.us" → "120363...-group"
+      const grupoWaId = chatId.replace("@g.us", "-group")
+      console.log(`[ZApi Webhook] GROUP_CREATE: "${groupName}" (${grupoWaId})`)
+
+      // 6a. Upsert into GrupoWaCache so future scans find it
+      prisma.grupoWaCache.upsert({
+        where: { instancia_id_grupo_wa_id: { instancia_id: instancia.id, grupo_wa_id: grupoWaId } },
+        create: { instancia_id: instancia.id, grupo_wa_id: grupoWaId, nome: groupName },
+        update: { nome: groupName },
+      }).catch((err) => console.error("[ZApi Webhook] Cache upsert error:", err))
+
+      // 6b. Try to auto-link to existing templates via semantic similarity
+      tentarAutoVincularGrupo(instancia.id, grupoWaId, groupName)
+        .then((result) => {
+          if (result?.criado) {
+            console.log(`[ZApi Webhook] GROUP_CREATE auto-linked: "${groupName}" → template="${result.templateNomeFiltro}"`)
+          } else {
+            console.log(`[ZApi Webhook] GROUP_CREATE no match for: "${groupName}" (score=${result?.score?.toFixed(2) ?? "n/a"})`)
+          }
+        })
+        .catch((err) => console.error("[ZApi Webhook] Auto-link error:", err))
+    }
   }
 
   return ok()

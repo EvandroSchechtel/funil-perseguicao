@@ -251,7 +251,7 @@ export interface ZApiWebhookPayload {
   isGroup?: boolean
   notification?: string           // "GROUP_PARTICIPANT_ADD" | "GROUP_PARTICIPANT_INVITE" |
                                   // "GROUP_PARTICIPANT_REMOVE" | "GROUP_PARTICIPANT_LEAVE" |
-                                  // "MEMBERSHIP_APPROVAL_REQUEST" | ...
+                                  // "GROUP_CREATE" | "MEMBERSHIP_APPROVAL_REQUEST" | ...
   notificationParameters?: string[] // phones involved in the event (Z-API official docs)
   phone?: string                  // group ID (e.g. "120363019502650977-group") or sender phone
   chatId?: string                 // group/chat ID (e.g. "120363019502650977@g.us")
@@ -302,6 +302,15 @@ export function isGroupExitEvent(payload: ZApiWebhookPayload): boolean {
       payload.notification === "GROUP_PARTICIPANT_LEAVE") &&
     getParticipantPhone(payload).length > 0
   )
+}
+
+/**
+ * Returns true if the payload represents a group creation event.
+ * This fires when a new group is created on WhatsApp or when the
+ * connected number is added/invited to an existing group.
+ */
+export function isGroupCreateEvent(payload: ZApiWebhookPayload): boolean {
+  return payload.notification === "GROUP_CREATE" && payload.isGroup === true
 }
 
 /**
