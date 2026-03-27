@@ -78,3 +78,17 @@ input:-webkit-autofill:focus {
   -webkit-text-fill-color: #F1F1F3 !important;
   caret-color: #F1F1F3;
 }
+
+/* Indeterminate progress bar animation */
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+.animate-indeterminate {
+  animation: indeterminate 1.5s ease-in-out infinite;
+}
